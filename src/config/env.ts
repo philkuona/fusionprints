@@ -34,6 +34,9 @@ LOG_LEVEL: z
   WHATSAPP_API_KEY: z.string().default(''),
   WHATSAPP_API_BASE: z.string().default('https://waba-v2.360dialog.io'),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().default(''),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().default(''),
+  WHATSAPP_WABA_ID: z.string().default(''),
+  WHATSAPP_WEBHOOK_SECRET: z.string().default(''),
 
   // Payments (optional until we wire them up)
   PAYNOW_INTEGRATION_ID: z.string().default(''),

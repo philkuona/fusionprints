@@ -13,6 +13,7 @@ import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { db, closeDatabase } from '@/db/client.js';
 import { sql } from 'drizzle-orm';
+import { registerWhatsAppWebhook } from '@/routes/whatsapp-webhook.js';
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -41,6 +42,9 @@ async function main(): Promise<void> {
       return { status: 'degraded', database: 'unreachable' };
     }
   });
+
+  // Register WhatsApp webhook routes
+  await registerWhatsAppWebhook(app);
 
   // ===== Start the server =====
 

@@ -296,6 +296,11 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
             );
 
             try {
+              // Resolve customer ID from phone number before processing media
+              const { findOrCreateCustomer } = await import('@/services/customer.js');
+              const customer = await findOrCreateCustomer(phoneNumber);
+              const customerId = customer.id;
+
               // Build the IncomingMessage for the bot handler
               let botMessage: IncomingMessage;
 
@@ -308,7 +313,7 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
                 const docMsg = waMessage as WhatsAppDocumentMessage & { from: string };
                 const mediaData = await downloadAndStoreMedia(
                   docMsg.document.id,
-                  '', // customerId resolved inside handler — placeholder for now
+                  customerId,
                   true, // isDocument = true, not compressed
                 );
 
@@ -335,7 +340,7 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
                 const imgMsg = waMessage as WhatsAppImageMessage & { from: string };
                 const mediaData = await downloadAndStoreMedia(
                   imgMsg.image.id,
-                  '', // customerId resolved inside handler
+                  customerId,
                   false, // isDocument = false, compressed
                 );
 

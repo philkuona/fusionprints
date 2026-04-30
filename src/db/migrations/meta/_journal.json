@@ -15,6 +15,13 @@
       "when": 1777516430797,
       "tag": "0001_great_war_machine",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777586544264,
+      "tag": "0002_normal_guardian",
+      "breakpoints": true
     }
   ]
 }

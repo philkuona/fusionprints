@@ -56,9 +56,21 @@ export const MSG = {
   // ===== Image upload =====
 
   chooseUploadMode: (displayLabel: string, priceEach: string) =>
-    `*${displayLabel}* — ${priceEach} each.\n\nHow would you like to send your photos?\n\n1️⃣ *One photo* — multiple copies of the same image\n2️⃣ *Multiple photos* — different images, one copy each\n\nReply with a number.`,
+    `*${displayLabel}* — ${priceEach} each.\n\nHow would you like to send your photos?\n\n1️⃣ *One photo* — multiple copies of the same image\n2️⃣ *A few photos* — send as documents on WhatsApp\n3️⃣ *Many photos* — fast upload via web link _(recommended for 5+ photos)_\n\nReply with a number.`,
 
-  invalidUploadMode: () => `Please reply with *1* (one photo) or *2* (multiple photos).`,
+  invalidUploadMode: () => `Please reply with *1*, *2*, or *3*.`,
+
+  awaitingWebUpload: (displayLabel: string, priceEach: string, uploadUrl: string) =>
+    `*${displayLabel}* — ${priceEach} each.\n\n📤 Tap this link to upload your photos:\n${uploadUrl}\n\nThe page works on any browser. You can upload as many photos as you want — fast.\n\nWhen you're done, return here and reply *UPLOADED*.\n\n_Link expires in 1 hour. Reply CANCEL to start over._`,
+
+  webUploadStillWaiting: () =>
+    `Still waiting for your upload to finish.\n\nWhen you've uploaded your photos via the link, reply *UPLOADED* here.\n\nReply *CANCEL* to start over.`,
+
+  webUploadEmpty: () =>
+    `I couldn't find any uploaded photos for this order. Did the upload finish?\n\nIf the upload is still in progress, wait for it to complete then reply *UPLOADED* again.\n\nReply *CANCEL* to start over.`,
+
+  webUploadComplete: (count: number, displayLabel: string, lineTotal: string, cartTotal: string) =>
+    `✅ Got it — ${count} photo${count === 1 ? '' : 's'} added at ${displayLabel} for *${lineTotal}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
 
   awaitingBatchUpload: (displayLabel: string, priceEach: string) =>
     `Send your photos for *${displayLabel}* — ${priceEach} each.\n\n📎 Send them as *documents* — you can select all of them at once from your gallery.\n\nI'll confirm every few as they arrive. Reply *DONE* when you're finished.\nReply *CANCEL* to start over.`,

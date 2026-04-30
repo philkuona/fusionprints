@@ -127,20 +127,23 @@ export async function createOrder(
       const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
       const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
 
-      // Create order items and print jobs
-      for (const pricedItem of quote.items) {
-        // Find the matching cart item for the image ref
-        const cartItem = context.cart.find((c) => c.sizeCode === pricedItem.sizeCode);
-        const imageRef = cartItem?.imageRef;
+      // Create order items and print jobs — iterate cart directly so each
+      // cart item (each image) becomes its own order item
+      for (let i = 0; i < context.cart.length; i++) {
+        const cartItem = context.cart[i];
+        const pricedItem = quote.items[i];
+        const imageRef = cartItem.imageRef;
+
+        // The imageRef IS the image UUID from the database (set by image-storage.storeImage)
+        // It is 'pending' only if we never received an image (shouldn't happen in real flow)
+        const imageId = imageRef && imageRef !== 'pending' ? imageRef : null;
 
         // Create the order item
         const [orderItem] = await tx
           .insert(orderItems)
           .values({
             orderId: order.id,
-            // imageId would be set here in production after image is stored in B2
-            // For now we leave it as we don't have real images yet
-            imageId: null as unknown as string, // will be set when image storage is wired up
+            imageId: imageId as unknown as string,
             productType: pricedItem.productType as 'photo_print' | 'poster',
             sizeCode: pricedItem.sizeCode,
             quantity: pricedItem.quantity,

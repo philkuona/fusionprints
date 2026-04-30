@@ -15,9 +15,9 @@ const envSchema = z.object({
   // App
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
-LOG_LEVEL: z
-  .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-  .default('warn'),
+  LOG_LEVEL: z
+    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
+    .default('debug'),
 
   // Database
   DATABASE_URL: z.string().url(),
@@ -29,6 +29,10 @@ LOG_LEVEL: z
   BUSINESS_COLLECTION_ADDRESS: z.string().default(''),
   BUSINESS_HOURS: z.string().default('Mon-Sat, 9am-6pm'),
 
+  // Public URL — used in bot messages for upload links and payment redirects
+  // In dev: ngrok URL. In production: https://fusionprints.co.zw
+  PUBLIC_URL: z.string().default('http://localhost:3000'),
+
   // WhatsApp (optional until we wire it up)
   WHATSAPP_BSP: z.string().default('360dialog'),
   WHATSAPP_API_KEY: z.string().default(''),
@@ -36,7 +40,6 @@ LOG_LEVEL: z
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().default(''),
   WHATSAPP_PHONE_NUMBER_ID: z.string().default(''),
   WHATSAPP_WABA_ID: z.string().default(''),
-  WHATSAPP_WEBHOOK_SECRET: z.string().default(''),
 
   // Payments (optional until we wire them up)
   PAYNOW_INTEGRATION_ID: z.string().default(''),

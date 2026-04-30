@@ -189,6 +189,7 @@ export const orderItems = pgTable(
       .notNull()
       .references(() => orders.id, { onDelete: 'cascade' }),
     imageId: uuid('image_id')
+      .notNull()
       .references(() => images.id),
     productType: productTypeEnum('product_type').notNull(),
     sizeCode: text('size_code').notNull(), // '4x6', '5x7', '11x14', etc.
@@ -294,3 +295,39 @@ export type NewPrinter = typeof printers.$inferInsert;
 
 export type ConversationState = typeof conversationState.$inferSelect;
 export type NewConversationState = typeof conversationState.$inferInsert;
+
+// ===== Upload Sessions =====
+
+/**
+ * Web upload sessions.
+ *
+ * When a customer chooses the bulk upload option in the bot, we generate
+ * a unique token that grants them access to a web upload page. They drag
+ * and drop their photos, which upload directly to B2. When done, they
+ * type UPLOADED in WhatsApp and the bot pulls in the images.
+ *
+ * Token is short and URL-safe. Sessions expire after 1 hour for security.
+ */
+export const uploadSessions = pgTable(
+  'upload_sessions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    token: text('token').notNull().unique(),
+    customerId: uuid('customer_id')
+      .notNull()
+      .references(() => customers.id, { onDelete: 'cascade' }),
+    sizeCode: text('size_code').notNull(), // e.g. '4x6'
+    status: text('status').notNull().default('active'), // 'active' | 'completed' | 'expired'
+    imageCount: integer('image_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    tokenIdx: uniqueIndex('upload_sessions_token_idx').on(table.token),
+    customerIdx: index('upload_sessions_customer_idx').on(table.customerId),
+  }),
+);
+
+export type UploadSession = typeof uploadSessions.$inferSelect;
+export type NewUploadSession = typeof uploadSessions.$inferInsert;

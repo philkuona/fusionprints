@@ -15,6 +15,8 @@ import { db, closeDatabase } from '@/db/client.js';
 import { sql } from 'drizzle-orm';
 import { registerWhatsAppWebhook } from '@/routes/whatsapp-webhook.js';
 import { registerAdminDashboard } from '@/routes/admin-dashboard.js';
+import { registerAgentRoutes } from '@/routes/agent-api.js';
+import { registerUploadRoutes } from '@/routes/upload.js';
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -49,6 +51,12 @@ async function main(): Promise<void> {
 
   // Register admin dashboard
   await registerAdminDashboard(app);
+
+  // Register print agent API routes
+  await registerAgentRoutes(app);
+
+  // Register web upload routes (for bulk photo uploads)
+  await registerUploadRoutes(app);
 
   // ===== Start the server =====
 

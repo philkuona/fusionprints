@@ -16,6 +16,7 @@ export type BotStep =
   | 'choosing_upload_mode'
   | 'awaiting_image'
   | 'collecting_image_batch'
+  | 'awaiting_web_upload'
   | 'choosing_quantity'
   | 'adding_more_or_checkout'
   | 'collecting_name'
@@ -56,8 +57,8 @@ export interface BotContext {
   pendingProductType?: ProductType;
   /** What size they've selected, pending image upload */
   pendingSize?: string;
-  /** Upload mode for the current item — single image with quantity, or batch */
-  uploadMode?: 'single' | 'batch';
+  /** Upload mode for the current item — single image with quantity, batch via WhatsApp, or web link */
+  uploadMode?: 'single' | 'batch' | 'web';
   /** Images collected so far in the current batch (for multi-upload mode) */
   pendingBatch?: BatchedImage[];
   /** Items confirmed and added to cart */

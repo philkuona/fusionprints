@@ -53,7 +53,9 @@ export type BotEffect =
   | { type: 'CREATE_ORDER'; quote: ReturnType<typeof calculateQuote> }
   | { type: 'INITIATE_PAYMENT'; orderNumber: string }
   | { type: 'CANCEL_ORDER'; orderNumber: string }
-  | { type: 'LOOKUP_ORDER_STATUS'; phone: string };
+  | { type: 'LOOKUP_ORDER_STATUS'; phone: string }
+  | { type: 'create_upload_link'; sizeCode: string; displayLabel: string }
+  | { type: 'resolve_web_upload' };
 
 // ===== Main handler =====
 
@@ -121,6 +123,9 @@ export function handleMessage(
 
     case 'collecting_image_batch':
       return handleCollectingImageBatch(text, message, context);
+
+    case 'awaiting_web_upload':
+      return handleAwaitingWebUpload(text, context);
 
     case 'choosing_quantity':
       return handleChoosingQuantity(text, context);
@@ -225,7 +230,7 @@ function handleChoosingUploadMode(text: string, context: BotContext): BotRespons
   const priceLabel = `$${product.unitPriceUsd.toFixed(2)}`;
 
   if (text === '1' || text === 'ONE' || text === 'SINGLE') {
-    // Single image, multiple copies path (existing flow)
+    // Single image, multiple copies path
     return reply(MSG.awaitingImage(product.displayLabel, priceLabel), 'awaiting_image', {
       ...context,
       uploadMode: 'single',
@@ -233,7 +238,7 @@ function handleChoosingUploadMode(text: string, context: BotContext): BotRespons
   }
 
   if (text === '2' || text === 'MULTIPLE' || text === 'MANY') {
-    // Multiple images, one copy each path
+    // Multiple images via WhatsApp documents
     return reply(
       MSG.awaitingBatchUpload(product.displayLabel, priceLabel),
       'collecting_image_batch',
@@ -245,11 +250,46 @@ function handleChoosingUploadMode(text: string, context: BotContext): BotRespons
     );
   }
 
+  if (text === '3' || text === 'WEB' || text === 'LINK') {
+    // Web upload via browser link — return special effect that handler will resolve
+    return {
+      replies: [],
+      nextStep: 'awaiting_web_upload',
+      nextContext: {
+        ...context,
+        uploadMode: 'web',
+      },
+      effects: [{ type: 'create_upload_link', sizeCode: product.sizeCode, displayLabel: product.displayLabel }],
+    };
+  }
+
   return reply(
     `${MSG.invalidUploadMode()}\n\n${MSG.chooseUploadMode(product.displayLabel, priceLabel)}`,
     'choosing_upload_mode',
     context,
   );
+}
+
+/**
+ * Handler for when the customer is uploading via the web link.
+ * They type UPLOADED when they're done.
+ */
+function handleAwaitingWebUpload(text: string, context: BotContext): BotResponse {
+  if (text !== 'UPLOADED' && text !== 'DONE') {
+    return reply(
+      MSG.webUploadStillWaiting(),
+      'awaiting_web_upload',
+      context,
+    );
+  }
+
+  // Return effect to resolve session images and continue
+  return {
+    replies: [],
+    nextStep: 'awaiting_web_upload',
+    nextContext: context,
+    effects: [{ type: 'resolve_web_upload' }],
+  };
 }
 
 function handleCollectingImageBatch(

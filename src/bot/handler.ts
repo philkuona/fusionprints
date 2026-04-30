@@ -88,9 +88,7 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
 
           // Generate a payment link (placeholder until payment integration is built)
           const paymentUrl = `https://pay.fusionprints.co.zw/p/${generatePaymentRef()}`;
-          const total = effect.quote.ok
-  ? Number(effect.quote.quote.totalUsd).toFixed(2)
-  : '0.00';
+          const total = effect.quote.ok ? String(effect.quote.quote.totalUsd) : '0.00';
 
           extraReplies.push(
             MSG.paymentLinkSent(orderResult.orderNumber, paymentUrl, total),
@@ -141,6 +139,86 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
           extraReplies.push(
             `New payment link for order *${effect.orderNumber}*:\n🔗 ${paymentUrl}\n\n_Link expires in 60 minutes._`,
           );
+          break;
+        }
+
+        case 'create_upload_link': {
+          // Create a web upload session for this customer
+          const { createUploadSession } = await import('@/routes/upload.js');
+          const { env } = await import('@/config/env.js');
+          const { token } = await createUploadSession(customer.id, effect.sizeCode);
+          const uploadUrl = `${env.PUBLIC_URL}/u/${token}`;
+
+          // Store token in context so we can retrieve images later
+          (response.nextContext as { _uploadToken?: string })._uploadToken = token;
+
+          // Get product price for the message
+          const { getProduct } = await import('@/config/catalog.js');
+          const product = getProduct(effect.sizeCode);
+          const priceLabel = product ? `$${product.unitPriceUsd.toFixed(2)}` : '';
+
+          extraReplies.push(MSG.awaitingWebUpload(effect.displayLabel, priceLabel, uploadUrl));
+          break;
+        }
+
+        case 'resolve_web_upload': {
+          // Pull all uploaded images from the session into the cart
+          const token = (response.nextContext as { _uploadToken?: string })._uploadToken;
+          if (!token) {
+            extraReplies.push(MSG.somethingWentWrong());
+            break;
+          }
+
+          const { getSessionImages, completeSession } = await import('@/routes/upload.js');
+          const sessionData = await getSessionImages(token);
+
+          if (!sessionData || sessionData.imageIds.length === 0) {
+            extraReplies.push(MSG.webUploadEmpty());
+            break;
+          }
+
+          const { getProduct } = await import('@/config/catalog.js');
+          const product = getProduct(sessionData.sizeCode);
+          if (!product) {
+            extraReplies.push(MSG.somethingWentWrong());
+            break;
+          }
+
+          // Add each uploaded image as a separate cart item
+          const newCart = [...response.nextContext.cart];
+          for (const imageId of sessionData.imageIds) {
+            newCart.push({
+              sizeCode: product.sizeCode,
+              displayLabel: product.displayLabel,
+              quantity: 1,
+              unitPriceUsd: product.unitPriceUsd,
+              lineTotalUsd: product.unitPriceUsd,
+              requiresManualReview: product.requiresManualReview,
+              imageRef: imageId,
+            });
+          }
+
+          response.nextContext.cart = newCart;
+          response.nextContext.pendingProductType = undefined;
+          response.nextContext.pendingSize = undefined;
+          response.nextContext.uploadMode = undefined;
+          (response.nextContext as { _uploadToken?: string })._uploadToken = undefined;
+
+          await completeSession(token);
+
+          const lineTotal = product.unitPriceUsd * sessionData.imageIds.length;
+          const cartTotal = newCart.reduce((sum, item) => sum + item.lineTotalUsd, 0);
+
+          extraReplies.push(
+            MSG.webUploadComplete(
+              sessionData.imageIds.length,
+              product.displayLabel,
+              `$${lineTotal.toFixed(2)}`,
+              `$${cartTotal.toFixed(2)}`,
+            ),
+          );
+
+          response.nextStep = 'adding_more_or_checkout';
           break;
         }
       }

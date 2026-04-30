@@ -21,6 +21,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { handleIncomingMessage } from '@/bot/handler.js';
+import { storeImage } from '@/services/image-storage.js';
 import type { IncomingMessage } from '@/bot/state-machine.js';
 
 // ===== 360dialog API sender =====
@@ -143,7 +144,11 @@ interface WebhookPayload {
  *   3. Upload to B2 storage
  *   4. Return the B2 URL and image dimensions
  */
-async function downloadWhatsAppMedia(mediaId: string): Promise<{
+async function downloadAndStoreMedia(
+  mediaId: string,
+  customerId: string,
+  isDocument: boolean,
+): Promise<{
   ref: string;
   widthPx: number;
   heightPx: number;
@@ -168,8 +173,7 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<{
       file_size: number;
     };
 
-    // Step 2: URL comes back as https://lookaside.fbsbx.com/whatsapp_business/attachments/?...
-    // Replace the hostname with 360dialog's proxy to download it
+    // Step 2: Replace Facebook CDN hostname with 360dialog proxy
     const downloadUrl = mediaInfo.url.replace(
       'https://lookaside.fbsbx.com',
       'https://waba-v2.360dialog.io',
@@ -185,21 +189,33 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<{
       return null;
     }
 
-    // Documents sent as files are NOT compressed by WhatsApp
-    // Images sent as photos ARE compressed
-    const wasCompressed = mediaInfo.mime_type === 'image/jpeg';
+    const buffer = Buffer.from(await fileResponse.arrayBuffer());
 
-    // TODO: When B2 is wired up, upload the file buffer and get real dimensions
-    return {
-      ref: `wa_media_${mediaId}`,
-      widthPx: wasCompressed ? 1200 : 3024,
-      heightPx: wasCompressed ? 1600 : 4032,
+    // Documents sent as files are NOT compressed; images sent as photos ARE compressed
+    const wasCompressed = !isDocument;
+
+    // Step 4: Store in Backblaze B2 and get real dimensions
+    const stored = await storeImage(
+      buffer,
+      customerId,
+      mediaInfo.mime_type,
       wasCompressed,
+    );
+
+    if (!stored) {
+      return null;
+    }
+
+    return {
+      ref: stored.imageId, // real database UUID now
+      widthPx: stored.widthPx,
+      heightPx: stored.heightPx,
+      wasCompressed: stored.wasCompressed,
       mimeType: mediaInfo.mime_type,
     };
 
   } catch (err) {
-    logger.error({ err, mediaId }, 'Error downloading WhatsApp media');
+    logger.error({ err, mediaId }, 'Error downloading/storing WhatsApp media');
     return null;
   }
 }
@@ -290,7 +306,11 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
               } else if (waMessage.type === 'document') {
                 // Document = sent as file = NOT compressed = good quality
                 const docMsg = waMessage as WhatsAppDocumentMessage & { from: string };
-                const mediaData = await downloadWhatsAppMedia(docMsg.document.id);
+                const mediaData = await downloadAndStoreMedia(
+                  docMsg.document.id,
+                  '', // customerId resolved inside handler — placeholder for now
+                  true, // isDocument = true, not compressed
+                );
 
                 if (!mediaData) {
                   await sendWhatsAppMessage(
@@ -305,7 +325,7 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
                   image: {
                     widthPx: mediaData.widthPx,
                     heightPx: mediaData.heightPx,
-                    wasCompressed: false, // documents are never compressed
+                    wasCompressed: false,
                     ref: mediaData.ref,
                   },
                 };
@@ -313,7 +333,11 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
               } else if (waMessage.type === 'image') {
                 // Image = sent as photo = compressed by WhatsApp
                 const imgMsg = waMessage as WhatsAppImageMessage & { from: string };
-                const mediaData = await downloadWhatsAppMedia(imgMsg.image.id);
+                const mediaData = await downloadAndStoreMedia(
+                  imgMsg.image.id,
+                  '', // customerId resolved inside handler
+                  false, // isDocument = false, compressed
+                );
 
                 if (!mediaData) {
                   await sendWhatsAppMessage(
@@ -328,7 +352,7 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
                   image: {
                     widthPx: mediaData.widthPx,
                     heightPx: mediaData.heightPx,
-                    wasCompressed: true, // images sent as photos are always compressed
+                    wasCompressed: true,
                     ref: mediaData.ref,
                   },
                 };

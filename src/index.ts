@@ -14,6 +14,7 @@ import { logger } from '@/utils/logger.js';
 import { db, closeDatabase } from '@/db/client.js';
 import { sql } from 'drizzle-orm';
 import { registerWhatsAppWebhook } from '@/routes/whatsapp-webhook.js';
+import { registerAdminDashboard } from '@/routes/admin-dashboard.js';
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -45,6 +46,9 @@ async function main(): Promise<void> {
 
   // Register WhatsApp webhook routes
   await registerWhatsAppWebhook(app);
+
+  // Register admin dashboard
+  await registerAdminDashboard(app);
 
   // ===== Start the server =====
 

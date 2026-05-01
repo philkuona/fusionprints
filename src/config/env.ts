@@ -71,6 +71,11 @@ const envSchema = z.object({
   MAGETSI_API_KEY: z.string().default(''),
   STRIPE_SECRET_KEY: z.string().default(''),
   STRIPE_WEBHOOK_SECRET: z.string().default(''),
+
+  // Webhook authentication (HTTP Basic auth on /webhook/whatsapp)
+  // Set both to enable; leave blank to disable auth (dev only)
+  WHATSAPP_WEBHOOK_USER: z.string().default(''),
+  WHATSAPP_WEBHOOK_PASS: z.string().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);

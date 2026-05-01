@@ -325,10 +325,31 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
    *
    * Incoming messages from customers (and status updates).
    * Must respond with 200 quickly — processing happens async.
+   *
+   * Authentication: 360dialog sends webhooks with HTTP Basic auth credentials
+   * configured in their Hub. We require these to match what's set in the env.
+   * If WHATSAPP_WEBHOOK_USER/PASS are unset, auth is skipped (dev mode).
    */
   app.post(
     '/webhook/whatsapp',
     async (request: FastifyRequest, reply: FastifyReply) => {
+      // Verify Basic auth if credentials are configured
+      if (env.WHATSAPP_WEBHOOK_USER && env.WHATSAPP_WEBHOOK_PASS) {
+        const authHeader = request.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Basic ')) {
+          logger.warn({ ip: request.ip }, 'Webhook rejected — missing Basic auth');
+          reply.status(401).send({ error: 'Unauthorized' });
+          return;
+        }
+        const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
+        const [user, pass] = decoded.split(':');
+        if (user !== env.WHATSAPP_WEBHOOK_USER || pass !== env.WHATSAPP_WEBHOOK_PASS) {
+          logger.warn({ ip: request.ip, user }, 'Webhook rejected — invalid Basic auth');
+          reply.status(401).send({ error: 'Unauthorized' });
+          return;
+        }
+      }
+
       // Always respond 200 immediately — 360dialog will retry if we don't
       reply.status(200).send({ status: 'ok' });
 

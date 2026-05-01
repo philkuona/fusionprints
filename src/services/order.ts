@@ -127,15 +127,14 @@ export async function createOrder(
       const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
       const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
 
-      // Create order items and print jobs — iterate cart directly so each
-      // cart item (each image) becomes its own order item
-      for (let i = 0; i < context.cart.length; i++) {
-        const cartItem = context.cart[i];
-        const pricedItem = quote.items[i];
-        const imageRef = cartItem.imageRef;
+      // Create order items and print jobs
+      for (const pricedItem of quote.items) {
+        // Find the matching cart item for the image ref
+        const cartItem = context.cart.find((c) => c.sizeCode === pricedItem.sizeCode);
+        const imageRef = cartItem?.imageRef;
 
         // The imageRef IS the image UUID from the database (set by image-storage.storeImage)
-        // It is 'pending' only if we never received an image (shouldn't happen in real flow)
+        // It looks like 'pending' only if we never received an image (shouldn't happen in real flow)
         const imageId = imageRef && imageRef !== 'pending' ? imageRef : null;
 
         // Create the order item
@@ -159,14 +158,13 @@ export async function createOrder(
         );
         const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;
 
-        // Create the print job in awaiting_approval state.
-        // Jobs only become 'queued' (eligible for the print agent to pick up)
-        // when payment is confirmed via markOrderPaid().
-        // Posters explicitly need manual review even after payment.
+        // Create the print job
+        const jobStatus = pricedItem.requiresManualReview ? 'awaiting_approval' : 'queued';
+
         await tx.insert(printJobs).values({
           orderItemId: orderItem.id,
           printerId: assignedPrinter?.id ?? null,
-          status: 'awaiting_approval',
+          status: jobStatus,
         });
       }
 
@@ -193,29 +191,13 @@ export async function markOrderPaid(
   orderNumber: string,
   paymentReference: string,
 ): Promise<void> {
-  // Use a transaction so the order status and print job statuses move together
-  await db.transaction(async (tx) => {
-    const [order] = await tx
-      .update(orders)
-      .set({ status: 'paid', paidAt: new Date() })
-      .where(eq(orders.orderNumber, orderNumber))
-      .returning({ id: orders.id });
-
-    if (!order) return;
-
-    // Release print jobs to the agent queue.
-    // Posters (requires_manual_review=true) stay in awaiting_approval — admin
-    // must still approve them before they print.
-    await tx.execute(sql`
-      UPDATE print_jobs SET status = 'queued'
-      WHERE status = 'awaiting_approval'
-        AND order_item_id IN (
-          SELECT oi.id FROM order_items oi
-          WHERE oi.order_id = ${order.id}
-            AND oi.requires_manual_review = false
-        )
-    `);
-  });
+  await db
+    .update(orders)
+    .set({
+      status: 'paid',
+      paidAt: new Date(),
+    })
+    .where(eq(orders.orderNumber, orderNumber));
 
   logger.info({ orderNumber, paymentReference }, 'Order marked as paid');
 }
@@ -260,4 +242,17 @@ export async function getRecentOrders(customerId: string): Promise<Order[]> {
     .where(eq(orders.customerId, customerId))
     .orderBy(desc(orders.createdAt))
     .limit(5);
+}
+
+/**
+ * Look up a single order by its public order number (e.g. "FP-2026-0042").
+ * Returns null if not found.
+ */
+export async function getOrderByNumber(orderNumber: string): Promise<Order | null> {
+  const [order] = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.orderNumber, orderNumber))
+    .limit(1);
+  return order ?? null;
 }

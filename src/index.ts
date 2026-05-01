@@ -16,6 +16,7 @@ import { sql } from 'drizzle-orm';
 import { registerWhatsAppWebhook } from '@/routes/whatsapp-webhook.js';
 import { registerAdminDashboard } from '@/routes/admin-dashboard.js';
 import { registerAdminOps } from '@/routes/admin-ops.js';
+import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
 import { registerAgentRoutes } from '@/routes/agent-api.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
 
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
   // Register admin dashboard
   await registerAdminDashboard(app);
   await registerAdminOps(app);
+  await registerPaymentWebhooks(app);
 
   // Register print agent API routes
   await registerAgentRoutes(app);

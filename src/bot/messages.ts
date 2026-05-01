@@ -256,6 +256,44 @@ export const MSG = {
 
   // ===== Payment =====
 
+  /** Show after order created — let customer choose payment method */
+  choosePaymentMethod: (orderNumber: string, totalUsd: string) =>
+    `*Order ${orderNumber}* created — total *$${totalUsd}*\n\nHow would you like to pay?`,
+
+  /** Interactive button payload for payment method choice */
+  choosePaymentMethodButtons: () => ({
+    body: `Choose your payment method:`,
+    buttons: [
+      { id: 'PAY_ECOCASH', title: '📱 EcoCash' },
+      { id: 'PAY_CARD', title: '💳 Card' },
+    ],
+  }),
+
+  /** Asking for the EcoCash mobile number */
+  askEcocashNumber: () =>
+    `Send your EcoCash number (must be EcoNet — 077 or 078).\n\nExample: \`0771234567\``,
+
+  /** Validation failure — wrong network */
+  ecocashWrongNetwork: () =>
+    `That number isn't on EcoNet — EcoCash only works with EcoNet numbers (077 or 078).\n\nWant to:\n1. Try a different number\n2. Pay by card instead`,
+
+  /** Validation failure — invalid format */
+  ecocashInvalidFormat: () =>
+    `That doesn't look like a Zimbabwean mobile number. Send it in the format:\n\n\`0771234567\` or \`+263771234567\``,
+
+  /** EcoCash request sent — waiting for PIN */
+  ecocashWaiting: (number: string) =>
+    `📱 Sending payment request to *${number}*...\n\nA prompt will pop up on your phone asking for your EcoCash PIN. Enter it to complete payment.\n\n⏳ _Waiting for confirmation..._`,
+
+  /** EcoCash timeout (after 2 min) */
+  ecocashTimeout: (orderNumber: string) =>
+    `⏰ Didn't receive your EcoCash PIN.\n\nOrder *${orderNumber}* is still saved. Want to:\n\n1. Try EcoCash again\n2. Pay by card\n3. Cancel order`,
+
+  /** Card payment link */
+  cardPaymentLink: (orderNumber: string, paymentUrl: string, totalUsd: string) =>
+    `💳 Tap to pay $${totalUsd} for order *${orderNumber}*:\n\n🔗 ${paymentUrl}\n\nYou'll be confirmed automatically once payment is complete.\n\n_Link expires in 60 minutes._`,
+
+  /** Generic — kept for backwards compatibility (unused now) */
   paymentLinkSent: (orderNumber: string, paymentUrl: string, totalUsd: string) =>
     `Here's your payment link:\n🔗 ${paymentUrl}\n\nPays via card or EcoCash. You'll get a confirmation here once payment goes through.\n\n*Order #:* ${orderNumber}\n*Amount:* $${totalUsd}\n\n_Link expires in 60 minutes._`,
 

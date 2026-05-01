@@ -64,6 +64,13 @@ const envSchema = z.object({
   ADMIN_SESSION_SECRET: z.string().default(''),
   ADMIN_USERNAME: z.string().default('admin'),
   ADMIN_PASSWORD: z.string().default('changeme'),
+
+  // Payment providers
+  PAYMENT_PROVIDER: z.enum(['stub', 'magetsi', 'stripe']).default('stub'),
+  MAGETSI_API_BASE: z.string().default(''),
+  MAGETSI_API_KEY: z.string().default(''),
+  STRIPE_SECRET_KEY: z.string().default(''),
+  STRIPE_WEBHOOK_SECRET: z.string().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);

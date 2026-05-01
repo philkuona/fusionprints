@@ -23,6 +23,9 @@ export type BotStep =
   | 'choosing_fulfillment'
   | 'collecting_address'
   | 'confirming_order'
+  | 'choosing_payment_method'
+  | 'entering_ecocash_number'
+  | 'awaiting_ecocash_pin'
   | 'awaiting_payment'
   | 'order_complete';
 
@@ -71,6 +74,10 @@ export interface BotContext {
   deliveryAddress?: string;
   /** Order number once created */
   orderNumber?: string;
+  /** Payment method chosen at checkout */
+  paymentMethod?: 'ecocash' | 'card';
+  /** Customer's EcoCash mobile number (normalized to +263...) */
+  ecocashNumber?: string;
   /** Whether customer has chosen to use a compressed image anyway */
   acceptedCompressedImage?: boolean;
   /** Previous step — used by the BACK keyword to navigate one step back */

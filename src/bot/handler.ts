@@ -83,19 +83,21 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
 
           await touchCustomerLastOrder(customer.id);
 
-          // Store order number in context for payment retry etc.
+          // Store order number in context for payment flow
           response.nextContext.orderNumber = orderResult.orderNumber;
 
-          // Generate a payment link (placeholder until payment integration is built)
-          const paymentUrl = `https://pay.fusionprints.co.zw/p/${generatePaymentRef()}`;
           const total = effect.quote.ok ? String(effect.quote.quote.totalUsd) : '0.00';
 
-          extraReplies.push(
-            MSG.paymentLinkSent(orderResult.orderNumber, paymentUrl, total),
-          );
+          // Tell the customer their order is created and ask how they want to pay
+          extraReplies.push({
+            text: MSG.choosePaymentMethod(orderResult.orderNumber, total),
+            buttons: [
+              { id: 'PAY_ECOCASH', title: '📱 EcoCash' },
+              { id: 'PAY_CARD', title: '💳 Card' },
+            ],
+          });
 
-          // Update the step to awaiting_payment
-          response.nextStep = 'awaiting_payment';
+          // Step is already set to choosing_payment_method by the state machine
           break;
         }
 
@@ -120,6 +122,7 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
                 queued_for_print: 'in the print queue',
                 printing: 'printing now',
                 ready_for_collection: '✅ ready to collect!',
+                shipped: '🚚 on its way to you',
                 fulfilled: 'collected — complete',
                 cancelled: 'cancelled',
                 failed: 'failed — please contact us',
@@ -134,11 +137,47 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
         }
 
         case 'INITIATE_PAYMENT': {
-          // Retry payment link
+          // Legacy: retry generic payment link (kept for backwards compat)
           const paymentUrl = `https://pay.fusionprints.co.zw/p/${generatePaymentRef()}`;
           extraReplies.push(
             `New payment link for order *${effect.orderNumber}*:\n🔗 ${paymentUrl}\n\n_Link expires in 60 minutes._`,
           );
+          break;
+        }
+
+        case 'INITIATE_CARD_PAYMENT': {
+          // Get the order total for the message
+          const { getOrderByNumber } = await import('@/services/order.js');
+          const order = await getOrderByNumber(effect.orderNumber);
+          const total = order ? String(order.totalUsd) : '0.00';
+
+          // Generate a card payment link.
+          // TODO: replace with real Stripe Checkout session creation
+          const paymentUrl = `https://pay.fusionprints.co.zw/p/${generatePaymentRef()}`;
+
+          extraReplies.push(
+            MSG.cardPaymentLink(effect.orderNumber, paymentUrl, total),
+          );
+          break;
+        }
+
+        case 'INITIATE_ECOCASH_PAYMENT': {
+          // Initiate the EcoCash USSD push via the payment provider (Magetsi).
+          // For now this is a stub — once Magetsi API details are available we
+          // POST to their endpoint here. The customer's PIN entry is confirmed
+          // via the /webhook/payment/ecocash callback, which calls markOrderPaid.
+          const { initiateEcocashPayment } = await import('@/services/payment.js');
+          const success = await initiateEcocashPayment({
+            orderNumber: effect.orderNumber,
+            ecocashNumber: effect.ecocashNumber,
+          });
+
+          if (!success) {
+            extraReplies.push(
+              `⚠️ Couldn't reach EcoCash right now. Reply *1* to try again, *2* to switch to card, or *3* to cancel.`,
+            );
+          }
+          // On success, the bot already showed "waiting" message; nothing to add
           break;
         }
 

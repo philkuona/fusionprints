@@ -19,6 +19,7 @@
 import { PHOTO_PRODUCTS, POSTER_PRODUCTS, getProduct } from '@/config/catalog.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { validateImage } from '@/services/image-validation.js';
+import { isEcocashCapable } from '@/utils/phone.js';
 import { MSG } from './messages.js';
 import type { BotStep, BotContext, CartItem, FulfillmentMethod } from './types.js';
 import { emptyContext } from './types.js';
@@ -74,7 +75,9 @@ export interface BotResponse {
 export type BotEffect =
   | { type: 'CREATE_ORDER'; quote: ReturnType<typeof calculateQuote> }
   | { type: 'INITIATE_PAYMENT'; orderNumber: string }
-  | { type: 'CANCEL_ORDER'; orderNumber: string }
+  | { type: 'INITIATE_CARD_PAYMENT'; orderNumber: string }
+  | { type: 'INITIATE_ECOCASH_PAYMENT'; orderNumber: string; ecocashNumber: string }
+  | { type: 'CANCEL_ORDER'; orderNumber: string | undefined }
   | { type: 'LOOKUP_ORDER_STATUS'; phone: string }
   | { type: 'create_upload_link'; sizeCode: string; displayLabel: string }
   | { type: 'resolve_web_upload' };
@@ -170,6 +173,15 @@ export function handleMessage(
 
     case 'confirming_order':
       return handleConfirmingOrder(text, context);
+
+    case 'choosing_payment_method':
+      return handleChoosingPaymentMethod(text, context);
+
+    case 'entering_ecocash_number':
+      return handleEnteringEcocashNumber(text, context);
+
+    case 'awaiting_ecocash_pin':
+      return handleAwaitingEcocashPin(text, context);
 
     case 'awaiting_payment':
       return handleAwaitingPayment(text, context);
@@ -304,6 +316,16 @@ function handleBack(
         MSG.chooseFulfillmentInteractive(customer?.name ?? 'there'),
         'choosing_fulfillment',
         { ...context, fulfillmentMethod: undefined },
+      );
+
+    case 'choosing_payment_method':
+    case 'entering_ecocash_number':
+    case 'awaiting_ecocash_pin':
+      // Order has already been created — destructive
+      return reply(
+        `Order *${context.orderNumber}* has been created.\n\nReply *CANCEL* to cancel the order and start over.`,
+        step,
+        context,
       );
 
     case 'awaiting_payment':
@@ -666,8 +688,7 @@ function handleAwaitingImage(
     return reply(MSG.imageWasCompressed(), 'awaiting_image', {
       ...context,
       acceptedCompressedImage: false,
-      _pendingImageRef: ref,
-    } as BotContext & { _pendingImageRef: string });
+    });
   }
 
   const validation = validateImage(widthPx, heightPx, sizeCode, false);
@@ -682,7 +703,7 @@ function handleAwaitingImage(
         product.minResolution.height,
       ),
       'awaiting_image',
-      { ...context, acceptedCompressedImage: false, _pendingImageRef: ref } as BotContext & { _pendingImageRef: string },
+      { ...context, acceptedCompressedImage: false },
     );
   }
 
@@ -695,7 +716,7 @@ function handleAwaitingImage(
         product.recommendedResolution.height,
       ),
       'awaiting_image',
-      { ...context, acceptedCompressedImage: false, _pendingImageRef: ref } as BotContext & { _pendingImageRef: string },
+      { ...context, acceptedCompressedImage: false },
     );
   }
 
@@ -884,7 +905,7 @@ function handleConfirmingOrder(text: string, context: BotContext): BotResponse {
 
     return {
       replies: [`⏳ Creating your order...`],
-      nextStep: 'awaiting_payment',
+      nextStep: 'choosing_payment_method',
       nextContext: context,
       effects: quoteResult.ok
         ? [{ type: 'CREATE_ORDER', quote: quoteResult }]
@@ -903,6 +924,139 @@ function handleConfirmingOrder(text: string, context: BotContext): BotResponse {
 
   // Re-show the summary
   return buildOrderSummary(context);
+}
+
+function handleChoosingPaymentMethod(text: string, context: BotContext): BotResponse {
+  if (text === 'PAY_ECOCASH' || text === 'ECOCASH' || text === '1') {
+    return reply(MSG.askEcocashNumber(), 'entering_ecocash_number', {
+      ...context,
+      paymentMethod: 'ecocash',
+    });
+  }
+
+  if (text === 'PAY_CARD' || text === 'CARD' || text === '2') {
+    if (!context.orderNumber) {
+      return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+    }
+    // Trigger card payment link generation via effect
+    return {
+      replies: [`💳 Generating payment link...`],
+      nextStep: 'awaiting_payment',
+      nextContext: { ...context, paymentMethod: 'card' },
+      effects: [{ type: 'INITIATE_CARD_PAYMENT', orderNumber: context.orderNumber }],
+    };
+  }
+
+  if (text === 'CANCEL') {
+    return {
+      replies: [MSG.orderCancelled()],
+      nextStep: 'idle',
+      nextContext: emptyContext(),
+      effects: [{ type: 'CANCEL_ORDER', orderNumber: context.orderNumber }],
+    };
+  }
+
+  // Re-show the choice
+  return reply(
+    MSG.choosePaymentMethod(context.orderNumber ?? '', '0.00'),
+    'choosing_payment_method',
+    context,
+  );
+}
+
+function handleEnteringEcocashNumber(text: string, context: BotContext): BotResponse {
+  // Customer responded to "wrong network" prompt
+  if (text === '2' && context.paymentMethod === 'ecocash') {
+    // Switch to card
+    if (!context.orderNumber) {
+      return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+    }
+    return {
+      replies: [`💳 Switching to card payment...`],
+      nextStep: 'awaiting_payment',
+      nextContext: { ...context, paymentMethod: 'card' },
+      effects: [{ type: 'INITIATE_CARD_PAYMENT', orderNumber: context.orderNumber }],
+    };
+  }
+
+  // Try to parse the input as an EcoCash number
+  const result = isEcocashCapable(text);
+
+  if (!result.ok) {
+    if (result.reason === 'wrong_network') {
+      return reply(MSG.ecocashWrongNetwork(), 'entering_ecocash_number', context);
+    }
+    return reply(MSG.ecocashInvalidFormat(), 'entering_ecocash_number', context);
+  }
+
+  // Number is valid EcoNet — initiate the EcoCash payment
+  if (!context.orderNumber) {
+    return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+  }
+
+  return {
+    replies: [MSG.ecocashWaiting(result.number)],
+    nextStep: 'awaiting_ecocash_pin',
+    nextContext: { ...context, ecocashNumber: result.number },
+    effects: [
+      {
+        type: 'INITIATE_ECOCASH_PAYMENT',
+        orderNumber: context.orderNumber,
+        ecocashNumber: result.number,
+      },
+    ],
+  };
+}
+
+function handleAwaitingEcocashPin(text: string, context: BotContext): BotResponse {
+  // Customer responded to timeout prompt
+  if (text === '1') {
+    // Try EcoCash again with same number
+    if (!context.orderNumber || !context.ecocashNumber) {
+      return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+    }
+    return {
+      replies: [MSG.ecocashWaiting(context.ecocashNumber)],
+      nextStep: 'awaiting_ecocash_pin',
+      nextContext: context,
+      effects: [
+        {
+          type: 'INITIATE_ECOCASH_PAYMENT',
+          orderNumber: context.orderNumber,
+          ecocashNumber: context.ecocashNumber,
+        },
+      ],
+    };
+  }
+
+  if (text === '2') {
+    // Switch to card
+    if (!context.orderNumber) {
+      return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+    }
+    return {
+      replies: [`💳 Switching to card payment...`],
+      nextStep: 'awaiting_payment',
+      nextContext: { ...context, paymentMethod: 'card' },
+      effects: [{ type: 'INITIATE_CARD_PAYMENT', orderNumber: context.orderNumber }],
+    };
+  }
+
+  if (text === '3' || text === 'CANCEL') {
+    return {
+      replies: [MSG.orderCancelled()],
+      nextStep: 'idle',
+      nextContext: emptyContext(),
+      effects: [{ type: 'CANCEL_ORDER', orderNumber: context.orderNumber }],
+    };
+  }
+
+  // Customer typed something else while waiting — ack
+  return reply(
+    `⏳ Still waiting for your EcoCash PIN...\n\nIf the prompt didn't arrive, you can:\n1. Try again\n2. Pay by card\n3. Cancel`,
+    'awaiting_ecocash_pin',
+    context,
+  );
 }
 
 function handleAwaitingPayment(text: string, context: BotContext): BotResponse {

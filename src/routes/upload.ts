@@ -142,7 +142,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     .brand-logo svg { display: block; }
     .session-tag {
       font-family: 'DM Mono', monospace;
-      font-size: 10px;
+      font-size: 12px;
       color: var(--ink-mute);
       text-transform: uppercase;
       letter-spacing: 0.1em;
@@ -152,7 +152,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     .hero { margin-bottom: 32px; }
     .hero-eyebrow {
       font-family: 'DM Mono', monospace;
-      font-size: 11px;
+      font-size: 13px;
       color: var(--malachite-deep);
       text-transform: uppercase;
       letter-spacing: 0.12em;
@@ -160,7 +160,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
     .hero-title {
       font-family: 'Fraunces', serif;
-      font-size: clamp(32px, 7vw, 44px);
+      font-size: clamp(34px, 7vw, 48px);
       font-weight: 500;
       line-height: 1.05;
       letter-spacing: -0.02em;
@@ -173,7 +173,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
       font-weight: 400;
     }
     .hero-sub {
-      font-size: 16px;
+      font-size: 17px;
       color: var(--ink-soft);
       line-height: 1.5;
       max-width: 480px;
@@ -204,7 +204,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     .order-meta { flex: 1; min-width: 0; }
     .order-meta-label {
       font-family: 'DM Mono', monospace;
-      font-size: 10px;
+      font-size: 12px;
       color: var(--ink-mute);
       text-transform: uppercase;
       letter-spacing: 0.1em;
@@ -212,7 +212,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
     .order-meta-value {
       font-family: 'Fraunces', serif;
-      font-size: 17px;
+      font-size: 19px;
       font-weight: 500;
       color: var(--ink);
     }
@@ -246,13 +246,13 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     .drop-icon-wrap svg { width: 28px; height: 28px; color: white; }
     .drop-title {
       font-family: 'Fraunces', serif;
-      font-size: 20px;
+      font-size: 22px;
       font-weight: 500;
       color: var(--ink);
       margin-bottom: 4px;
     }
     .drop-sub {
-      font-size: 13px;
+      font-size: 15px;
       color: var(--ink-soft);
       margin-bottom: 16px;
     }
@@ -263,11 +263,11 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
       background: var(--ink);
       color: var(--bg);
       border: none;
-      padding: 11px 22px;
+      padding: 13px 24px;
       border-radius: 999px;
       font-family: 'Outfit', sans-serif;
       font-weight: 500;
-      font-size: 14px;
+      font-size: 16px;
       cursor: pointer;
       transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
@@ -285,13 +285,13 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
     .section-title {
       font-family: 'Fraunces', serif;
-      font-size: 17px;
+      font-size: 19px;
       font-weight: 500;
       color: var(--ink);
     }
     .section-count {
       font-family: 'DM Mono', monospace;
-      font-size: 12px;
+      font-size: 13px;
       color: var(--ink-mute);
     }
 
@@ -318,7 +318,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
     .file-info { min-width: 0; }
     .file-name {
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 500;
       color: var(--ink);
       white-space: nowrap;
@@ -327,7 +327,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
     .file-size {
       font-family: 'DM Mono', monospace;
-      font-size: 11px;
+      font-size: 13px;
       color: var(--ink-mute);
       margin-top: 2px;
     }
@@ -349,7 +349,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
     .file-status {
       font-family: 'DM Mono', monospace;
-      font-size: 11px;
+      font-size: 12px;
       letter-spacing: 0.04em;
     }
     .file-status.uploading { color: var(--ink-mute); }
@@ -362,9 +362,9 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
       background: var(--paper);
       border: 1px solid var(--line);
       border-radius: 12px;
-      padding: 14px 18px;
+      padding: 16px 20px;
       margin-bottom: 24px;
-      font-size: 14px;
+      font-size: 16px;
       color: var(--ink-soft);
     }
     .progress-summary .progress-count {
@@ -385,7 +385,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
     .summary-meta {
       font-family: 'DM Mono', monospace;
-      font-size: 11px;
+      font-size: 13px;
       color: var(--malachite);
       text-transform: uppercase;
       letter-spacing: 0.1em;
@@ -393,13 +393,13 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
     .summary-title {
       font-family: 'Fraunces', serif;
-      font-size: 22px;
+      font-size: 26px;
       font-weight: 500;
       color: var(--bg);
       margin-bottom: 8px;
     }
     .summary-text {
-      font-size: 14px;
+      font-size: 16px;
       color: rgba(251, 247, 240, 0.8);
       margin-bottom: 16px;
       line-height: 1.5;
@@ -411,11 +411,11 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
       background: var(--malachite);
       color: var(--ink);
       border: none;
-      padding: 12px 22px;
+      padding: 14px 26px;
       border-radius: 999px;
       font-family: 'Outfit', sans-serif;
       font-weight: 600;
-      font-size: 14px;
+      font-size: 16px;
       cursor: pointer;
       text-decoration: none;
       transition: transform 0.15s ease;
@@ -427,7 +427,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
       text-align: center;
       margin-top: 32px;
       font-family: 'DM Mono', monospace;
-      font-size: 11px;
+      font-size: 13px;
       color: var(--ink-mute);
       letter-spacing: 0.04em;
     }
@@ -439,7 +439,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     .footer-tagline {
       font-family: 'Fraunces', serif;
       font-style: italic;
-      font-size: 13px;
+      font-size: 15px;
       color: var(--ink-soft);
       margin-bottom: 8px;
     }
@@ -449,7 +449,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
   <div class="page">
     <header>
       <div class="brand-logo">
-        <svg width="180" height="36" viewBox="0 0 280 60" xmlns="http://www.w3.org/2000/svg">
+        <svg width="240" height="52" viewBox="0 0 280 60" xmlns="http://www.w3.org/2000/svg">
           <g transform="translate(0,6)">
             <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="#1F1B16"/>
             <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="#05D668"/>

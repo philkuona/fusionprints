@@ -159,13 +159,14 @@ export async function createOrder(
         );
         const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;
 
-        // Create the print job
-        const jobStatus = pricedItem.requiresManualReview ? 'awaiting_approval' : 'queued';
-
+        // Create the print job in awaiting_approval state.
+        // Jobs only become 'queued' (eligible for the print agent to pick up)
+        // when payment is confirmed via markOrderPaid().
+        // Posters explicitly need manual review even after payment.
         await tx.insert(printJobs).values({
           orderItemId: orderItem.id,
           printerId: assignedPrinter?.id ?? null,
-          status: jobStatus,
+          status: 'awaiting_approval',
         });
       }
 
@@ -192,13 +193,29 @@ export async function markOrderPaid(
   orderNumber: string,
   paymentReference: string,
 ): Promise<void> {
-  await db
-    .update(orders)
-    .set({
-      status: 'paid',
-      paidAt: new Date(),
-    })
-    .where(eq(orders.orderNumber, orderNumber));
+  // Use a transaction so the order status and print job statuses move together
+  await db.transaction(async (tx) => {
+    const [order] = await tx
+      .update(orders)
+      .set({ status: 'paid', paidAt: new Date() })
+      .where(eq(orders.orderNumber, orderNumber))
+      .returning({ id: orders.id });
+
+    if (!order) return;
+
+    // Release print jobs to the agent queue.
+    // Posters (requires_manual_review=true) stay in awaiting_approval — admin
+    // must still approve them before they print.
+    await tx.execute(sql`
+      UPDATE print_jobs SET status = 'queued'
+      WHERE status = 'awaiting_approval'
+        AND order_item_id IN (
+          SELECT oi.id FROM order_items oi
+          WHERE oi.order_id = ${order.id}
+            AND oi.requires_manual_review = false
+        )
+    `);
+  });
 
   logger.info({ orderNumber, paymentReference }, 'Order marked as paid');
 }

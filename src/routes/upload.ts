@@ -71,288 +71,448 @@ async function getSession(token: string) {
 
 // ===== Upload page HTML =====
 
+// ===== Upload page HTML =====
+
 function uploadPageHtml(token: string, sizeCode: string, businessPhone: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Upload your photos — FusionPrints</title>
+  <title>Upload your photos · FusionPrints</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=DM+Sans:wght@400;500;600&display=swap');
-
     :root {
-      --bg: #0a0a0a;
-      --surface: #141414;
-      --surface2: #1e1e1e;
-      --border: #2a2a2a;
-      --text: #f0f0f0;
-      --text2: #888;
-      --accent: #f97316;
-      --green: #22c55e;
-      --red: #ef4444;
+      --bg: #FBF7F0;
+      --bg-2: #F4ECDD;
+      --ink: #1F1B16;
+      --ink-soft: #4A3F32;
+      --ink-mute: #8A7B66;
+      --line: rgba(31, 27, 22, 0.10);
+      --line-soft: rgba(31, 27, 22, 0.06);
+      --malachite: #05D668;
+      --malachite-deep: #04A551;
+      --coral: #FF7A59;
+      --amber: #EFAB11;
+      --paper: #FFFFFF;
+      --shadow-soft: 0 1px 3px rgba(31, 27, 22, 0.04), 0 8px 24px rgba(31, 27, 22, 0.04);
+      --shadow-warm: 0 2px 8px rgba(255, 122, 89, 0.08), 0 16px 40px rgba(31, 27, 22, 0.08);
+      --red: #C0392B;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'DM Sans', sans-serif;
+    html, body {
       background: var(--bg);
-      color: var(--text);
+      color: var(--ink);
+      font-family: 'Outfit', -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
       min-height: 100vh;
-      padding: 16px;
     }
 
-    .container {
+    /* Subtle paper-grain ambience */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(239, 171, 17, 0.04) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(255, 122, 89, 0.04) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
       max-width: 720px;
       margin: 0 auto;
+      padding: 32px 20px 48px;
     }
 
+    /* Header */
     header {
-      padding: 16px 0 24px;
-      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 36px;
     }
-
-    .logo {
+    .brand-logo { display: flex; align-items: center; gap: 0; }
+    .brand-logo svg { display: block; }
+    .session-tag {
       font-family: 'DM Mono', monospace;
-      font-size: 18px;
-      color: var(--accent);
-      letter-spacing: -0.5px;
-    }
-    .logo span { color: var(--text2); }
-
-    h1 {
-      font-size: 22px;
-      font-weight: 600;
-      margin-top: 16px;
-      margin-bottom: 8px;
+      font-size: 10px;
+      color: var(--ink-mute);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
     }
 
-    .subtitle {
-      color: var(--text2);
-      font-size: 14px;
+    /* Hero */
+    .hero { margin-bottom: 32px; }
+    .hero-eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--malachite-deep);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 12px;
+    }
+    .hero-title {
+      font-family: 'Fraunces', serif;
+      font-size: clamp(32px, 7vw, 44px);
+      font-weight: 500;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      margin-bottom: 14px;
+    }
+    .hero-title em {
+      font-style: italic;
+      color: var(--coral);
+      font-weight: 400;
+    }
+    .hero-sub {
+      font-size: 16px;
+      color: var(--ink-soft);
+      line-height: 1.5;
+      max-width: 480px;
+    }
+
+    /* Order card */
+    .order-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .order-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--bg-2);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .order-meta { flex: 1; min-width: 0; }
+    .order-meta-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--ink-mute);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 2px;
+    }
+    .order-meta-value {
+      font-family: 'Fraunces', serif;
+      font-size: 17px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      background: var(--paper);
+      border: 2px dashed rgba(5, 214, 104, 0.35);
+      border-radius: 18px;
+      padding: 44px 20px;
+      text-align: center;
+      transition: all 0.2s ease;
+      cursor: pointer;
       margin-bottom: 24px;
     }
-
-    .size-badge {
-      display: inline-block;
-      background: var(--surface2);
-      border: 1px solid var(--accent);
-      color: var(--accent);
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      font-family: 'DM Mono', monospace;
-    }
-
-    .drop-zone {
-      border: 2px dashed var(--border);
-      border-radius: 12px;
-      padding: 48px 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.15s;
-      background: var(--surface);
-    }
-
     .drop-zone:hover, .drop-zone.dragging {
-      border-color: var(--accent);
-      background: var(--surface2);
+      border-color: var(--malachite-deep);
+      background: linear-gradient(180deg, var(--paper) 0%, rgba(5, 214, 104, 0.03) 100%);
     }
-
-    .drop-zone-icon {
-      font-size: 48px;
-      margin-bottom: 12px;
-    }
-
-    .drop-zone-text {
-      font-size: 16px;
-      font-weight: 500;
-      margin-bottom: 6px;
-    }
-
-    .drop-zone-hint {
-      color: var(--text2);
-      font-size: 13px;
-    }
-
-    #file-input {
-      display: none;
-    }
-
-    .files-list {
-      margin-top: 24px;
-    }
-
-    .files-header {
+    .drop-icon-wrap {
+      width: 60px;
+      height: 60px;
+      margin: 0 auto 16px;
+      background: linear-gradient(135deg, var(--malachite) 0%, var(--malachite-deep) 100%);
+      border-radius: 50%;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(5, 214, 104, 0.22);
+    }
+    .drop-icon-wrap svg { width: 28px; height: 28px; color: white; }
+    .drop-title {
+      font-family: 'Fraunces', serif;
+      font-size: 20px;
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+    .drop-sub {
       font-size: 13px;
-      color: var(--text2);
+      color: var(--ink-soft);
+      margin-bottom: 16px;
+    }
+    .drop-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--ink);
+      color: var(--bg);
+      border: none;
+      padding: 11px 22px;
+      border-radius: 999px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .drop-button:hover { transform: translateY(-1px); box-shadow: var(--shadow-warm); }
+    input[type="file"] { display: none; }
+
+    /* Files list */
+    .files-section { margin-bottom: 24px; }
+    .files-section.hidden { display: none; }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-family: 'Fraunces', serif;
+      font-size: 17px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+    .section-count {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--ink-mute);
     }
 
     .file-item {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 16px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
       margin-bottom: 8px;
-      display: flex;
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
       align-items: center;
       gap: 12px;
     }
-
     .file-icon {
-      font-size: 22px;
-    }
-
-    .file-info {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .file-name {
+      width: 32px;
+      height: 32px;
+      background: var(--bg-2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-size: 14px;
+    }
+    .file-info { min-width: 0; }
+    .file-name {
+      font-size: 13px;
       font-weight: 500;
+      color: var(--ink);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-
     .file-size {
-      font-size: 12px;
-      color: var(--text2);
       font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--ink-mute);
+      margin-top: 2px;
     }
-
-    .file-status {
-      font-size: 12px;
-      font-weight: 500;
-      flex-shrink: 0;
-    }
-
-    .file-status.uploading { color: var(--accent); }
-    .file-status.done { color: var(--green); }
-    .file-status.error { color: var(--red); }
-
     .progress-bar {
-      width: 60px;
-      height: 4px;
-      background: var(--border);
+      grid-column: 1 / -1;
+      width: 100%;
+      height: 3px;
+      background: var(--bg-2);
       border-radius: 2px;
       overflow: hidden;
-      margin-left: 8px;
-      flex-shrink: 0;
+      margin-top: 8px;
     }
-
     .progress-fill {
       height: 100%;
-      background: var(--accent);
-      width: 0%;
-      transition: width 0.2s;
+      width: 0;
+      background: var(--malachite);
+      border-radius: 2px;
+      transition: width 0.2s ease;
     }
+    .file-status {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+    }
+    .file-status.uploading { color: var(--ink-mute); }
+    .file-status.done { color: var(--malachite-deep); }
+    .file-status.error { color: var(--red); }
 
-    .summary {
-      margin-top: 24px;
-      padding: 20px;
-      background: var(--surface);
-      border: 1px solid var(--border);
+    /* Progress summary */
+    .progress-summary {
+      display: none;
+      background: var(--paper);
+      border: 1px solid var(--line);
       border-radius: 12px;
-      text-align: center;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: var(--ink-soft);
+    }
+    .progress-summary .progress-count {
+      font-family: 'DM Mono', monospace;
+      font-weight: 500;
+      color: var(--ink);
     }
 
-    .summary.success {
-      border-color: var(--green);
+    /* Final summary / Done CTA */
+    .summary {
+      display: none;
+      background: var(--ink);
+      border-radius: 16px;
+      padding: 22px;
+      color: var(--bg);
+      box-shadow: 0 16px 40px rgba(31, 27, 22, 0.16);
+      margin-bottom: 24px;
     }
-
+    .summary-meta {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--malachite);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 6px;
+    }
     .summary-title {
-      font-size: 18px;
-      font-weight: 600;
+      font-family: 'Fraunces', serif;
+      font-size: 22px;
+      font-weight: 500;
+      color: var(--bg);
       margin-bottom: 8px;
     }
-
     .summary-text {
-      color: var(--text2);
       font-size: 14px;
+      color: rgba(251, 247, 240, 0.8);
+      margin-bottom: 16px;
       line-height: 1.5;
-      margin-bottom: 20px;
     }
-
     .whatsapp-cta {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      margin-top: 8px;
-      background: #25d366;
-      color: white;
-      padding: 14px 28px;
-      border-radius: 10px;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 16px;
-      transition: transform 0.1s, background 0.15s;
+      background: var(--malachite);
+      color: var(--ink);
       border: none;
-      cursor: pointer;
-      font-family: inherit;
-    }
-
-    .whatsapp-cta:active { transform: scale(0.97); }
-    .whatsapp-cta:hover { background: #20b858; }
-
-    .whatsapp-cta-icon {
-      width: 20px;
-      height: 20px;
-    }
-
-    .progress-summary {
-      margin-top: 24px;
-      padding: 16px 20px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      text-align: center;
-      font-size: 14px;
-      color: var(--text2);
-    }
-    .progress-summary .progress-count {
-      color: var(--accent);
+      padding: 12px 22px;
+      border-radius: 999px;
+      font-family: 'Outfit', sans-serif;
       font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.15s ease;
+    }
+    .whatsapp-cta:hover { transform: translateX(2px); }
+
+    /* Footer */
+    .footer-note {
+      text-align: center;
+      margin-top: 32px;
       font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--ink-mute);
+      letter-spacing: 0.04em;
+    }
+    .footer-note a {
+      color: var(--ink-soft);
+      text-decoration: none;
+      border-bottom: 1px solid var(--line);
+    }
+    .footer-tagline {
+      font-family: 'Fraunces', serif;
+      font-style: italic;
+      font-size: 13px;
+      color: var(--ink-soft);
+      margin-bottom: 8px;
     }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="page">
     <header>
-      <div class="logo">Fusion<span>Prints</span></div>
-      <h1>Upload your photos</h1>
-      <div class="size-badge" id="size-badge">${sizeCode}</div>
-      <div class="subtitle">Drop your photos below — we'll let you know when you're done.</div>
+      <div class="brand-logo">
+        <svg width="180" height="36" viewBox="0 0 280 60" xmlns="http://www.w3.org/2000/svg">
+          <g transform="translate(0,6)">
+            <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="#1F1B16"/>
+            <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="#05D668"/>
+          </g>
+          <text x="56" y="40" font-family="Outfit, sans-serif" font-size="28" font-weight="700" fill="#1F1B16" letter-spacing="-0.56">fusionprints</text>
+        </svg>
+      </div>
+      <span class="session-tag">${token.slice(0, 8)}</span>
     </header>
 
+    <section class="hero">
+      <div class="hero-eyebrow">Upload your photos</div>
+      <h1 class="hero-title">Send your photos,<br>we'll do the <em>rest</em>.</h1>
+      <p class="hero-sub">Drop your photos below. We'll let you know in WhatsApp once you're ready to continue.</p>
+    </section>
+
+    <div class="order-card">
+      <div class="order-icon">📷</div>
+      <div class="order-meta">
+        <div class="order-meta-label">Order</div>
+        <div class="order-meta-value">${sizeCode} · multi-photo upload</div>
+      </div>
+    </div>
+
     <div class="drop-zone" id="drop-zone">
-      <div class="drop-zone-icon">📸</div>
-      <div class="drop-zone-text">Drop photos here or tap to choose</div>
-      <div class="drop-zone-hint">JPEG, PNG, HEIC — any quantity, original quality</div>
+      <div class="drop-icon-wrap">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+        </svg>
+      </div>
+      <div class="drop-title">Drop photos here</div>
+      <div class="drop-sub">or tap to choose from your phone</div>
+      <button class="drop-button">
+        Choose photos
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
       <input type="file" id="file-input" accept="image/*" multiple>
     </div>
 
-    <div class="files-list" id="files-list"></div>
-
-    <div class="progress-summary" id="progress-summary" style="display:none">
-      <span class="progress-count" id="progress-count">0 / 0</span> uploaded — please wait until all are complete
+    <div class="progress-summary" id="progress-summary">
+      Uploading <span class="progress-count" id="progress-count">0 / 0</span>...
     </div>
 
-    <div class="summary" id="summary" style="display:none">
-      <div class="summary-title" id="summary-title">All done! 🎉</div>
-      <div class="summary-text" id="summary-text">Tap below to return to WhatsApp and continue your order.</div>
-      <a href="#" id="whatsapp-cta" class="whatsapp-cta">
-        <svg class="whatsapp-cta-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17.498 14.382c-.301-.15-1.767-.867-2.04-.966-.273-.101-.473-.15-.673.15-.197.297-.771.964-.944 1.162-.175.195-.349.21-.646.075-.3-.15-1.263-.465-2.403-1.485-.888-.795-1.484-1.77-1.66-2.07-.174-.3-.019-.465.13-.615.136-.135.301-.345.451-.523.146-.181.194-.301.297-.496.1-.21.049-.375-.025-.524-.075-.15-.672-1.62-.922-2.206-.24-.584-.487-.51-.672-.51-.172-.015-.371-.015-.571-.015-.2 0-.523.074-.797.359-.273.3-1.045 1.02-1.045 2.475s1.07 2.865 1.219 3.075c.149.18 2.095 3.195 5.076 4.485.713.3 1.27.48 1.704.629.714.227 1.365.195 1.88.121.574-.091 1.767-.721 2.016-1.426.255-.705.255-1.29.18-1.425-.074-.135-.27-.21-.57-.345m-5.446 7.443h-.016c-1.77 0-3.524-.48-5.055-1.38l-.36-.214-3.75.975 1.005-3.645-.239-.375a9.869 9.869 0 0 1-1.516-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.334.101 11.893c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a12.062 12.062 0 0 0 5.71 1.447h.006c6.585 0 11.946-5.336 11.949-11.896 0-3.176-1.24-6.165-3.495-8.411"/></svg>
+    <section class="files-section" id="files-section">
+      <div class="section-head">
+        <h2 class="section-title">Your photos</h2>
+      </div>
+      <div id="files-list"></div>
+    </section>
+
+    <div class="summary" id="summary">
+      <div class="summary-meta">↳ Done?</div>
+      <div class="summary-title" id="summary-title"></div>
+      <div class="summary-text" id="summary-text"></div>
+      <a class="whatsapp-cta" id="whatsapp-cta" href="#">
         Return to WhatsApp
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
       </a>
+    </div>
+
+    <div class="footer-note">
+      <div class="footer-tagline">Hold the moment.</div>
+      A venture by <a href="https://gizmotechstore.co.zw" target="_blank">Innovative Fusions</a> · Harare, Zimbabwe
     </div>
   </div>
 
@@ -408,7 +568,6 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
 
     function updateProgressSummary() {
       const completed = uploadedFiles + failedFiles;
-      // While uploads are still in progress, show the running count
       if (totalFiles > 0 && completed < totalFiles) {
         progressSummary.style.display = 'block';
         progressCount.textContent = completed + ' / ' + totalFiles;
@@ -417,7 +576,6 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
 
     async function uploadFile(file) {
-      // Create UI item
       const item = document.createElement('div');
       item.className = 'file-item';
       item.innerHTML = \`
@@ -426,8 +584,8 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
           <div class="file-name">\${file.name}</div>
           <div class="file-size">\${formatSize(file.size)}</div>
         </div>
-        <div class="progress-bar"><div class="progress-fill"></div></div>
         <div class="file-status uploading">uploading…</div>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
       \`;
       filesList.appendChild(item);
 
@@ -439,7 +597,6 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
 
       try {
         const xhr = new XMLHttpRequest();
-
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
             const pct = (e.loaded / e.total) * 100;
@@ -473,32 +630,26 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
     }
 
     function checkComplete() {
-      // Only show the Done button when EVERY upload has finished (success or fail)
       if (uploadedFiles + failedFiles === totalFiles && totalFiles > 0) {
-        // Hide the progress summary, show the success summary with Done button
         progressSummary.style.display = 'none';
         summary.style.display = 'block';
-        summary.className = 'summary success';
 
         if (failedFiles === 0) {
           document.getElementById('summary-title').textContent =
-            \`\${uploadedFiles} photo\${uploadedFiles === 1 ? '' : 's'} uploaded! 🎉\`;
+            \`\${uploadedFiles} photo\${uploadedFiles === 1 ? '' : 's'} uploaded\`;
           document.getElementById('summary-text').innerHTML =
             'Tap below to return to WhatsApp and continue your order.';
         } else {
           document.getElementById('summary-title').textContent =
             \`\${uploadedFiles} uploaded, \${failedFiles} failed\`;
           document.getElementById('summary-text').innerHTML =
-            'Some uploads failed. You can return to WhatsApp to continue with the ones that worked, or refresh and try again.';
+            'Some uploads didn\\'t go through. You can return to WhatsApp to continue with the ones that worked, or refresh to try the failed ones again.';
         }
 
-        // Build the wa.me deep link with pre-filled UPLOADED message.
-        // wa.me expects phone in international format with no + or spaces.
         if (BUSINESS_PHONE) {
           const cleanPhone = BUSINESS_PHONE.replace(/[^\\d]/g, '');
           whatsappCta.href = 'https://wa.me/' + cleanPhone + '?text=UPLOADED';
         } else {
-          // Fallback: open WhatsApp without a specific number
           whatsappCta.href = 'whatsapp://send?text=UPLOADED';
         }
       }
@@ -507,6 +658,7 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
 </body>
 </html>`;
 }
+
 
 // ===== Route registration =====
 

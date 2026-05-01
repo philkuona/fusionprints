@@ -1,7 +1,7 @@
 {
   "name": "fusionprints",
   "version": "0.1.0",
-  "description": "FusionPrints — WhatsApp-driven photo and poster printing service for Zimbabwe",
+  "description": "FusionPrints \u2014 WhatsApp-driven photo and poster printing service for Zimbabwe",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,8 +9,8 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "tsc --noEmit",
+    "start": "tsx src/index.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/reset-db.ts",
@@ -30,7 +30,8 @@
     "pino-pretty": "^11.3.0",
     "postgres": "^3.4.5",
     "sharp": "^0.34.5",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "tsx": "^4.19.2"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -39,7 +40,6 @@
     "drizzle-kit": "^0.28.1",
     "eslint": "^9.15.0",
     "prettier": "^3.3.3",
-    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }

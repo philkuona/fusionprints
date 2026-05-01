@@ -27,6 +27,7 @@ import { db } from '@/db/client.js';
 import { uploadSessions, customers } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { storeImage } from '@/services/image-storage.js';
+import { env } from '@/config/env.js';
 
 // ===== Helpers =====
 
@@ -70,7 +71,7 @@ async function getSession(token: string) {
 
 // ===== Upload page HTML =====
 
-function uploadPageHtml(token: string, sizeCode: string): string {
+function uploadPageHtml(token: string, sizeCode: string, businessPhone: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -277,18 +278,49 @@ function uploadPageHtml(token: string, sizeCode: string): string {
       color: var(--text2);
       font-size: 14px;
       line-height: 1.5;
+      margin-bottom: 20px;
     }
 
     .whatsapp-cta {
-      display: inline-block;
-      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
       background: #25d366;
       color: white;
-      padding: 10px 20px;
-      border-radius: 8px;
+      padding: 14px 28px;
+      border-radius: 10px;
       text-decoration: none;
-      font-weight: 500;
+      font-weight: 600;
+      font-size: 16px;
+      transition: transform 0.1s, background 0.15s;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .whatsapp-cta:active { transform: scale(0.97); }
+    .whatsapp-cta:hover { background: #20b858; }
+
+    .whatsapp-cta-icon {
+      width: 20px;
+      height: 20px;
+    }
+
+    .progress-summary {
+      margin-top: 24px;
+      padding: 16px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      text-align: center;
       font-size: 14px;
+      color: var(--text2);
+    }
+    .progress-summary .progress-count {
+      color: var(--accent);
+      font-weight: 600;
+      font-family: 'DM Mono', monospace;
     }
   </style>
 </head>
@@ -298,7 +330,7 @@ function uploadPageHtml(token: string, sizeCode: string): string {
       <div class="logo">Fusion<span>Prints</span></div>
       <h1>Upload your photos</h1>
       <div class="size-badge" id="size-badge">${sizeCode}</div>
-      <div class="subtitle">Drop them here, then return to WhatsApp and reply <strong>UPLOADED</strong></div>
+      <div class="subtitle">Drop your photos below — we'll let you know when you're done.</div>
     </header>
 
     <div class="drop-zone" id="drop-zone">
@@ -310,18 +342,30 @@ function uploadPageHtml(token: string, sizeCode: string): string {
 
     <div class="files-list" id="files-list"></div>
 
+    <div class="progress-summary" id="progress-summary" style="display:none">
+      <span class="progress-count" id="progress-count">0 / 0</span> uploaded — please wait until all are complete
+    </div>
+
     <div class="summary" id="summary" style="display:none">
       <div class="summary-title" id="summary-title">All done! 🎉</div>
-      <div class="summary-text" id="summary-text">Return to WhatsApp and reply <strong>UPLOADED</strong> to continue your order.</div>
+      <div class="summary-text" id="summary-text">Tap below to return to WhatsApp and continue your order.</div>
+      <a href="#" id="whatsapp-cta" class="whatsapp-cta">
+        <svg class="whatsapp-cta-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M17.498 14.382c-.301-.15-1.767-.867-2.04-.966-.273-.101-.473-.15-.673.15-.197.297-.771.964-.944 1.162-.175.195-.349.21-.646.075-.3-.15-1.263-.465-2.403-1.485-.888-.795-1.484-1.77-1.66-2.07-.174-.3-.019-.465.13-.615.136-.135.301-.345.451-.523.146-.181.194-.301.297-.496.1-.21.049-.375-.025-.524-.075-.15-.672-1.62-.922-2.206-.24-.584-.487-.51-.672-.51-.172-.015-.371-.015-.571-.015-.2 0-.523.074-.797.359-.273.3-1.045 1.02-1.045 2.475s1.07 2.865 1.219 3.075c.149.18 2.095 3.195 5.076 4.485.713.3 1.27.48 1.704.629.714.227 1.365.195 1.88.121.574-.091 1.767-.721 2.016-1.426.255-.705.255-1.29.18-1.425-.074-.135-.27-.21-.57-.345m-5.446 7.443h-.016c-1.77 0-3.524-.48-5.055-1.38l-.36-.214-3.75.975 1.005-3.645-.239-.375a9.869 9.869 0 0 1-1.516-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.334.101 11.893c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a12.062 12.062 0 0 0 5.71 1.447h.006c6.585 0 11.946-5.336 11.949-11.896 0-3.176-1.24-6.165-3.495-8.411"/></svg>
+        Return to WhatsApp
+      </a>
     </div>
   </div>
 
   <script>
     const TOKEN = '${token}';
+    const BUSINESS_PHONE = '${businessPhone}';
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
     const filesList = document.getElementById('files-list');
     const summary = document.getElementById('summary');
+    const progressSummary = document.getElementById('progress-summary');
+    const progressCount = document.getElementById('progress-count');
+    const whatsappCta = document.getElementById('whatsapp-cta');
 
     let totalFiles = 0;
     let uploadedFiles = 0;
@@ -359,6 +403,17 @@ function uploadPageHtml(token: string, sizeCode: string): string {
         totalFiles++;
         uploadFile(file);
       });
+      updateProgressSummary();
+    }
+
+    function updateProgressSummary() {
+      const completed = uploadedFiles + failedFiles;
+      // While uploads are still in progress, show the running count
+      if (totalFiles > 0 && completed < totalFiles) {
+        progressSummary.style.display = 'block';
+        progressCount.textContent = completed + ' / ' + totalFiles;
+        summary.style.display = 'none';
+      }
     }
 
     async function uploadFile(file) {
@@ -413,19 +468,38 @@ function uploadPageHtml(token: string, sizeCode: string): string {
         console.error('Upload error:', err);
       }
 
+      updateProgressSummary();
       checkComplete();
     }
 
     function checkComplete() {
+      // Only show the Done button when EVERY upload has finished (success or fail)
       if (uploadedFiles + failedFiles === totalFiles && totalFiles > 0) {
+        // Hide the progress summary, show the success summary with Done button
+        progressSummary.style.display = 'none';
         summary.style.display = 'block';
         summary.className = 'summary success';
+
         if (failedFiles === 0) {
           document.getElementById('summary-title').textContent =
             \`\${uploadedFiles} photo\${uploadedFiles === 1 ? '' : 's'} uploaded! 🎉\`;
+          document.getElementById('summary-text').innerHTML =
+            'Tap below to return to WhatsApp and continue your order.';
         } else {
           document.getElementById('summary-title').textContent =
             \`\${uploadedFiles} uploaded, \${failedFiles} failed\`;
+          document.getElementById('summary-text').innerHTML =
+            'Some uploads failed. You can return to WhatsApp to continue with the ones that worked, or refresh and try again.';
+        }
+
+        // Build the wa.me deep link with pre-filled UPLOADED message.
+        // wa.me expects phone in international format with no + or spaces.
+        if (BUSINESS_PHONE) {
+          const cleanPhone = BUSINESS_PHONE.replace(/[^\\d]/g, '');
+          whatsappCta.href = 'https://wa.me/' + cleanPhone + '?text=UPLOADED';
+        } else {
+          // Fallback: open WhatsApp without a specific number
+          whatsappCta.href = 'whatsapp://send?text=UPLOADED';
         }
       }
     }
@@ -465,7 +539,7 @@ export async function registerUploadRoutes(app: FastifyInstance): Promise<void> 
       return;
     }
 
-    reply.type('text/html').send(uploadPageHtml(token, session.sizeCode));
+    reply.type('text/html').send(uploadPageHtml(token, session.sizeCode, env.BUSINESS_PHONE ?? ''));
   });
 
   // POST /api/upload/:token — receive a file

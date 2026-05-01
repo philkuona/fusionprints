@@ -73,6 +73,8 @@ export interface BotContext {
   orderNumber?: string;
   /** Whether customer has chosen to use a compressed image anyway */
   acceptedCompressedImage?: boolean;
+  /** Previous step — used by the BACK keyword to navigate one step back */
+  _previousStep?: string;
 }
 
 /** An empty starting context */

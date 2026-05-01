@@ -20,7 +20,6 @@
  */
 
 import * as readline from 'readline';
-process.env['LOG_LEVEL'] = 'silent';
 import { handleIncomingMessage } from '../src/bot/handler.js';
 import { db, closeDatabase } from '../src/db/client.js';
 import { orders, customers } from '../src/db/schema.js';
@@ -40,16 +39,32 @@ const YELLOW = '\x1b[33m';
 const GREY = '\x1b[90m';
 const BOLD = '\x1b[1m';
 
-function printBot(message: string): void {
-  const lines = message.split('\n');
-  console.log();
-  lines.forEach((line) => {
-    const formatted = line
-      .replace(/\*(.+?)\*/g, `${BOLD}$1${RESET}`)
-      .replace(/_(.+?)_/g, `${GREY}$1${RESET}`);
-    console.log(`${CYAN}  🤖 ${formatted}${RESET}`);
-  });
-  console.log();
+function printBot(message: unknown): void {
+  // Handle both plain text strings and interactive message objects
+  if (typeof message === 'string') {
+    if (!message) return;
+    const lines = message.split('\n');
+    lines.forEach((line) => console.log(`  🤖 ${line}`));
+    return;
+  }
+
+  // Interactive message: print text + a hint about the buttons/list
+  if (typeof message === 'object' && message !== null) {
+    const msg = message as { text: string; buttons?: { id: string; title: string }[]; list?: { sections: { rows: { id: string; title: string }[] }[] } };
+    msg.text.split('\n').forEach((line) => console.log(`  🤖 ${line}`));
+
+    if (msg.buttons) {
+      console.log('  🤖');
+      console.log('  🤖 [Tap one of these buttons:]');
+      msg.buttons.forEach((b) => console.log(`  🤖   [${b.id}] ${b.title}`));
+    } else if (msg.list) {
+      console.log('  🤖');
+      console.log('  🤖 [Choose from this list:]');
+      msg.list.sections.forEach((s) => {
+        s.rows.forEach((r) => console.log(`  🤖   [${r.id}] ${r.title}`));
+      });
+    }
+  }
 }
 
 function printSystem(message: string): void {

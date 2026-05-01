@@ -22,7 +22,7 @@ import { loadConversationState, saveConversationState } from '@/services/convers
 import { createOrder, cancelOrder, getRecentOrders } from '@/services/order.js';
 import { handleMessage } from '@/bot/state-machine.js';
 import { MSG } from '@/bot/messages.js';
-import type { IncomingMessage } from '@/bot/state-machine.js';
+import type { BotReply, IncomingMessage } from '@/bot/state-machine.js';
 
 export interface HandlerInput {
   /** Customer's WhatsApp number in E.164 format e.g. +263771234567 */
@@ -33,7 +33,7 @@ export interface HandlerInput {
 
 export interface HandlerResult {
   /** Messages to send back to the customer, in order */
-  replies: string[];
+  replies: BotReply[];
 }
 
 /**
@@ -65,7 +65,7 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
     );
 
     // ── Step 4: Handle side effects ───────────────────────────────────────
-    const extraReplies: string[] = [];
+    const extraReplies: BotReply[] = [];
 
     for (const effect of response.effects) {
       switch (effect.type) {

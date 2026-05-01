@@ -38,9 +38,31 @@ export interface IncomingMessage {
   };
 }
 
+/**
+ * A single reply from the bot.
+ * Strings are sent as plain text messages.
+ * Objects with buttons/list become WhatsApp interactive messages.
+ */
+export type BotReply =
+  | string
+  | {
+      text: string;
+      buttons: { id: string; title: string }[];
+    }
+  | {
+      text: string;
+      list: {
+        buttonText: string;
+        sections: {
+          title?: string;
+          rows: { id: string; title: string; description?: string }[];
+        }[];
+      };
+    };
+
 export interface BotResponse {
   /** Messages to send back to the customer, in order */
-  replies: string[];
+  replies: BotReply[];
   /** New conversation step */
   nextStep: BotStep;
   /** Updated context */
@@ -101,6 +123,10 @@ export function handleMessage(
     };
   }
 
+  if (text === 'BACK' || text === '← BACK' || text === 'GO BACK' || text === 'PREVIOUS') {
+    return handleBack(step, context, customer);
+  }
+
   // ===== Step handlers =====
 
   switch (step) {
@@ -155,11 +181,154 @@ export function handleMessage(
 
 // ===== Step handlers =====
 
+/**
+ * Handle the BACK command — go to the previous step in the flow.
+ * Uses a static map of "what's the previous step" rather than tracking history,
+ * because the flow is linear with predictable previous steps.
+ *
+ * Special handling:
+ *   - From the start (idle, choosing_product) — already at root, just show greeting
+ *   - From batch upload with photos already taken — warn before discarding
+ *   - From awaiting_payment — destructive, ask for CANCEL instead
+ */
+function handleBack(
+  step: BotStep,
+  context: BotContext,
+  customer: { name: string | null } | null,
+): BotResponse {
+  switch (step) {
+    case 'idle':
+    case 'order_complete':
+    case 'choosing_product':
+      // Already at root — just show greeting again
+      return reply(
+        MSG.greetingInteractive(customer?.name ?? undefined),
+        'choosing_product',
+        emptyContext(),
+      );
+
+    case 'choosing_size':
+      // Back to product type selection
+      return reply(
+        MSG.greetingInteractive(customer?.name ?? undefined),
+        'choosing_product',
+        { ...context, pendingProductType: undefined },
+      );
+
+    case 'choosing_upload_mode':
+    case 'awaiting_image':
+    case 'awaiting_web_upload': {
+      // Back to size selection
+      const products =
+        context.pendingProductType === 'poster' ? POSTER_PRODUCTS : PHOTO_PRODUCTS;
+      void products; // avoid unused warning
+      return reply(
+        context.pendingProductType === 'poster'
+          ? MSG.posterSizeMenuInteractive()
+          : MSG.photoSizeMenuInteractive(),
+        'choosing_size',
+        { ...context, pendingSize: undefined, uploadMode: undefined },
+      );
+    }
+
+    case 'collecting_image_batch': {
+      // If they have photos in the batch, warn before discarding
+      const batchSize = context.pendingBatch?.length ?? 0;
+      if (batchSize > 0) {
+        return reply(
+          `⚠️ You've already uploaded ${batchSize} photo${batchSize === 1 ? '' : 's'} in this batch.\n\nGoing back will discard them. Reply *CONTINUE* to keep uploading, or *DISCARD* to start over.`,
+          'collecting_image_batch',
+          context,
+        );
+      }
+      // No photos yet — go back cleanly
+      return reply(
+        context.pendingProductType === 'poster'
+          ? MSG.posterSizeMenuInteractive()
+          : MSG.photoSizeMenuInteractive(),
+        'choosing_size',
+        { ...context, pendingSize: undefined, uploadMode: undefined, pendingBatch: undefined },
+      );
+    }
+
+    case 'choosing_quantity': {
+      // Back to image upload — re-prompt for the photo
+      const product = getProduct(context.pendingSize ?? '');
+      if (!product) {
+        return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+      }
+      const priceLabel = `$${product.unitPriceUsd.toFixed(2)}`;
+      return reply(
+        MSG.awaitingImage(product.displayLabel, priceLabel),
+        'awaiting_image',
+        context,
+      );
+    }
+
+    case 'adding_more_or_checkout':
+      // Back to product selection (start a new item)
+      return reply(
+        MSG.greetingInteractive(customer?.name ?? undefined),
+        'choosing_product',
+        { ...context, pendingProductType: undefined, pendingSize: undefined },
+      );
+
+    case 'collecting_name':
+      // Back to checkout/cart screen
+      return reply(
+        MSG.addMoreOrCheckoutInteractive(),
+        'adding_more_or_checkout',
+        context,
+      );
+
+    case 'choosing_fulfillment': {
+      // Back to checkout decision
+      return reply(
+        MSG.addMoreOrCheckoutInteractive(),
+        'adding_more_or_checkout',
+        context,
+      );
+    }
+
+    case 'collecting_address':
+      // Back to fulfillment options
+      return reply(
+        MSG.chooseFulfillmentInteractive(customer?.name ?? 'there'),
+        'choosing_fulfillment',
+        { ...context, fulfillmentMethod: undefined, deliveryAddress: undefined },
+      );
+
+    case 'confirming_order':
+      // Back to fulfillment selection
+      return reply(
+        MSG.chooseFulfillmentInteractive(customer?.name ?? 'there'),
+        'choosing_fulfillment',
+        { ...context, fulfillmentMethod: undefined },
+      );
+
+    case 'awaiting_payment':
+      // Destructive — direct customer to use CANCEL instead
+      return reply(
+        `Going back from here would cancel your pending order *${context.orderNumber}*.\n\nReply *CANCEL* to cancel the order, or pay using the link above.`,
+        'awaiting_payment',
+        context,
+      );
+
+    default:
+      // Unknown step — go to greeting as a safe fallback
+      return reply(
+        MSG.greetingInteractive(customer?.name ?? undefined),
+        'choosing_product',
+        emptyContext(),
+      );
+  }
+}
+
 function handleIdle(
   context: BotContext,
   customer: { name: string | null } | null,
 ): BotResponse {
-  return reply(MSG.greeting(customer?.name ?? undefined), 'choosing_product', emptyContext());
+  return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', emptyContext());
 }
 
 function handleChoosingProduct(
@@ -169,14 +338,14 @@ function handleChoosingProduct(
 ): BotResponse {
   // Accept shortcuts typed naturally
   if (text === '1' || text === 'PHOTOS' || text === 'PHOTO' || text === 'PHOTO PRINTS') {
-    return reply(MSG.photoSizeMenu(), 'choosing_size', {
+    return reply(MSG.photoSizeMenuInteractive(), 'choosing_size', {
       ...context,
       pendingProductType: 'photo_print',
     });
   }
 
   if (text === '2' || text === 'POSTERS' || text === 'POSTER') {
-    return reply(MSG.posterSizeMenu(), 'choosing_size', {
+    return reply(MSG.posterSizeMenuInteractive(), 'choosing_size', {
       ...context,
       pendingProductType: 'poster',
     });
@@ -192,7 +361,7 @@ function handleChoosingProduct(
   }
 
   // They typed something else — re-show the greeting
-  return reply(MSG.greeting(customer?.name ?? undefined), 'choosing_product', context);
+  return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', context);
 }
 
 function handleChoosingSize(text: string, context: BotContext): BotResponse {
@@ -203,20 +372,21 @@ function handleChoosingSize(text: string, context: BotContext): BotResponse {
   if (isNaN(choice) || choice < 1 || choice > products.length) {
     const menu =
       context.pendingProductType === 'photo_print'
-        ? MSG.photoSizeMenu()
-        : MSG.posterSizeMenu();
-    return reply(
-      `${MSG.invalidSizeChoice(products.length)}\n\n${menu}`,
-      'choosing_size',
-      context,
-    );
+        ? MSG.photoSizeMenuInteractive()
+        : MSG.posterSizeMenuInteractive();
+    return {
+      replies: [MSG.invalidSizeChoice(products.length), menu],
+      nextStep: 'choosing_size',
+      nextContext: context,
+      effects: [],
+    };
   }
 
   const product = products[choice - 1];
   const priceLabel = `$${product.unitPriceUsd.toFixed(2)}`;
 
   return reply(
-    MSG.chooseUploadMode(product.displayLabel, priceLabel),
+    MSG.chooseUploadModeInteractive(product.displayLabel, priceLabel),
     'choosing_upload_mode',
     { ...context, pendingSize: product.sizeCode },
   );
@@ -263,11 +433,15 @@ function handleChoosingUploadMode(text: string, context: BotContext): BotRespons
     };
   }
 
-  return reply(
-    `${MSG.invalidUploadMode()}\n\n${MSG.chooseUploadMode(product.displayLabel, priceLabel)}`,
-    'choosing_upload_mode',
-    context,
-  );
+  return {
+    replies: [
+      MSG.invalidUploadMode(),
+      MSG.chooseUploadModeInteractive(product.displayLabel, priceLabel),
+    ],
+    nextStep: 'choosing_upload_mode',
+    nextContext: context,
+    effects: [],
+  };
 }
 
 /**
@@ -303,6 +477,28 @@ function handleCollectingImageBatch(
   }
 
   const batch = context.pendingBatch ?? [];
+
+  // Handle response to back-confirmation
+  if (text === 'CONTINUE' || text === 'KEEP') {
+    // Customer wants to keep their batch — re-show the batch upload prompt
+    const priceLabel = `$${product.unitPriceUsd.toFixed(2)}`;
+    return reply(
+      MSG.awaitingBatchUpload(product.displayLabel, priceLabel),
+      'collecting_image_batch',
+      context,
+    );
+  }
+
+  if (text === 'DISCARD' || text === 'START OVER') {
+    // Customer confirmed they want to discard the batch and go back
+    return reply(
+      context.pendingProductType === 'poster'
+        ? MSG.posterSizeMenuInteractive()
+        : MSG.photoSizeMenuInteractive(),
+      'choosing_size',
+      { ...context, pendingSize: undefined, uploadMode: undefined, pendingBatch: undefined },
+    );
+  }
 
   // Customer is done uploading
   if (text === 'DONE' || text === 'FINISH' || text === 'FINISHED') {
@@ -470,7 +666,8 @@ function handleAwaitingImage(
     return reply(MSG.imageWasCompressed(), 'awaiting_image', {
       ...context,
       acceptedCompressedImage: false,
-    });
+      _pendingImageRef: ref,
+    } as BotContext & { _pendingImageRef: string });
   }
 
   const validation = validateImage(widthPx, heightPx, sizeCode, false);
@@ -485,7 +682,7 @@ function handleAwaitingImage(
         product.minResolution.height,
       ),
       'awaiting_image',
-      { ...context, acceptedCompressedImage: false },
+      { ...context, acceptedCompressedImage: false, _pendingImageRef: ref } as BotContext & { _pendingImageRef: string },
     );
   }
 
@@ -498,7 +695,7 @@ function handleAwaitingImage(
         product.recommendedResolution.height,
       ),
       'awaiting_image',
-      { ...context, acceptedCompressedImage: false },
+      { ...context, acceptedCompressedImage: false, _pendingImageRef: ref } as BotContext & { _pendingImageRef: string },
     );
   }
 
@@ -553,7 +750,7 @@ function handleChoosingQuantity(text: string, context: BotContext): BotResponse 
     acceptedCompressedImage: undefined,
   };
 
-  return reply(MSG.itemAdded(newItem, cartTotalLabel), 'adding_more_or_checkout', newContext);
+  return reply(MSG.itemAddedInteractive(newItem, cartTotalLabel), 'adding_more_or_checkout', newContext);
 }
 
 function handleAddMoreOrCheckout(
@@ -562,7 +759,7 @@ function handleAddMoreOrCheckout(
   customer: { name: string | null } | null,
 ): BotResponse {
   if (text === '1' || text === 'ADD' || text === 'MORE' || text === 'ADD MORE') {
-    return reply(MSG.greeting(customer?.name ?? undefined), 'choosing_product', context);
+    return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', context);
   }
 
   if (text === '2' || text === 'CHECKOUT' || text === 'DONE' || text === 'NEXT') {
@@ -572,13 +769,13 @@ function handleAddMoreOrCheckout(
     }
     // Otherwise go straight to fulfillment
     return reply(
-      MSG.chooseFulfillment(customer.name),
+      MSG.chooseFulfillmentInteractive(customer.name),
       'choosing_fulfillment',
       context,
     );
   }
 
-  return reply(MSG.addMoreOrCheckout(), 'adding_more_or_checkout', context);
+  return reply(MSG.addMoreOrCheckoutInteractive(), 'adding_more_or_checkout', context);
 }
 
 function handleCollectingName(text: string, context: BotContext): BotResponse {
@@ -599,7 +796,7 @@ function handleCollectingName(text: string, context: BotContext): BotResponse {
   };
 
   return reply(
-    MSG.chooseFulfillment(formattedName),
+    MSG.chooseFulfillmentInteractive(formattedName),
     'choosing_fulfillment',
     newContext,
   );
@@ -633,11 +830,15 @@ function handleChoosingFulfillment(text: string, context: BotContext): BotRespon
 
   const customerName =
     (context as BotContext & { _customerName?: string })._customerName ?? 'there';
-  return reply(
-    `${MSG.invalidFulfillmentChoice()}\n\n${MSG.chooseFulfillment(customerName)}`,
-    'choosing_fulfillment',
-    context,
-  );
+  return {
+    replies: [
+      MSG.invalidFulfillmentChoice(),
+      MSG.chooseFulfillmentInteractive(customerName),
+    ],
+    nextStep: 'choosing_fulfillment',
+    nextContext: context,
+    effects: [],
+  };
 }
 
 function handleCollectingAddress(address: string, context: BotContext): BotResponse {
@@ -665,7 +866,7 @@ function buildOrderSummary(context: BotContext): BotResponse {
   }
 
   return reply(
-    MSG.confirmOrder(quoteResult.quote.summary),
+    MSG.confirmOrderInteractive(quoteResult.quote.summary),
     'confirming_order',
     context,
   );
@@ -724,7 +925,7 @@ function handleAwaitingPayment(text: string, context: BotContext): BotResponse {
 
 // ===== Helpers =====
 
-function reply(message: string, nextStep: BotStep, nextContext: BotContext): BotResponse {
+function reply(message: BotReply, nextStep: BotStep, nextContext: BotContext): BotResponse {
   return {
     replies: [message],
     nextStep,

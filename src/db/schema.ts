@@ -38,6 +38,7 @@ export const orderStatusEnum = pgEnum('order_status', [
   'queued_for_print',
   'printing',
   'ready_for_collection',
+  'shipped', // delivery orders that have left the shop
   'fulfilled',
   'cancelled',
   'failed',
@@ -167,7 +168,9 @@ export const orders = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),
     readyAt: timestamp('ready_at', { withTimezone: true }),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
     fulfilledAt: timestamp('fulfilled_at', { withTimezone: true }),
+    receiptSentAt: timestamp('receipt_sent_at', { withTimezone: true }),
   },
   (table) => ({
     orderNumberIdx: uniqueIndex('orders_order_number_idx').on(table.orderNumber),

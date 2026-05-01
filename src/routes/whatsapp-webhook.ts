@@ -26,20 +26,75 @@ import type { IncomingMessage } from '@/bot/state-machine.js';
 
 // ===== 360dialog API sender =====
 
+import type { BotReply } from '@/bot/state-machine.js';
+
 /**
  * Send a WhatsApp message via 360dialog API.
- * Called after the bot handler returns replies.
+ * Supports plain text, button messages, and list messages.
  */
-async function sendWhatsAppMessage(to: string, text: string): Promise<void> {
+async function sendWhatsAppMessage(to: string, message: BotReply): Promise<void> {
   const url = `${env.WHATSAPP_API_BASE}/messages`;
 
-  const body = {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
-    type: 'text',
-    text: { body: text },
-  };
+  let body: Record<string, unknown>;
+
+  if (typeof message === 'string') {
+    // Plain text message
+    body = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'text',
+      text: { body: message },
+    };
+  } else if ('buttons' in message) {
+    // Reply buttons (max 3 — WhatsApp limit)
+    const buttons = message.buttons.slice(0, 3).map((b) => ({
+      type: 'reply',
+      reply: {
+        id: b.id,
+        // WhatsApp limits button title to 20 chars
+        title: b.title.length > 20 ? b.title.slice(0, 20) : b.title,
+      },
+    }));
+
+    body = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: message.text },
+        action: { buttons },
+      },
+    };
+  } else if ('list' in message) {
+    // List message (max 10 rows total across all sections)
+    body = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: message.text },
+        action: {
+          button: message.list.buttonText.slice(0, 20),
+          sections: message.list.sections.map((s) => ({
+            title: s.title?.slice(0, 24),
+            rows: s.rows.slice(0, 10).map((r) => ({
+              id: r.id,
+              title: r.title.slice(0, 24),
+              description: r.description?.slice(0, 72),
+            })),
+          })),
+        },
+      },
+    };
+  } else {
+    logger.error({ message }, 'Unknown reply type');
+    return;
+  }
 
   const response = await fetch(url, {
     method: 'POST',
@@ -53,7 +108,7 @@ async function sendWhatsAppMessage(to: string, text: string): Promise<void> {
   if (!response.ok) {
     const error = await response.text();
     logger.error(
-      { to, status: response.status, error },
+      { to, status: response.status, error, messageType: typeof message === 'string' ? 'text' : 'interactive' },
       'Failed to send WhatsApp message',
     );
     throw new Error(`WhatsApp send failed: ${response.status} ${error}`);
@@ -89,10 +144,24 @@ interface WhatsAppDocumentMessage {
   };
 }
 
+interface WhatsAppInteractiveMessage {
+  type: 'interactive';
+  interactive:
+    | {
+        type: 'button_reply';
+        button_reply: { id: string; title: string };
+      }
+    | {
+        type: 'list_reply';
+        list_reply: { id: string; title: string; description?: string };
+      };
+}
+
 type WhatsAppMessage =
   | WhatsAppTextMessage
   | WhatsAppImageMessage
   | WhatsAppDocumentMessage
+  | WhatsAppInteractiveMessage
   | { type: string };
 
 interface WhatsAppContact {
@@ -308,6 +377,24 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
                 const textMsg = waMessage as WhatsAppTextMessage & { from: string };
                 botMessage = { text: textMsg.text.body };
 
+              } else if (waMessage.type === 'interactive') {
+                // Customer tapped a button or selected a list item.
+                // Convert the selection to the same text they would have typed,
+                // so the existing state machine logic works unchanged.
+                const intMsg = waMessage as WhatsAppInteractiveMessage & { from: string };
+                let selectedId = '';
+                if (intMsg.interactive.type === 'button_reply') {
+                  selectedId = intMsg.interactive.button_reply.id;
+                } else if (intMsg.interactive.type === 'list_reply') {
+                  selectedId = intMsg.interactive.list_reply.id;
+                }
+
+                logger.info(
+                  { phoneNumber, selectedId },
+                  'Customer tapped interactive option',
+                );
+                botMessage = { text: selectedId };
+
               } else if (waMessage.type === 'document') {
                 // Document = sent as file = NOT compressed = good quality
                 const docMsg = waMessage as WhatsAppDocumentMessage & { from: string };
@@ -379,9 +466,11 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
               });
 
               // Send all replies back to the customer
-              for (const reply_text of result.replies) {
-                if (reply_text) {
-                  await sendWhatsAppMessage(phoneNumber, reply_text);
+              for (const reply of result.replies) {
+                // Skip empty strings, but always send objects (interactive)
+                const isEmpty = typeof reply === 'string' && reply.length === 0;
+                if (!isEmpty) {
+                  await sendWhatsAppMessage(phoneNumber, reply);
                   // Small delay between messages to preserve order
                   await new Promise((resolve) => setTimeout(resolve, 300));
                 }

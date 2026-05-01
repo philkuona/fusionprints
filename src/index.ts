@@ -15,6 +15,7 @@ import { db, closeDatabase } from '@/db/client.js';
 import { sql } from 'drizzle-orm';
 import { registerWhatsAppWebhook } from '@/routes/whatsapp-webhook.js';
 import { registerAdminDashboard } from '@/routes/admin-dashboard.js';
+import { registerAdminOps } from '@/routes/admin-ops.js';
 import { registerAgentRoutes } from '@/routes/agent-api.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
 
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
 
   // Register admin dashboard
   await registerAdminDashboard(app);
+  await registerAdminOps(app);
 
   // Register print agent API routes
   await registerAgentRoutes(app);
@@ -61,9 +63,13 @@ async function main(): Promise<void> {
   // ===== Start the server =====
 
   try {
+    // In production, only listen on localhost — Nginx is the public-facing
+    // reverse proxy that handles TLS and forwards to us. In dev (WSL),
+    // we bind to all interfaces so you can hit the server from Windows.
+    const host = env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0';
     const address = await app.listen({
       port: env.PORT,
-      host: '0.0.0.0', // listen on all interfaces, important for WSL
+      host,
     });
     logger.info(`🚀 Server listening on ${address}`);
     logger.info(`📍 Environment: ${env.NODE_ENV}`);

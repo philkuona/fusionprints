@@ -27,6 +27,18 @@ export const MSG = {
       ? `👋 Welcome back, *${name}*!\n\nWhat would you like today?\n\n1️⃣ Photo prints\n2️⃣ Posters\n3️⃣ Check an existing order\n\nReply with a number.`
       : `👋 Welcome to *${BUSINESS_NAME}*!\n\nI print photos and posters — collect in Harare or get them delivered.\n\nWhat would you like today?\n\n1️⃣ Photo prints\n2️⃣ Posters\n3️⃣ Check an existing order\n\nReply with a number.`,
 
+  /** Interactive version of greeting — uses 3 buttons. Customers tap instead of typing. */
+  greetingInteractive: (name?: string) => ({
+    text: name
+      ? `👋 Welcome back, *${name}*!\n\nWhat would you like today?`
+      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nI print photos and posters — collect in Harare or get them delivered.\n\nWhat would you like today?`,
+    buttons: [
+      { id: '1', title: '📸 Photo prints' },
+      { id: '2', title: '🖼 Posters' },
+      { id: '3', title: 'Check order' },
+    ],
+  }),
+
   invalidMenuChoice: () => `Please reply with *1*, *2*, or *3*.`,
 
   // ===== Product selection =====
@@ -40,6 +52,28 @@ export const MSG = {
     return lines.join('\n');
   },
 
+  /** Interactive version: list message with all photo sizes. */
+  photoSizeMenuInteractive: () => ({
+    text: 'Which size?',
+    list: {
+      buttonText: 'Choose size',
+      sections: [
+        {
+          title: 'Photo prints',
+          rows: PHOTO_PRODUCTS.map((p, i) => ({
+            id: String(i + 1),
+            title: p.displayLabel,
+            description: `$${p.unitPriceUsd.toFixed(2)} each`,
+          })),
+        },
+        {
+          title: 'Navigation',
+          rows: [{ id: 'BACK', title: '← Back', description: 'Return to main menu' }],
+        },
+      ],
+    },
+  }),
+
   posterSizeMenu: () => {
     const lines = [`Which poster size?\n`];
     POSTER_PRODUCTS.forEach((p, i) => {
@@ -50,6 +84,30 @@ export const MSG = {
     return lines.join('\n');
   },
 
+  /** Interactive version: list message with all poster sizes. */
+  posterSizeMenuInteractive: () => ({
+    text: 'Which poster size?',
+    list: {
+      buttonText: 'Choose size',
+      sections: [
+        {
+          title: 'Posters',
+          rows: POSTER_PRODUCTS.map((p, i) => ({
+            id: String(i + 1),
+            title: p.displayLabel,
+            description: p.isOutsourced
+              ? `$${p.unitPriceUsd.toFixed(2)} (5-7 day turnaround)`
+              : `$${p.unitPriceUsd.toFixed(2)}`,
+          })),
+        },
+        {
+          title: 'Navigation',
+          rows: [{ id: 'BACK', title: '← Back', description: 'Return to main menu' }],
+        },
+      ],
+    },
+  }),
+
   invalidSizeChoice: (max: number) =>
     `Please reply with a number between *1* and *${max}*.`,
 
@@ -57,6 +115,16 @@ export const MSG = {
 
   chooseUploadMode: (displayLabel: string, priceEach: string) =>
     `*${displayLabel}* — ${priceEach} each.\n\nHow would you like to send your photos?\n\n1️⃣ *One photo* — multiple copies of the same image\n2️⃣ *A few photos* — send as documents on WhatsApp\n3️⃣ *Many photos* — fast upload via web link _(recommended for 5+ photos)_\n\nReply with a number.`,
+
+  /** Interactive version: 3 buttons for upload mode. */
+  chooseUploadModeInteractive: (displayLabel: string, priceEach: string) => ({
+    text: `*${displayLabel}* — ${priceEach} each.\n\nHow would you like to send your photos?`,
+    buttons: [
+      { id: '1', title: 'One photo' },
+      { id: '2', title: 'A few photos' },
+      { id: '3', title: 'Many (web link)' },
+    ],
+  }),
 
   invalidUploadMode: () => `Please reply with *1*, *2*, or *3*.`,
 
@@ -73,7 +141,7 @@ export const MSG = {
     `✅ Got it — ${count} photo${count === 1 ? '' : 's'} added at ${displayLabel} for *${lineTotal}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
 
   awaitingBatchUpload: (displayLabel: string, priceEach: string) =>
-    `Send your photos for *${displayLabel}* — ${priceEach} each.\n\n📎 Send them as *documents* — you can select all of them at once from your gallery.\n\nI'll confirm every few as they arrive. Reply *DONE* when you're finished.\nReply *CANCEL* to start over.`,
+    `Send your photos for *${displayLabel}* — ${priceEach} each.\n\n📎 Send them as *documents* — you can select all of them at once from your gallery.\n\nI'll confirm every few as they arrive. Reply *DONE* when you're finished.\n\n_Reply BACK to choose a different size, or CANCEL to start over._`,
 
   batchImageAdded: (count: number, widthPx: number, heightPx: number, hasWarning: boolean) =>
     hasWarning
@@ -120,7 +188,27 @@ export const MSG = {
   itemAdded: (item: CartItem, cartTotal: string) =>
     `✅ Added: ${item.quantity} × ${item.displayLabel} — *$${item.lineTotalUsd.toFixed(2)}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
 
+  /** Interactive variant: 3 buttons after adding to cart (with Back). */
+  itemAddedInteractive: (item: CartItem, cartTotal: string) => ({
+    text: `✅ Added: ${item.quantity} × ${item.displayLabel} — *$${item.lineTotalUsd.toFixed(2)}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?`,
+    buttons: [
+      { id: '1', title: 'Add another' },
+      { id: '2', title: 'Checkout' },
+      { id: 'BACK', title: '← Back' },
+    ],
+  }),
+
   addMoreOrCheckout: () => `1️⃣ Add another item\n2️⃣ Continue to checkout`,
+
+  /** Interactive variant for the batch / web upload flow (with Back). */
+  addMoreOrCheckoutInteractive: () => ({
+    text: 'What next?',
+    buttons: [
+      { id: '1', title: 'Add another' },
+      { id: '2', title: 'Checkout' },
+      { id: 'BACK', title: '← Back' },
+    ],
+  }),
 
   // ===== Name collection (first order only) =====
 
@@ -133,6 +221,16 @@ export const MSG = {
   chooseFulfillment: (name: string) =>
     `Thanks *${name}*! How would you like to receive your prints?\n\n1️⃣ *Collect* — ${COLLECTION_ADDRESS} _(free)_\n2️⃣ *Deliver* in Harare — $3.00\n3️⃣ *Deliver* outside Harare — _(quote first)_`,
 
+  /** Interactive variant: 3 buttons for fulfillment choice. */
+  chooseFulfillmentInteractive: (name: string) => ({
+    text: `Thanks *${name}*! How would you like to receive your prints?\n\n• Collect — ${COLLECTION_ADDRESS} (free)\n• Deliver in Harare — $3.00\n• Outside Harare — quote first`,
+    buttons: [
+      { id: '1', title: '🏪 Collect' },
+      { id: '2', title: '🚚 Harare delivery' },
+      { id: '3', title: 'Outside Harare' },
+    ],
+  }),
+
   askDeliveryAddress: () => `Please send your delivery address in Harare.`,
 
   outsideHarare: () => `For deliveries outside Harare, please send us your address and we'll quote you a delivery fee before confirming the order.`,
@@ -143,6 +241,16 @@ export const MSG = {
 
   confirmOrder: (summary: string) =>
     `${summary}\n\nReply *PAY* to confirm and get a payment link, or *CANCEL* to start over.`,
+
+  /** Interactive variant: 3 buttons for confirm/cancel/back. */
+  confirmOrderInteractive: (summary: string) => ({
+    text: summary,
+    buttons: [
+      { id: 'PAY', title: '💳 Pay now' },
+      { id: 'BACK', title: '← Back' },
+      { id: 'CANCEL', title: 'Cancel' },
+    ],
+  }),
 
   orderCancelled: () => `Order cancelled. Type anything to start a new order.`,
 

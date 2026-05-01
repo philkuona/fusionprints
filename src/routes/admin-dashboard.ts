@@ -235,6 +235,26 @@ function dashboardHtml(): string {
       color: var(--text2);
     }
 
+    .nav-tabs {
+      display: flex;
+      gap: 2px;
+      flex: 1;
+      margin-left: 24px;
+    }
+
+    .nav-tab {
+      padding: 8px 14px;
+      color: var(--text2);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 6px;
+      transition: all 0.15s;
+    }
+
+    .nav-tab:hover { color: var(--text); background: var(--surface); }
+    .nav-tab.active { color: var(--accent); background: var(--surface); }
+
     .live-dot {
       width: 6px;
       height: 6px;
@@ -567,6 +587,12 @@ function dashboardHtml(): string {
 
 <header>
   <div class="logo">Fusion<span>Prints</span> <span style="font-size:11px;margin-left:4px;">admin</span></div>
+  <nav class="nav-tabs">
+    <a href="/admin" class="nav-tab active">Orders</a>
+    <a href="/admin/metrics" class="nav-tab">Metrics</a>
+    <a href="/admin/printers" class="nav-tab">Printers</a>
+    <a href="/admin/jobs" class="nav-tab">Print Jobs</a>
+  </nav>
   <div class="header-right">
     <div class="live-indicator">
       <div class="live-dot"></div>
@@ -825,7 +851,10 @@ function dashboardHtml(): string {
         \${jobs.map(j => \`
           <div class="item-row">
             <span>\${j.printerName || 'Unassigned'}</span>
-            <span><span class="badge badge-\${j.status}">\${j.status}</span></span>
+            <span style="display:flex;gap:8px;align-items:center;">
+              <span class="badge badge-\${j.status}">\${j.status}</span>
+              \${j.status === 'failed' ? \`<button class="action-btn approve" style="padding:3px 8px;font-size:11px" onclick="reprintJob('\${j.id}')">↻ Reprint</button>\` : ''}
+            </span>
           </div>
         \`).join('')}
       </div>\` : ''}
@@ -833,10 +862,70 @@ function dashboardHtml(): string {
       <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
         \${order.status === 'awaiting_approval' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'approve'); closeModal()">✓ Approve for printing</button>\` : ''}
         \${['paid','awaiting_approval','queued_for_print','printing'].includes(order.status) ? \`<button class="action-btn ready" onclick="doAction('\${order.id}', 'ready'); closeModal()">Mark ready for collection</button>\` : ''}
-        \${order.status === 'ready_for_collection' ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">Mark as collected</button>\` : ''}
+        \${order.status === 'ready_for_collection' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn ready" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">📦 Mark shipped</button>\` : ''}
+        \${(order.status === 'ready_for_collection' || order.status === 'shipped') ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">✓ Mark fulfilled</button>\` : ''}
+        \${jobs.some(j => j.status === 'failed') ? \`<button class="action-btn approve" onclick="reprintOrder('\${order.id}')">↻ Reprint failed jobs</button>\` : ''}
+        <button class="action-btn ready" onclick="previewReceipt('\${order.id}')">📄 Receipt</button>
         \${!['fulfilled','cancelled','failed'].includes(order.status) ? \`<button class="action-btn cancel" onclick="doAction('\${order.id}', 'cancel'); closeModal()">Cancel order</button>\` : ''}
       </div>
     \`;
+  }
+
+  async function doOpsAction(orderId, action) {
+    try {
+      const r = await fetch('/admin/api/ops/orders/' + orderId + '/' + action, { method: 'POST' });
+      if (!r.ok) throw new Error();
+      loadAll();
+    } catch (e) {
+      alert('Action failed');
+    }
+  }
+
+  async function reprintJob(jobId) {
+    if (!confirm('Requeue this print job?')) return;
+    try {
+      const r = await fetch('/admin/api/ops/jobs/' + jobId + '/reprint', { method: 'POST' });
+      if (!r.ok) throw new Error();
+      alert('Job requeued. The agent will pick it up on next poll.');
+      closeModal();
+      loadAll();
+    } catch (e) {
+      alert('Reprint failed');
+    }
+  }
+
+  async function reprintOrder(orderId) {
+    if (!confirm('Requeue all failed jobs in this order?')) return;
+    try {
+      const r = await fetch('/admin/api/ops/orders/' + orderId + '/reprint', { method: 'POST' });
+      const data = await r.json();
+      if (!r.ok) throw new Error();
+      alert('Requeued ' + data.count + ' job(s). The agent will pick them up.');
+      closeModal();
+      loadAll();
+    } catch (e) {
+      alert('Reprint failed');
+    }
+  }
+
+  async function previewReceipt(orderId) {
+    try {
+      const r = await fetch('/admin/api/ops/orders/' + orderId + '/receipt-preview');
+      const data = await r.json();
+      if (!r.ok) throw new Error();
+      const send = confirm('Receipt preview:\\n\\n' + data.text + '\\n\\n\\nSend this to the customer via WhatsApp?');
+      if (send) {
+        const r2 = await fetch('/admin/api/ops/orders/' + orderId + '/send-receipt', { method: 'POST' });
+        const data2 = await r2.json();
+        if (data2.ok) {
+          alert('Receipt sent ✓');
+        } else {
+          alert('Failed to send receipt');
+        }
+      }
+    } catch (e) {
+      alert('Failed to preview receipt');
+    }
   }
 
   async function doAction(orderId, action, event) {

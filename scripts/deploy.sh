@@ -108,14 +108,14 @@ echo -e "\${GREEN}==>\${NC} Running database migrations"
 npm run db:migrate 2>&1 | tail -5
 
 echo -e "\${GREEN}==>\${NC} Restarting service"
-sudo /bin/systemctl restart ${SERVICE_NAME}
+sudo -n /bin/systemctl restart ${SERVICE_NAME}
 sleep 2
 
-if sudo /bin/systemctl is-active --quiet ${SERVICE_NAME}; then
+if sudo -n /bin/systemctl is-active --quiet ${SERVICE_NAME}; then
     echo "   Service active ✓"
 else
     echo "   Service failed to start! Last 20 log lines:"
-    sudo /bin/systemctl status ${SERVICE_NAME} --no-pager | tail -20 || true
+    sudo -n /bin/systemctl status ${SERVICE_NAME} --no-pager | tail -20 || true
     exit 1
 fi
 EOF

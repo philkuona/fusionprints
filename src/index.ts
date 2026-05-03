@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     return {
       service: env.BUSINESS_NAME,
       status: 'running',
-      message: 'Hello from FusionPrints. The bot lives here.',
+      message: 'Hello from FusionPrints.',
     };
   });
 

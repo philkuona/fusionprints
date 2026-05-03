@@ -25,13 +25,13 @@ export const MSG = {
   greeting: (name?: string) =>
     name
       ? `👋 Welcome back, *${name}*!\n\nWhat would you like today?\n\n1️⃣ Photo prints\n2️⃣ Posters\n3️⃣ Check an existing order\n\nReply with a number.`
-      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nI print photos and posters — collect in Harare or get them delivered.\n\nWhat would you like today?\n\n1️⃣ Photo prints\n2️⃣ Posters\n3️⃣ Check an existing order\n\nReply with a number.`,
+      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nWe print photos and posters — collect in Harare or get them delivered.\n\nWhat would you like today?\n\n1️⃣ Photo prints\n2️⃣ Posters\n3️⃣ Check an existing order\n\nReply with a number.`,
 
   /** Interactive version of greeting — uses 3 buttons. Customers tap instead of typing. */
   greetingInteractive: (name?: string) => ({
     text: name
       ? `👋 Welcome back, *${name}*!\n\nWhat would you like today?`
-      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nI print photos and posters — collect in Harare or get them delivered.\n\nWhat would you like today?`,
+      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nWe print photos and posters — collect in Harare or get them delivered.\n\nWhat would you like today?`,
     buttons: [
       { id: '1', title: '📸 Photo prints' },
       { id: '2', title: '🖼 Posters' },
@@ -135,13 +135,13 @@ export const MSG = {
     `Still waiting for your upload to finish.\n\nWhen you've uploaded your photos via the link, reply *UPLOADED* here.\n\nReply *CANCEL* to start over.`,
 
   webUploadEmpty: () =>
-    `I couldn't find any uploaded photos for this order. Did the upload finish?\n\nIf the upload is still in progress, wait for it to complete then reply *UPLOADED* again.\n\nReply *CANCEL* to start over.`,
+    `We couldn't find any uploaded photos for this order. Did the upload finish?\n\nIf the upload is still in progress, wait for it to complete then reply *UPLOADED* again.\n\nReply *CANCEL* to start over.`,
 
   webUploadComplete: (count: number, displayLabel: string, lineTotal: string, cartTotal: string) =>
     `✅ Got it — ${count} photo${count === 1 ? '' : 's'} added at ${displayLabel} for *${lineTotal}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
 
   awaitingBatchUpload: (displayLabel: string, priceEach: string) =>
-    `Send your photos for *${displayLabel}* — ${priceEach} each.\n\n📎 Send them as *documents* — you can select all of them at once from your gallery.\n\nI'll confirm every few as they arrive. Reply *DONE* when you're finished.\n\n_Reply BACK to choose a different size, or CANCEL to start over._`,
+    `Send your photos for *${displayLabel}* — ${priceEach} each.\n\n📎 Send them as *documents* — you can select all of them at once from your gallery.\n\nWe'll confirm every few as they arrive. Reply *DONE* when you're finished.\n\n_Reply BACK to choose a different size, or CANCEL to start over._`,
 
   batchImageAdded: (count: number, widthPx: number, heightPx: number, hasWarning: boolean) =>
     hasWarning
@@ -166,13 +166,13 @@ export const MSG = {
   awaitingImage: (displayLabel: string, priceEach: string) =>
     `*${displayLabel}* — ${priceEach} each.\n\nNow send me the photo.\n\n⚠️ *Important:* Send it as a *document/file*, not a regular photo — WhatsApp shrinks regular photos and prints come out blurry.\n\n📎 Tap the paperclip → *Document* → choose your image.`,
 
-  imageWasCompressed: () => `⚠️ That image came through compressed. The print quality may not be good.\n\nPlease re-send as a *document*:\n📎 Paperclip → *Document* → select the photo.\n\nIf you only have it as a regular photo, reply *USE ANYWAY* and I'll print what you sent (quality may be lower).`,
+  imageWasCompressed: () => `⚠️ That image came through compressed. The print quality may not be good.\n\nPlease re-send as a *document*:\n📎 Paperclip → *Document* → select the photo.\n\nIf you only have it as a regular photo, reply *USE ANYWAY* and we'll print what you sent (quality may be lower).`,
 
   imageTooLow: (widthPx: number, heightPx: number, minW: number, minH: number) =>
     `⚠️ This image is ${widthPx}×${heightPx} pixels — below the minimum ${minW}×${minH} for a sharp print.\n\n1️⃣ Send a different photo\n2️⃣ Print anyway _(may look soft)_`,
 
   imageWarnLow: (widthPx: number, heightPx: number, recW: number, recH: number) =>
-    `⚠️ Image is ${widthPx}×${heightPx} pixels. For best results I recommend ${recW}×${recH}.\n\n1️⃣ Send a different photo\n2️⃣ Continue anyway`,
+    `⚠️ Image is ${widthPx}×${heightPx} pixels. For best results we recommend ${recW}×${recH}.\n\n1️⃣ Send a different photo\n2️⃣ Continue anyway`,
 
   imageOk: (widthPx: number, heightPx: number) =>
     `✅ Got it — ${widthPx}×${heightPx}px, looking good.\n\nHow many copies?`,
@@ -301,10 +301,10 @@ export const MSG = {
     `Your payment link for order *${orderNumber}* has expired.\n\nReply *RETRY* to get a new link, or *CANCEL* to start over.`,
 
   paymentConfirmed: (orderNumber: string) =>
-    `✅ *Payment received!*\n\nOrder *${orderNumber}* is now in the queue.\n\nI'll message you when your prints are ready. Photo prints are usually done within *1 hour* during business hours.`,
+    `✅ *Payment received!*\n\nOrder *${orderNumber}* is now in the queue.\n\nWe'll message you when your prints are ready. Photo prints are usually done within *1 hour* during business hours.`,
 
   paymentConfirmedPoster: (orderNumber: string) =>
-    `✅ *Payment received!*\n\nOrder *${orderNumber}* — your poster will go through a quick quality check before printing _(within 2 hours, business hours)_. I'll message you once it's confirmed.`,
+    `✅ *Payment received!*\n\nOrder *${orderNumber}* — your poster will go through a quick quality check before printing _(within 2 hours, business hours)_. We'll message you once it's confirmed.`,
 
   // ===== Ready for collection / delivery =====
 
@@ -319,13 +319,13 @@ export const MSG = {
   orderStatus: (orderNumber: string, status: string) =>
     `Order *${orderNumber}*: ${status}`,
 
-  noRecentOrders: () => `I don't have any recent orders for your number. Type anything to place a new order.`,
+  noRecentOrders: () => `No recent orders found for your number. Type anything to place a new order.`,
 
   // ===== Help / fallback =====
 
-  help: () => `Here's what I can help with:\n\n📷 *Print photos* — type *photos*\n🖼️ *Print posters* — type *posters*\n📦 *Check your order* — type *status*\n👤 *Talk to a person* — type *HELP*\n\nOr just reply with *1*, *2*, or *3* from the menu.`,
+  help: () => `Here's what we can help with:\n\n📷 *Print photos* — type *photos*\n🖼️ *Print posters* — type *posters*\n📦 *Check your order* — type *status*\n👤 *Talk to a person* — type *HELP*\n\nOr just reply with *1*, *2*, or *3* from the menu.`,
 
-  humanHandoff: () => `I'll connect you with a real person right away.\n\nPlease WhatsApp us directly: ${process.env.BUSINESS_PHONE ?? '[business number]'}\n\nOr reply to continue with the bot.`,
+  humanHandoff: () => `We'll connect you with a real person right away.\n\nPlease WhatsApp us directly: ${process.env.BUSINESS_PHONE ?? '[business number]'}\n\nOr reply here to continue.`,
 
-  somethingWentWrong: () => `Something went wrong on my end. Please try again, or type *HELP* to speak to a person.`,
+  somethingWentWrong: () => `Something went wrong on our end. Please try again, or type *HELP* to speak to a person.`,
 };

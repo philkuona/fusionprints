@@ -153,7 +153,7 @@ export async function createOrder(
           .returning();
 
         // Determine which printer handles this item
-        const isLargeFormat = ['8x10', '11x14', '12x18', '16x20', '18x24', '24x36'].includes(
+        const isLargeFormat = ['8x10', '11x14', '12x18', '16x20'].includes(
           pricedItem.sizeCode,
         );
         const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;

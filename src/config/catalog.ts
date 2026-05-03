@@ -25,10 +25,16 @@ export interface Product {
   /** Price per single unit in USD */
   unitPriceUsd: number;
   /** Which printer handles this product */
-  printer: 'dnp_ds620a' | 'epson_p900';
+  printer: 'dnp_ds620a_4x6' | 'dnp_ds620a_5x7' | 'epson_p900';
+  /** Print finish — locked per size at launch (Phase 2 may allow customer choice) */
+  finish: 'glossy' | 'lustre';
   /** Whether this product needs human approval before printing */
   requiresManualReview: boolean;
-  /** Whether this is outsourced (18x24, 24x36 in Phase 1) */
+  /**
+   * Legacy field — kept for backward compatibility. Always false at launch
+   * since outsourcing was removed (decided 2026-05-02).
+   * Will be removed in a future migration.
+   */
   isOutsourced: boolean;
   /** Minimum image resolution in pixels for acceptable quality */
   minResolution: { width: number; height: number };
@@ -37,13 +43,26 @@ export interface Product {
 }
 
 /**
- * The complete product catalog for Phase 1.
+ * The complete product catalog (current as of 2026-05-02).
  *
- * Photo prints — 5 sizes, all on DNP DS620A (except 8x10 on Epson P900)
- * Posters      — 5 sizes, 3 in-house on Epson P900, 2 outsourced
+ * Architecture (locked):
+ *   - DNP #1 with 6×8 master media → handles 4×6 (cut), 6×6 (cut), 6×8 (native)
+ *   - DNP #2 with 5×7 media        → handles 5×7
+ *   - Epson SC-P900                 → handles 8×10, 11×14, 12×18, 16×20
+ *
+ * Catalog at launch — 8 sizes total. Outsourced sizes (18×24, 24×36) were
+ * dropped after we decided not to outsource (no SA partner). Customers get
+ * a clean "everything is printed in-house" story.
+ *
+ * Print finishes locked per size:
+ *   - 4×6 → glossy (consumer snapshot use)
+ *   - 6×6, 5×7, 6×8 → lustre (album / wall use)
+ *   - 8×10 and up → lustre (Epson lustre paper)
+ *
+ * Customer-choosable finishes deferred to Phase 2.
  */
 export const PRODUCTS: Product[] = [
-  // ===== Photo Prints =====
+  // ===== Photo Prints (DNP) =====
   {
     sizeCode: '4x6',
     productType: 'photo_print',
@@ -51,7 +70,8 @@ export const PRODUCTS: Product[] = [
     labelCm: '10×15 cm',
     displayLabel: '4×6 in (10×15 cm)',
     unitPriceUsd: 0.80,
-    printer: 'dnp_ds620a',
+    printer: 'dnp_ds620a_4x6',
+    finish: 'glossy',
     requiresManualReview: false,
     isOutsourced: false,
     minResolution: { width: 600, height: 900 },
@@ -64,7 +84,8 @@ export const PRODUCTS: Product[] = [
     labelCm: '13×18 cm',
     displayLabel: '5×7 in (13×18 cm)',
     unitPriceUsd: 2.00,
-    printer: 'dnp_ds620a',
+    printer: 'dnp_ds620a_5x7',
+    finish: 'lustre',
     requiresManualReview: false,
     isOutsourced: false,
     minResolution: { width: 750, height: 1050 },
@@ -77,7 +98,8 @@ export const PRODUCTS: Product[] = [
     labelCm: '15×15 cm',
     displayLabel: '6×6 in (15×15 cm)',
     unitPriceUsd: 2.00,
-    printer: 'dnp_ds620a',
+    printer: 'dnp_ds620a_4x6',
+    finish: 'lustre',
     requiresManualReview: false,
     isOutsourced: false,
     minResolution: { width: 900, height: 900 },
@@ -90,7 +112,8 @@ export const PRODUCTS: Product[] = [
     labelCm: '15×20 cm',
     displayLabel: '6×8 in (15×20 cm)',
     unitPriceUsd: 2.50,
-    printer: 'dnp_ds620a',
+    printer: 'dnp_ds620a_4x6',
+    finish: 'lustre',
     requiresManualReview: false,
     isOutsourced: false,
     minResolution: { width: 900, height: 1200 },
@@ -104,13 +127,14 @@ export const PRODUCTS: Product[] = [
     displayLabel: '8×10 in (20×25 cm)',
     unitPriceUsd: 5.00,
     printer: 'epson_p900',
+    finish: 'lustre',
     requiresManualReview: false,
     isOutsourced: false,
     minResolution: { width: 1200, height: 1500 },
     recommendedResolution: { width: 2400, height: 3000 },
   },
 
-  // ===== Posters =====
+  // ===== Posters (Epson) =====
   {
     sizeCode: '11x14',
     productType: 'poster',
@@ -119,6 +143,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '11×14 in (28×36 cm)',
     unitPriceUsd: 10.00,
     printer: 'epson_p900',
+    finish: 'lustre',
     requiresManualReview: true,
     isOutsourced: false,
     minResolution: { width: 1650, height: 2100 },
@@ -132,6 +157,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '12×18 in (30×45 cm)',
     unitPriceUsd: 14.00,
     printer: 'epson_p900',
+    finish: 'lustre',
     requiresManualReview: true,
     isOutsourced: false,
     minResolution: { width: 1800, height: 2700 },
@@ -145,36 +171,11 @@ export const PRODUCTS: Product[] = [
     displayLabel: '16×20 in (40×50 cm)',
     unitPriceUsd: 22.00,
     printer: 'epson_p900',
+    finish: 'lustre',
     requiresManualReview: true,
     isOutsourced: false,
     minResolution: { width: 2400, height: 3000 },
     recommendedResolution: { width: 4800, height: 6000 },
-  },
-  {
-    sizeCode: '18x24',
-    productType: 'poster',
-    labelInches: '18×24 in',
-    labelCm: '45×60 cm',
-    displayLabel: '18×24 in (45×60 cm)',
-    unitPriceUsd: 35.00,
-    printer: 'epson_p900', // outsourced — printer field is nominal
-    requiresManualReview: true,
-    isOutsourced: true,
-    minResolution: { width: 2700, height: 3600 },
-    recommendedResolution: { width: 5400, height: 7200 },
-  },
-  {
-    sizeCode: '24x36',
-    productType: 'poster',
-    labelInches: '24×36 in',
-    labelCm: '60×90 cm',
-    displayLabel: '24×36 in (60×90 cm)',
-    unitPriceUsd: 55.00,
-    printer: 'epson_p900', // outsourced — printer field is nominal
-    requiresManualReview: true,
-    isOutsourced: true,
-    minResolution: { width: 3600, height: 5400 },
-    recommendedResolution: { width: 7200, height: 10800 },
   },
 ];
 

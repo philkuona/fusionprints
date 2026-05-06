@@ -611,7 +611,7 @@ function dashboardHtml(): string {
         <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="#FBF7F0"/>
         <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="#05D668"/>
       </g>
-      <text x="56" y="40" font-family="Outfit, sans-serif" font-size="28" font-weight="700" fill="#FBF7F0" letter-spacing="-0.56">fusionprints</text>
+      <text x="56" y="40" font-family="Outfit, system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="#FBF7F0" letter-spacing="-0.56">fusionprints</text>
     </svg>
     <span class="admin-tag">admin</span>
   </div>

@@ -95,7 +95,7 @@ async function getStats() {
   };
 }
 
-async function getOrders(status?: string, limit = 50) {
+async function getOrders(filter?: string, limit = 50) {
   const baseQuery = db
     .select({
       id: orders.id,
@@ -114,8 +114,15 @@ async function getOrders(status?: string, limit = 50) {
     .orderBy(desc(orders.createdAt))
     .limit(limit);
 
-  if (status) {
-    return baseQuery.where(eq(orders.status, status as typeof orders.status.enumValues[number]));
+  if (filter === 'today') {
+    // Start of today in server timezone
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return baseQuery.where(gte(orders.createdAt, startOfToday));
+  }
+
+  if (filter && filter !== 'all') {
+    return baseQuery.where(eq(orders.status, filter as typeof orders.status.enumValues[number]));
   }
 
   return baseQuery;
@@ -170,7 +177,7 @@ function dashboardHtml(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FusionPrints Admin</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap');
 
     :root {
       --bg: #0a0a0a;
@@ -212,14 +219,30 @@ function dashboardHtml(): string {
     }
 
     .logo {
-      font-family: 'DM Mono', monospace;
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--accent);
-      letter-spacing: -0.5px;
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 22px;
+      font-weight: 600;
+      color: #FF7A59;
+      letter-spacing: -0.3px;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
     }
 
-    .logo span { color: var(--text2); }
+    .logo .prints { color: #05D668; }
+
+    .logo .admin-tag {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 2px 6px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      margin-left: 2px;
+    }
 
     .header-right {
       display: flex;
@@ -588,7 +611,7 @@ function dashboardHtml(): string {
 <body>
 
 <header>
-  <div class="logo">Fusion<span>Prints</span> <span style="font-size:11px;margin-left:4px;">admin</span></div>
+  <div class="logo">Fusion<span class="prints">Prints</span><span class="admin-tag">admin</span></div>
   <nav class="nav-tabs">
     <a href="/admin" class="nav-tab active">Orders</a>
     <a href="/admin/metrics" class="nav-tab">Metrics</a>
@@ -614,7 +637,8 @@ function dashboardHtml(): string {
 
   <!-- Filters -->
   <div class="filters">
-    <button class="filter-btn active" onclick="setFilter(this, '')">All orders</button>
+    <button class="filter-btn active" onclick="setFilter(this, 'today')">Today</button>
+    <button class="filter-btn" onclick="setFilter(this, 'all')">All orders</button>
     <button class="filter-btn" onclick="setFilter(this, 'awaiting_approval')">⚠️ Needs approval</button>
     <button class="filter-btn" onclick="setFilter(this, 'paid')">Paid</button>
     <button class="filter-btn" onclick="setFilter(this, 'queued_for_print')">In queue</button>
@@ -647,7 +671,7 @@ function dashboardHtml(): string {
 </div>
 
 <script>
-  let currentFilter = '';
+  let currentFilter = 'today';
   let refreshTimer;
 
   function timeAgo(dateStr) {
@@ -727,25 +751,21 @@ function dashboardHtml(): string {
         <div class="stat-label">Pending payment</div>
         <div class="stat-value">\${stats.pendingPayment}</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" onclick="setFilterByClick('today')">
         <div class="stat-label">Today's orders</div>
         <div class="stat-value orange">\${stats.todayOrders}</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" onclick="setFilterByClick('today')">
         <div class="stat-label">Today's revenue</div>
         <div class="stat-value green">$\${stats.todayRevenue}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Total orders</div>
-        <div class="stat-value">\${stats.totalOrders}</div>
       </div>
     \`;
   }
 
   async function loadOrders() {
-    const url = currentFilter
-      ? \`/admin/api/orders?status=\${currentFilter}\`
-      : '/admin/api/orders';
+    const url = (currentFilter && currentFilter !== 'all')
+      ? \`/admin/api/orders?filter=\${currentFilter}\`
+      : '/admin/api/orders?filter=all';
     const res = await fetch(url);
     const orderList = await res.json();
 
@@ -1004,8 +1024,9 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
   app.get('/admin/api/orders', async (request, reply) => {
     if (!checkAuth(request, reply)) return;
     try {
-      const { status } = request.query as { status?: string };
-      return await getOrders(status);
+      // Accepts ?status= (legacy) or ?filter= (today/all/status name)
+      const { filter, status } = request.query as { filter?: string; status?: string };
+      return await getOrders(filter ?? status);
     } catch (err) {
       logger.error({ err }, 'Failed to get orders');
       reply.status(500).send({ error: 'Failed to load orders' });

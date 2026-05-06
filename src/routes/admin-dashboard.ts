@@ -432,6 +432,8 @@ function dashboardHtml(): string {
     .badge-awaiting_approval { background: #431407; color: #fdba74; border: 1px solid #7c2d12; }
     .badge-queued_for_print { background: #1e3a5f; color: #93c5fd; border: 1px solid #1d4ed8; }
     .badge-printing { background: #1e3a5f; color: #60a5fa; border: 1px solid #2563eb; }
+    .badge-printed { background: #422006; color: #fbbf24; border: 1px solid #92400e; }
+    .badge-ready_for_pickup { background: #052e16; color: #4ade80; border: 1px solid #16a34a; }
     .badge-ready_for_collection { background: #052e16; color: #4ade80; border: 1px solid #16a34a; }
     .badge-fulfilled { background: #141414; color: #6b7280; border: 1px solid #374151; }
     .badge-cancelled { background: #141414; color: #6b7280; border: 1px solid #374151; }
@@ -665,6 +667,8 @@ function dashboardHtml(): string {
       awaiting_approval: 'Needs approval',
       queued_for_print: 'In queue',
       printing: 'Printing',
+      printed: 'Printed (release?)',
+      ready_for_pickup: 'Ready for pickup',
       ready_for_collection: 'Ready',
       fulfilled: 'Fulfilled',
       cancelled: 'Cancelled',
@@ -678,10 +682,13 @@ function dashboardHtml(): string {
     if (order.status === 'awaiting_approval') {
       btns.push(\`<button class="action-btn approve" onclick="doAction('\${order.id}', 'approve', event)">✓ Approve</button>\`);
     }
+    if (order.status === 'printed') {
+      btns.push(\`<button class="action-btn approve" onclick="doAction('\${order.id}', 'release-for-pickup', event)">📦 Release</button>\`);
+    }
     if (['paid', 'awaiting_approval', 'queued_for_print', 'printing'].includes(order.status)) {
       btns.push(\`<button class="action-btn ready" onclick="doAction('\${order.id}', 'ready', event)">Ready</button>\`);
     }
-    if (order.status === 'ready_for_collection') {
+    if (order.status === 'ready_for_collection' || order.status === 'ready_for_pickup') {
       btns.push(\`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil', event)">Collected</button>\`);
     }
     if (!['fulfilled', 'cancelled', 'failed'].includes(order.status)) {
@@ -861,9 +868,10 @@ function dashboardHtml(): string {
 
       <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
         \${order.status === 'awaiting_approval' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'approve'); closeModal()">✓ Approve for printing</button>\` : ''}
+        \${order.status === 'printed' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'release-for-pickup'); closeModal()">📦 Release for pickup</button>\` : ''}
         \${['paid','awaiting_approval','queued_for_print','printing'].includes(order.status) ? \`<button class="action-btn ready" onclick="doAction('\${order.id}', 'ready'); closeModal()">Mark ready for collection</button>\` : ''}
         \${order.status === 'ready_for_collection' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn ready" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">📦 Mark shipped</button>\` : ''}
-        \${(order.status === 'ready_for_collection' || order.status === 'shipped') ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">✓ Mark fulfilled</button>\` : ''}
+        \${(order.status === 'ready_for_collection' || order.status === 'ready_for_pickup' || order.status === 'shipped') ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">✓ Mark fulfilled</button>\` : ''}
         \${jobs.some(j => j.status === 'failed') ? \`<button class="action-btn approve" onclick="reprintOrder('\${order.id}')">↻ Reprint failed jobs</button>\` : ''}
         <button class="action-btn ready" onclick="previewReceipt('\${order.id}')">📄 Receipt</button>
         \${!['fulfilled','cancelled','failed'].includes(order.status) ? \`<button class="action-btn cancel" onclick="doAction('\${order.id}', 'cancel'); closeModal()">Cancel order</button>\` : ''}
@@ -1057,6 +1065,48 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
     } catch (err) {
       logger.error({ err }, 'Failed to mark order ready');
       reply.status(500).send({ error: 'Failed to update' });
+    }
+  });
+
+  // Phase D.3: Release for Pickup
+  // Called when operator has physically collected all prints from printer trays,
+  // placed them in the envelope with the label applied, and is ready to hand
+  // them off to the customer. Advances status to ready_for_pickup AND sends
+  // the customer a WhatsApp notification with pickup details.
+  app.post('/admin/api/orders/:id/release-for-pickup', async (request, reply) => {
+    if (!checkAuth(request, reply)) return;
+    try {
+      const { id } = request.params as { id: string };
+
+      // Need the order_number to call releaseOrderForPickup (which works by order_number)
+      const [order] = await db
+        .select({ orderNumber: orders.orderNumber, status: orders.status })
+        .from(orders)
+        .where(eq(orders.id, id))
+        .limit(1);
+
+      if (!order) {
+        reply.status(404).send({ error: 'Order not found' });
+        return;
+      }
+
+      // Only allow release from 'printed' or 'paid' status
+      // (paid is for legacy orders that bypassed the printed step)
+      if (order.status !== 'printed' && order.status !== 'paid') {
+        reply.status(400).send({
+          error: `Cannot release from status '${order.status}'. Order must be 'printed' or 'paid'.`,
+        });
+        return;
+      }
+
+      const { releaseOrderForPickup } = await import('@/services/order.js');
+      await releaseOrderForPickup(order.orderNumber);
+
+      logger.info({ orderId: id, orderNumber: order.orderNumber }, 'Order released for pickup');
+      return { ok: true };
+    } catch (err) {
+      logger.error({ err }, 'Failed to release order for pickup');
+      reply.status(500).send({ error: 'Failed to release' });
     }
   });
 

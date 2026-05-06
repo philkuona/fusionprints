@@ -13,9 +13,9 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, images, customers, conversationState } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, images, customers, conversationState, slipJobs } from '@/db/schema.js';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 
@@ -36,16 +36,91 @@ function checkAgentAuth(request: FastifyRequest, reply: FastifyReply): boolean {
 export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
 
   /**
-   * GET /api/agent/jobs/next
+   * GET /api/agent/jobs/next?printer_type=<type>
    *
    * Returns the next queued print job with all info the agent needs.
    * Returns 404 if no jobs are waiting.
+   *
+   * Phase D.3: accepts an optional printer_type query parameter.
+   * If provided, only returns jobs matching that target printer type.
+   * Valid values: 'dye_sub_4x6' | 'dye_sub_5x7' | 'inkjet' | 'thermal_label'
+   *
+   * If a printer_type is specified, also includes pending slip_jobs
+   * (operational/branded prints) for that printer type, prioritized by
+   * sequence_position so end_separator prints first within an order.
    */
   app.get('/api/agent/jobs/next', async (request, reply) => {
     if (!checkAgentAuth(request, reply)) return;
 
+    const printerType = (request.query as { printer_type?: string })?.printer_type;
+    const validTypes = ['dye_sub_4x6', 'dye_sub_5x7', 'inkjet', 'thermal_label'];
+    const filterType = printerType && validTypes.includes(printerType) ? printerType : null;
+
     try {
-      // Find the oldest queued job
+      // For thermal_label requests, only check slip_jobs (no print_jobs go there)
+      if (filterType === 'thermal_label') {
+        const [slip] = await db
+          .select()
+          .from(slipJobs)
+          .where(
+            and(
+              eq(slipJobs.status, 'queued'),
+              eq(slipJobs.targetPrinterType, 'thermal_label'),
+            ),
+          )
+          .orderBy(slipJobs.queuedAt)
+          .limit(1);
+
+        if (!slip) {
+          reply.status(404).send({ message: 'No jobs queued' });
+          return;
+        }
+
+        return {
+          id: slip.id,
+          jobKind: 'slip' as const,
+          slipType: slip.slipType,
+          targetPrinterType: slip.targetPrinterType,
+          payloadJson: slip.payloadJson, // contains { zpl: "..." }
+          sequencePosition: slip.sequencePosition,
+        };
+      }
+
+      // For dye_sub printers, check both slip_jobs (priority) and print_jobs.
+      // Slips with sequence_position 0 (end_separator) print first.
+      // Customer prints in the middle.
+      // Slips with sequence_position 100 (order_info) print last.
+      // For now, simple priority: pending slips before pending customer prints.
+      if (filterType === 'dye_sub_4x6' || filterType === 'dye_sub_5x7') {
+        const [slip] = await db
+          .select()
+          .from(slipJobs)
+          .where(
+            and(
+              eq(slipJobs.status, 'queued'),
+              eq(slipJobs.targetPrinterType, filterType),
+            ),
+          )
+          .orderBy(slipJobs.sequencePosition, slipJobs.queuedAt)
+          .limit(1);
+
+        if (slip) {
+          return {
+            id: slip.id,
+            jobKind: 'slip' as const,
+            slipType: slip.slipType,
+            targetPrinterType: slip.targetPrinterType,
+            printReadyFileUrl: slip.printReadyFileUrl,
+            sequencePosition: slip.sequencePosition,
+          };
+        }
+      }
+
+      // Find the oldest queued print_job, optionally filtered by target_printer_type
+      const whereClauses = filterType
+        ? and(eq(printJobs.status, 'queued'), eq(printJobs.targetPrinterType, filterType as 'dye_sub_4x6' | 'dye_sub_5x7' | 'inkjet'))
+        : eq(printJobs.status, 'queued');
+
       const [job] = await db
         .select({
           id: printJobs.id,
@@ -54,7 +129,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
           status: printJobs.status,
         })
         .from(printJobs)
-        .where(eq(printJobs.status, 'queued'))
+        .where(whereClauses)
         .orderBy(printJobs.queuedAt)
         .limit(1);
 
@@ -118,30 +193,53 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * POST /api/agent/jobs/:id/start
-   * Mark a job as currently printing.
+   * Mark a job (print or slip) as currently printing.
    */
   app.post('/api/agent/jobs/:id/start', async (request, reply) => {
     if (!checkAgentAuth(request, reply)) return;
     const { id } = request.params as { id: string };
 
     try {
-      await db
+      // Try print_jobs first
+      const printJobUpdate = await db
         .update(printJobs)
         .set({ status: 'printing', startedAt: new Date(), attempts: 1 })
-        .where(eq(printJobs.id, id));
+        .where(eq(printJobs.id, id))
+        .returning({ id: printJobs.id, orderItemId: printJobs.orderItemId });
 
-      // Update the order status too
-      await db.execute(
-        `UPDATE orders SET status = 'printing' WHERE id = (
-          SELECT o.id FROM orders o
-          JOIN order_items oi ON oi.order_id = o.id
-          JOIN print_jobs pj ON pj.order_item_id = oi.id
-          WHERE pj.id = '${id}'
-          LIMIT 1
-        )`
-      );
+      if (printJobUpdate.length > 0) {
+        // Update the order status too — find via order_item
+        const [item] = await db
+          .select({ orderId: orderItems.orderId })
+          .from(orderItems)
+          .where(eq(orderItems.id, printJobUpdate[0].orderItemId))
+          .limit(1);
+        if (item) {
+          await db
+            .update(orders)
+            .set({ status: 'printing' })
+            .where(eq(orders.id, item.orderId));
+        }
+        return { ok: true };
+      }
 
-      return { ok: true };
+      // Try slip_jobs
+      const slipJobUpdate = await db
+        .update(slipJobs)
+        .set({ status: 'printing', startedAt: new Date(), attempts: 1 })
+        .where(eq(slipJobs.id, id))
+        .returning({ id: slipJobs.id, orderId: slipJobs.orderId });
+
+      if (slipJobUpdate.length > 0) {
+        // Update the order status too
+        await db
+          .update(orders)
+          .set({ status: 'printing' })
+          .where(eq(orders.id, slipJobUpdate[0].orderId));
+        return { ok: true };
+      }
+
+      reply.status(404).send({ error: 'Job not found in print_jobs or slip_jobs' });
     } catch (err) {
       logger.error({ err, jobId: id }, 'Failed to mark job started');
       reply.status(500).send({ error: 'Internal error' });
@@ -150,59 +248,90 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * POST /api/agent/jobs/:id/done
-   * Mark a job as successfully printed.
+   * Mark a job (print or slip) as successfully printed.
+   *
+   * Phase D.3: jobs can be either print_jobs OR slip_jobs.
+   * Tries print_jobs first; if not found, tries slip_jobs.
+   *
+   * When ALL jobs (print + slip) for an order are done, advances
+   * order status to 'printed' (NOT directly ready_for_pickup —
+   * operator must explicitly release via admin dashboard).
    */
   app.post('/api/agent/jobs/:id/done', async (request, reply) => {
     if (!checkAgentAuth(request, reply)) return;
     const { id } = request.params as { id: string };
 
     try {
-      await db
+      // Try to update as print_job first
+      const printJobUpdate = await db
         .update(printJobs)
         .set({ status: 'done', completedAt: new Date() })
-        .where(eq(printJobs.id, id));
-
-      // Check if ALL print jobs for this order are done
-      // If so, mark the order as ready_for_collection
-      const [jobInfo] = await db
-        .select({ orderItemId: printJobs.orderItemId })
-        .from(printJobs)
         .where(eq(printJobs.id, id))
-        .limit(1);
+        .returning({ id: printJobs.id, orderItemId: printJobs.orderItemId });
 
-      if (jobInfo) {
-        const [itemInfo] = await db
+      let orderId: string | null = null;
+
+      if (printJobUpdate.length > 0) {
+        // It was a print_job — find its order via order_item
+        const [item] = await db
           .select({ orderId: orderItems.orderId })
           .from(orderItems)
-          .where(eq(orderItems.id, jobInfo.orderItemId))
+          .where(eq(orderItems.id, printJobUpdate[0].orderItemId))
           .limit(1);
+        if (item) orderId = item.orderId;
+      } else {
+        // Not a print_job — try slip_jobs
+        const slipJobUpdate = await db
+          .update(slipJobs)
+          .set({ status: 'done', completedAt: new Date() })
+          .where(eq(slipJobs.id, id))
+          .returning({ id: slipJobs.id, orderId: slipJobs.orderId });
 
-        if (itemInfo) {
-          // Check if all jobs for this order are done
-          const remainingJobs = await db
-            .select({ id: printJobs.id })
-            .from(printJobs)
-            .innerJoin(orderItems, eq(printJobs.orderItemId, orderItems.id))
-            .where(
-              and(
-                eq(orderItems.orderId, itemInfo.orderId),
-                eq(printJobs.status, 'queued'),
-              ),
-            );
-
-          if (remainingJobs.length === 0) {
-            // All jobs done — mark order ready
-            await db
-              .update(orders)
-              .set({ status: 'ready_for_collection', readyAt: new Date() })
-              .where(eq(orders.id, itemInfo.orderId));
-
-            logger.info({ orderId: itemInfo.orderId }, 'All jobs done — order ready for collection');
-          }
+        if (slipJobUpdate.length > 0) {
+          orderId = slipJobUpdate[0].orderId;
+        } else {
+          reply.status(404).send({ error: 'Job not found in print_jobs or slip_jobs' });
+          return;
         }
       }
 
-      logger.info({ jobId: id }, 'Print job marked done');
+      // Check if all jobs (print + slip) for this order are done
+      if (orderId) {
+        const [pendingPrints] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(printJobs)
+          .innerJoin(orderItems, eq(printJobs.orderItemId, orderItems.id))
+          .where(
+            and(
+              eq(orderItems.orderId, orderId),
+              eq(printJobs.status, 'queued'),
+            ),
+          );
+
+        const [pendingSlips] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(slipJobs)
+          .where(
+            and(
+              eq(slipJobs.orderId, orderId),
+              eq(slipJobs.status, 'queued'),
+            ),
+          );
+
+        const totalPending = (pendingPrints?.count ?? 0) + (pendingSlips?.count ?? 0);
+
+        if (totalPending === 0) {
+          // All jobs done — advance to 'printed' (operator must release for pickup)
+          await db
+            .update(orders)
+            .set({ status: 'printed' })
+            .where(eq(orders.id, orderId));
+
+          logger.info({ orderId }, 'All jobs done — order status: printed (awaiting operator release)');
+        }
+      }
+
+      logger.info({ jobId: id }, 'Job marked done');
       return { ok: true };
     } catch (err) {
       logger.error({ err, jobId: id }, 'Failed to mark job done');
@@ -212,7 +341,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * POST /api/agent/jobs/:id/fail
-   * Report a job failure.
+   * Report a job (print or slip) failure.
    */
   app.post('/api/agent/jobs/:id/fail', async (request, reply) => {
     if (!checkAgentAuth(request, reply)) return;
@@ -220,17 +349,39 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
     const { reason } = request.body as { reason: string };
 
     try {
-      await db
+      // Try print_jobs first
+      const printJobUpdate = await db
         .update(printJobs)
         .set({
           status: 'failed',
           errorMessage: reason,
           attempts: 1,
         })
-        .where(eq(printJobs.id, id));
+        .where(eq(printJobs.id, id))
+        .returning({ id: printJobs.id });
 
-      logger.error({ jobId: id, reason }, 'Print job failed');
-      return { ok: true };
+      if (printJobUpdate.length > 0) {
+        logger.error({ jobId: id, reason }, 'Print job failed');
+        return { ok: true };
+      }
+
+      // Try slip_jobs
+      const slipJobUpdate = await db
+        .update(slipJobs)
+        .set({
+          status: 'failed',
+          errorMessage: reason,
+          attempts: 1,
+        })
+        .where(eq(slipJobs.id, id))
+        .returning({ id: slipJobs.id });
+
+      if (slipJobUpdate.length > 0) {
+        logger.error({ slipJobId: id, reason }, 'Slip job failed');
+        return { ok: true };
+      }
+
+      reply.status(404).send({ error: 'Job not found' });
     } catch (err) {
       logger.error({ err, jobId: id }, 'Failed to record job failure');
       reply.status(500).send({ error: 'Internal error' });

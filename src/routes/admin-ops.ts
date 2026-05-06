@@ -778,9 +778,9 @@ function jobsPageHtml(): string {
   </div>
 
   <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-    <button class="btn filter-btn active" data-filter="" onclick="setFilter(this, '')">All</button>
-    <button class="btn filter-btn" data-filter="active" onclick="setFilter(this, 'active')">⚡ Active</button>
+    <button class="btn filter-btn active" data-filter="active" onclick="setFilter(this, 'active')">⚡ Active</button>
     <button class="btn filter-btn" data-filter="needs_attention" onclick="setFilter(this, 'needs_attention')">⚠️ Needs attention</button>
+    <button class="btn filter-btn" data-filter="" onclick="setFilter(this, '')">All</button>
     <button class="btn filter-btn" data-filter="completed" onclick="setFilter(this, 'completed')">Completed</button>
     <div style="flex:1"></div>
     <button class="btn" onclick="loadJobs()">↻ Refresh</button>
@@ -798,7 +798,7 @@ function jobsPageHtml(): string {
   </div>
 
   <script>
-    let currentFilter = '';
+    let currentFilter = 'active';
     const expanded = new Set();
     const selected = new Set();
     let allOrders = [];

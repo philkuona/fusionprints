@@ -547,10 +547,10 @@ function pageHtml(active: 'orders' | 'metrics' | 'printers' | 'jobs', title: str
       <span class="admin-tag">admin</span>
     </div>
     <nav class="nav-tabs">
-      <a href="/admin" class="nav-tab ${active === 'orders' ? 'active' : ''}">Orders</a>
-      <a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Metrics</a>
+      <a href="/admin/jobs" class="nav-tab ${active === 'jobs' ? 'active' : ''}">Print Queue</a>
+      <a href="/admin" class="nav-tab ${active === 'orders' ? 'active' : ''}">Completed Orders</a>
       <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers</a>
-      <a href="/admin/jobs" class="nav-tab ${active === 'jobs' ? 'active' : ''}">Print Jobs</a>
+      <a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>
     </nav>
   </header>
   <main>${body}</main>
@@ -562,7 +562,7 @@ function pageHtml(active: 'orders' | 'metrics' | 'printers' | 'jobs', title: str
 function metricsPageHtml(): string {
   const body = `
   <div class="page-header">
-    <div class="page-title">📊 Metrics</div>
+    <div class="page-title">📊 Key Metrics</div>
     <div class="page-sub">Business performance over the last <select id="days-select" onchange="loadMetrics()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:2px 6px;border-radius:4px;font-family:inherit;">
       <option value="7">7 days</option>
       <option value="30" selected>30 days</option>
@@ -670,7 +670,7 @@ function metricsPageHtml(): string {
 
     loadMetrics();
   </script>`;
-  return pageHtml('metrics', 'Metrics', body);
+  return pageHtml('metrics', 'Key Metrics', body);
 }
 
 // Printers page
@@ -773,7 +773,7 @@ function printersPageHtml(): string {
 function jobsPageHtml(): string {
   const body = `
   <div class="page-header">
-    <div class="page-title">🛠️ Print Jobs</div>
+    <div class="page-title">🛠️ Print Queue</div>
     <div class="page-sub">Print queue grouped by order. Expand an order to select individual prints to reprint.</div>
   </div>
 
@@ -1135,7 +1135,7 @@ function jobsPageHtml(): string {
       z-index: 100;
     }
   </style>`;
-  return pageHtml('jobs', 'Print Jobs', body);
+  return pageHtml('jobs', 'Print Queue', body);
 }
 
 /**

@@ -616,10 +616,10 @@ function dashboardHtml(): string {
     <span class="admin-tag">admin</span>
   </div>
   <nav class="nav-tabs">
-    <a href="/admin" class="nav-tab active">Orders</a>
-    <a href="/admin/metrics" class="nav-tab">Metrics</a>
+    <a href="/admin/jobs" class="nav-tab">Print Queue</a>
+    <a href="/admin" class="nav-tab active">Completed Orders</a>
     <a href="/admin/printers" class="nav-tab">Printers</a>
-    <a href="/admin/jobs" class="nav-tab">Print Jobs</a>
+    <a href="/admin/metrics" class="nav-tab">Key Metrics</a>
   </nav>
   <div class="header-right">
     <div class="live-indicator">
@@ -653,7 +653,7 @@ function dashboardHtml(): string {
   <!-- Orders table -->
   <div class="orders-container">
     <div class="orders-header">
-      <span class="orders-title">Orders</span>
+      <span class="orders-title">Completed Orders</span>
       <span class="orders-count" id="order-count">—</span>
     </div>
     <div id="orders-body">

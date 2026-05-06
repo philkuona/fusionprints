@@ -37,7 +37,9 @@ export const orderStatusEnum = pgEnum('order_status', [
   'awaiting_approval', // posters need human review before printing
   'queued_for_print',
   'printing',
-  'ready_for_collection',
+  'printed',           // all print jobs done; awaiting operator release for pickup
+  'ready_for_pickup',  // operator has released; customer notified
+  'ready_for_collection', // legacy — preserved for backward compat
   'shipped', // delivery orders that have left the shop
   'fulfilled',
   'cancelled',
@@ -78,6 +80,23 @@ export const printerStatusEnum = pgEnum('printer_status', [
   'offline',
   'media_low',
   'error',
+]);
+
+// New for Phase D — multi-printer routing target.
+// Each print job is tagged with which TYPE of printer should handle it.
+// The agent fetches only jobs matching its configured printer_type.
+export const targetPrinterTypeEnum = pgEnum('target_printer_type', [
+  'dye_sub_4x6',     // DNP #1 with 6×8 master media (handles 4×6, 6×6, 6×8)
+  'dye_sub_5x7',     // DNP #2 with 5×7 media
+  'inkjet',          // Epson SC-P900 (handles 8×10, 11×14, 12×18, 16×20)
+  'thermal_label',   // Zebra/Xprinter for envelope labels
+]);
+
+// New for Phase D — slip jobs are operational/branded prints, separate from customer prints.
+export const slipTypeEnum = pgEnum('slip_type', [
+  'order_info',      // 4×6 dye-sub card with order details (top of stack)
+  'end_separator',   // 4×6 dye-sub card with brand moment (bottom of stack)
+  'envelope_label',  // 2-1/4×4 thermal sticker for envelope exterior
 ]);
 
 // ===== Tables =====
@@ -259,6 +278,10 @@ export const printJobs = pgTable(
       .notNull()
       .references(() => orderItems.id, { onDelete: 'cascade' }),
     printerId: uuid('printer_id').references(() => printers.id),
+    // Phase D: which type of printer should handle this job.
+    // Nullable so existing rows (pre-D.1 deploy) remain valid.
+    // Code defaults to dye_sub_4x6 if null (matches old single-DNP routing).
+    targetPrinterType: targetPrinterTypeEnum('target_printer_type'),
     status: printJobStatusEnum('status').notNull().default('queued'),
     printReadyFileUrl: text('print_ready_file_url'), // prepared TIFF/PDF
     attempts: integer('attempts').notNull().default(0),
@@ -270,6 +293,48 @@ export const printJobs = pgTable(
   (table) => ({
     statusIdx: index('print_jobs_status_idx').on(table.status),
     orderItemIdx: index('print_jobs_order_item_idx').on(table.orderItemId),
+    targetPrinterIdx: index('print_jobs_target_printer_idx').on(table.targetPrinterType),
+  }),
+);
+
+/**
+ * Slip jobs — operational/branded prints that accompany every order.
+ *
+ * Three types per order:
+ *   1. order_info    — 4×6 dye-sub card, printed LAST (lands on top of stack inside envelope)
+ *   2. end_separator — 4×6 dye-sub card, printed FIRST (lands at bottom of stack inside envelope)
+ *   3. envelope_label — 2-1/4×4 thermal sticker, applied to OUTSIDE of envelope
+ *
+ * sequence_position controls print order within the same printer:
+ *   0   = end_separator (prints first)
+ *   100 = order_info    (prints last)
+ *   N/A = envelope_label (different printer, no sequencing concern)
+ */
+export const slipJobs = pgTable(
+  'slip_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    printerId: uuid('printer_id').references(() => printers.id),
+    slipType: slipTypeEnum('slip_type').notNull(),
+    targetPrinterType: targetPrinterTypeEnum('target_printer_type').notNull(),
+    sequencePosition: integer('sequence_position').notNull().default(50),
+    status: printJobStatusEnum('status').notNull().default('queued'),
+    printReadyFileUrl: text('print_ready_file_url'),
+    payloadJson: jsonb('payload_json'), // for ZPL string or rendered slip data
+    attempts: integer('attempts').notNull().default(0),
+    errorMessage: text('error_message'),
+    queuedAt: timestamp('queued_at', { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    statusIdx: index('slip_jobs_status_idx').on(table.status),
+    orderIdx: index('slip_jobs_order_idx').on(table.orderId),
+    targetPrinterIdx: index('slip_jobs_target_printer_idx').on(table.targetPrinterType),
+    sequenceIdx: index('slip_jobs_sequence_idx').on(table.orderId, table.sequencePosition),
   }),
 );
 
@@ -292,6 +357,9 @@ export type NewPayment = typeof payments.$inferInsert;
 
 export type PrintJob = typeof printJobs.$inferSelect;
 export type NewPrintJob = typeof printJobs.$inferInsert;
+
+export type SlipJob = typeof slipJobs.$inferSelect;
+export type NewSlipJob = typeof slipJobs.$inferInsert;
 
 export type Printer = typeof printers.$inferSelect;
 export type NewPrinter = typeof printers.$inferInsert;

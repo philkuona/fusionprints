@@ -325,7 +325,7 @@ export const MSG = {
 
   help: () => `Here's what we can help with:\n\n📷 *Print photos* — type *photos*\n🖼️ *Print posters* — type *posters*\n📦 *Check your order* — type *status*\n👤 *Talk to a person* — type *HELP*\n\nOr just reply with *1*, *2*, or *3* from the menu.`,
 
-  humanHandoff: () => `We've flagged your message for the team. Someone will reply within 30 minutes during business hours (${BUSINESS_HOURS}).\n\nJust keep typing here — we'll see your messages either way.\n\nFor urgent issues, please mention *URGENT* in your next message.`,
+  humanHandoff: () => `Need to speak to someone? Call us on ${process.env.BUSINESS_PHONE ?? '[business number]'} (${BUSINESS_HOURS}).\n\nIf it's not urgent, just keep typing here and we'll get back to you when we can.`,
 
   somethingWentWrong: () => `Something went wrong on our end. Please try again, or type *HELP* to speak to a person.`,
 };

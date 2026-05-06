@@ -194,6 +194,35 @@ export const POSTER_PRODUCTS = PRODUCTS.filter((p) => p.productType === 'poster'
 export const IN_HOUSE_PRODUCTS = PRODUCTS.filter((p) => !p.isOutsourced);
 
 /**
+ * Map a product's printer field to the database's target_printer_type enum value.
+ * Used by Phase D multi-printer routing to tag print_jobs with their destination.
+ *
+ * Catalog uses printer values: 'dnp_ds620a_4x6' | 'dnp_ds620a_5x7' | 'epson_p900'
+ * Database uses target_printer_type: 'dye_sub_4x6' | 'dye_sub_5x7' | 'inkjet' | 'thermal_label'
+ *
+ * The mapping is straightforward — printer field describes the physical printer,
+ * target_printer_type describes the routing category (multiple printers can share a type).
+ */
+export type TargetPrinterType = 'dye_sub_4x6' | 'dye_sub_5x7' | 'inkjet' | 'thermal_label';
+
+export function getTargetPrinterType(product: Product): TargetPrinterType {
+  switch (product.printer) {
+    case 'dnp_ds620a_4x6':
+      return 'dye_sub_4x6';
+    case 'dnp_ds620a_5x7':
+      return 'dye_sub_5x7';
+    case 'epson_p900':
+      return 'inkjet';
+    default: {
+      // exhaustive check — TypeScript will error if a new printer value is added
+      // without a corresponding case here
+      const _exhaustive: never = product.printer;
+      throw new Error(`Unknown printer type: ${_exhaustive}`);
+    }
+  }
+}
+
+/**
  * Delivery fees in USD.
  * Keyed by zone name which matches what the bot presents to the customer.
  */

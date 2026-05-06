@@ -25,9 +25,10 @@ const envSchema = z.object({
   // Business identity
   BUSINESS_NAME: z.string().default('FusionPrints'),
   BUSINESS_PHONE: z.string().default(''),
+  BUSINESS_ADDRESS: z.string().default('Harare, Zimbabwe'),
   BUSINESS_LOCATION_NAME: z.string().default('Harare'),
   BUSINESS_COLLECTION_ADDRESS: z.string().default(''),
-  BUSINESS_HOURS: z.string().default('Mon-Sat, 9am-6pm'),
+  BUSINESS_HOURS: z.string().default('Mon–Sat 9am–6pm'),
 
   // Public URL — used in bot messages for upload links and payment redirects
   // In dev: ngrok URL. In production: https://fusionprints.co.zw

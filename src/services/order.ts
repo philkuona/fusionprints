@@ -11,9 +11,17 @@
 
 import { eq, and, like, desc } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, images } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, images, slipJobs, customers } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { calculateQuote } from '@/services/pricing.js';
+import { getProduct } from '@/config/catalog.js';
+import {
+  renderOrderInfoSlip,
+  renderEndSeparatorSlip,
+  generateEnvelopeLabelZpl,
+  type OrderInfoSlipData,
+  type EnvelopeLabelData,
+} from '@/services/slip-renderer.js';
 import type { BotContext } from '@/bot/types.js';
 import type { Order } from '@/db/schema.js';
 
@@ -153,10 +161,18 @@ export async function createOrder(
           .returning();
 
         // Determine which printer handles this item
+        const product = getProduct(pricedItem.sizeCode);
         const isLargeFormat = ['8x10', '11x14', '12x18', '16x20'].includes(
           pricedItem.sizeCode,
         );
         const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;
+
+        // Phase D.1: tag the print job with its target printer type for routing
+        const targetPrinterType = product
+          ? (product.printer === 'dnp_ds620a_4x6' ? 'dye_sub_4x6' as const
+            : product.printer === 'dnp_ds620a_5x7' ? 'dye_sub_5x7' as const
+            : 'inkjet' as const)
+          : null;
 
         // Create the print job
         const jobStatus = pricedItem.requiresManualReview ? 'awaiting_approval' : 'queued';
@@ -164,6 +180,7 @@ export async function createOrder(
         await tx.insert(printJobs).values({
           orderItemId: orderItem.id,
           printerId: assignedPrinter?.id ?? null,
+          targetPrinterType,
           status: jobStatus,
         });
       }
@@ -186,6 +203,15 @@ export async function createOrder(
 /**
  * Mark an order as paid.
  * Called when the payment webhook confirms successful payment.
+ *
+ * Phase D.2: also queues 3 slip jobs for the order:
+ *   - end_separator (sequence 0, prints first → bottom of stack)
+ *   - order_info    (sequence 100, prints last → top of stack)
+ *   - envelope_label (thermal, no sequence concern)
+ *
+ * Slip rendering is wrapped in try/catch — a failed slip does NOT
+ * block the order or customer prints. The operator can manually
+ * reprint a failed slip later from the admin dashboard.
  */
 export async function markOrderPaid(
   orderNumber: string,
@@ -200,6 +226,131 @@ export async function markOrderPaid(
     .where(eq(orders.orderNumber, orderNumber));
 
   logger.info({ orderNumber, paymentReference }, 'Order marked as paid');
+
+  // Queue slips alongside customer prints.
+  // Errors here are logged but do NOT throw — order remains paid even if slip rendering fails.
+  try {
+    await queueOrderSlips(orderNumber, paymentReference);
+  } catch (err) {
+    logger.error(
+      { orderNumber, err },
+      'Failed to queue slips — order is paid, slips will need manual recovery',
+    );
+  }
+}
+
+/**
+ * Queue the 3 slip jobs for an order.
+ * Renders each slip and inserts a slip_jobs row.
+ *
+ * Failed slips are logged and skipped — they do not block the others.
+ */
+async function queueOrderSlips(orderNumber: string, paymentMethod: string): Promise<void> {
+  // Load order + items + customer for slip data
+  const order = await getOrderByNumber(orderNumber);
+  if (!order) {
+    logger.warn({ orderNumber }, 'Cannot queue slips — order not found');
+    return;
+  }
+
+  const items = await db
+    .select()
+    .from(orderItems)
+    .where(eq(orderItems.orderId, order.id));
+
+  if (items.length === 0) {
+    logger.warn({ orderNumber }, 'Cannot queue slips — order has no items');
+    return;
+  }
+
+  const customer = await db
+    .select()
+    .from(customers)
+    .where(eq(customers.id, order.customerId))
+    .limit(1)
+    .then((rows) => rows[0]);
+
+  if (!customer) {
+    logger.warn({ orderNumber }, 'Cannot queue slips — customer not found');
+    return;
+  }
+
+  // Build the items list with display labels from catalog
+  const slipItems = items.map((item) => {
+    const product = getProduct(item.sizeCode);
+    return {
+      quantity: item.quantity,
+      sizeLabel: product?.labelInches ?? item.sizeCode,
+    };
+  });
+
+  const customerName = customer.name ?? 'Customer';
+  const orderedAt = order.createdAt;
+
+  // ===== Slip 1: end_separator (sequence 0, prints first) =====
+  try {
+    const url = await renderEndSeparatorSlip(orderNumber);
+    await db.insert(slipJobs).values({
+      orderId: order.id,
+      slipType: 'end_separator',
+      targetPrinterType: 'dye_sub_4x6',
+      sequencePosition: 0,
+      printReadyFileUrl: url,
+      status: 'queued',
+    });
+    logger.info({ orderNumber }, 'Queued end_separator slip');
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to queue end_separator slip');
+  }
+
+  // ===== Slip 2: order_info (sequence 100, prints last) =====
+  try {
+    const orderInfoData: OrderInfoSlipData = {
+      orderNumber,
+      customerName,
+      customerPhone: customer.phoneNumber,
+      fulfillmentMethod: order.fulfillmentMethod,
+      items: slipItems,
+      orderedAt,
+    };
+    const url = await renderOrderInfoSlip(orderInfoData);
+    await db.insert(slipJobs).values({
+      orderId: order.id,
+      slipType: 'order_info',
+      targetPrinterType: 'dye_sub_4x6',
+      sequencePosition: 100,
+      printReadyFileUrl: url,
+      status: 'queued',
+    });
+    logger.info({ orderNumber }, 'Queued order_info slip');
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to queue order_info slip');
+  }
+
+  // ===== Slip 3: envelope_label (thermal, no PNG, just ZPL) =====
+  try {
+    const labelData: EnvelopeLabelData = {
+      orderNumber,
+      customerName,
+      customerPhone: customer.phoneNumber,
+      paymentMethod,
+      fulfillmentMethod: order.fulfillmentMethod,
+      items: slipItems,
+      orderedAt,
+    };
+    const zpl = generateEnvelopeLabelZpl(labelData);
+    await db.insert(slipJobs).values({
+      orderId: order.id,
+      slipType: 'envelope_label',
+      targetPrinterType: 'thermal_label',
+      sequencePosition: 0,
+      payloadJson: { zpl },
+      status: 'queued',
+    });
+    logger.info({ orderNumber }, 'Queued envelope_label slip');
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to queue envelope_label slip');
+  }
 }
 
 /**

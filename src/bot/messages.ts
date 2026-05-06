@@ -325,7 +325,7 @@ export const MSG = {
 
   help: () => `Here's what we can help with:\n\n📷 *Print photos* — type *photos*\n🖼️ *Print posters* — type *posters*\n📦 *Check your order* — type *status*\n👤 *Talk to a person* — type *HELP*\n\nOr just reply with *1*, *2*, or *3* from the menu.`,
 
-  humanHandoff: () => `Need to speak to someone? Call us on ${process.env.BUSINESS_PHONE ?? '[business number]'} (${BUSINESS_HOURS}).\n\nIf it's not urgent, just keep typing here and we'll get back to you when we can.`,
+humanHandoff: () => `This is FusionPrints' ordering chat — for help, please call us on ${process.env.BUSINESS_PHONE ?? '[business number]'} (${BUSINESS_HOURS}).\n\nIf you'd like to continue placing an order, just keep typing.`,
 
   somethingWentWrong: () => `Something went wrong on our end. Please try again, or type *HELP* to speak to a person.`,
 };

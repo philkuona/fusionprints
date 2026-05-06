@@ -423,7 +423,7 @@ async function resetStuckJobs(maxAgeMinutes = 15): Promise<number> {
 // ===== HTML page rendering =====
 
 const SHARED_STYLES = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=DM+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
 
 :root {
   --bg: #0a0a0a;
@@ -455,8 +455,25 @@ header {
   background: var(--surface);
 }
 
-.logo { font-weight: 700; font-size: 18px; }
-.logo span:first-of-type { color: var(--accent); }
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo svg { display: block; height: 28px; width: auto; }
+
+.logo .admin-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
 
 .nav-tabs { display: flex; gap: 2px; flex: 1; margin-left: 24px; }
 .nav-tab {
@@ -519,7 +536,16 @@ function pageHtml(active: 'orders' | 'metrics' | 'printers' | 'jobs', title: str
 </head>
 <body>
   <header>
-    <div class="logo">Fusion<span>Prints</span> <span style="font-size:11px;color:var(--text2);margin-left:4px;">admin</span></div>
+    <div class="logo">
+      <svg viewBox="0 0 280 60" xmlns="http://www.w3.org/2000/svg" aria-label="FusionPrints">
+        <g transform="translate(0,6)">
+          <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="#FBF7F0"/>
+          <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="#05D668"/>
+        </g>
+        <text x="56" y="40" font-family="Outfit, system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="#FBF7F0" letter-spacing="-0.56">fusionprints</text>
+      </svg>
+      <span class="admin-tag">admin</span>
+    </div>
     <nav class="nav-tabs">
       <a href="/admin" class="nav-tab ${active === 'orders' ? 'active' : ''}">Orders</a>
       <a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Metrics</a>

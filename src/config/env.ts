@@ -26,9 +26,9 @@ const envSchema = z.object({
   BUSINESS_NAME: z.string().default('FusionPrints'),
   BUSINESS_PHONE: z.string().default(''),
   BUSINESS_ADDRESS: z.string().default('Harare, Zimbabwe'),
+  BUSINESS_HOURS: z.string().default('Mon–Sat 9am–6pm'),
   BUSINESS_LOCATION_NAME: z.string().default('Harare'),
   BUSINESS_COLLECTION_ADDRESS: z.string().default(''),
-  BUSINESS_HOURS: z.string().default('Mon–Sat 9am–6pm'),
 
   // Public URL — used in bot messages for upload links and payment redirects
   // In dev: ngrok URL. In production: https://fusionprints.co.zw
@@ -65,6 +65,10 @@ const envSchema = z.object({
   ADMIN_SESSION_SECRET: z.string().default(''),
   ADMIN_USERNAME: z.string().default('admin'),
   ADMIN_PASSWORD: z.string().default('changeme'),
+
+  // Operator (limited admin role — store attendant)
+  OPERATOR_USERNAME: z.string().default('operator'),
+  OPERATOR_PASSWORD: z.string().default('changeme-operator'),
 
   // Payment providers
   PAYMENT_PROVIDER: z.enum(['stub', 'magetsi', 'stripe']).default('stub'),

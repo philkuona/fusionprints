@@ -27,21 +27,19 @@ import {
 } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
+import { authenticate, requireFullAdmin, requireFullAdminPage, type AdminRole } from '@/utils/auth.js';
 
 // Reuse the auth helper from admin-dashboard.ts
-function checkAuth(request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply): boolean {
-  const auth = request.headers.authorization;
-  if (!auth || !auth.startsWith('Basic ')) {
-    reply.header('WWW-Authenticate', 'Basic realm="FusionPrints Admin"').status(401).send('Auth required');
-    return false;
-  }
-  const decoded = Buffer.from(auth.slice(6), 'base64').toString('utf-8');
-  const [, password] = decoded.split(':');
-  if (password !== env.ADMIN_PASSWORD) {
-    reply.header('WWW-Authenticate', 'Basic realm="FusionPrints Admin"').status(401).send('Wrong password');
-    return false;
-  }
-  return true;
+/**
+ * Backward-compatible wrapper around the shared authenticate() helper.
+ * Returns the role string when authenticated, null otherwise (with 401
+ * already set on reply).
+ */
+function checkAuth(
+  request: import('fastify').FastifyRequest,
+  reply: import('fastify').FastifyReply,
+): AdminRole | null {
+  return authenticate(request, reply);
 }
 
 // ===== Order status transitions =====
@@ -461,7 +459,7 @@ header {
   gap: 8px;
 }
 
-.logo svg { display: block; height: 28px; width: auto; }
+.logo svg { display: block; height: 36px; width: auto; }
 
 .logo .admin-tag {
   font-family: 'DM Mono', monospace;
@@ -525,7 +523,13 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 .mono { font-family: 'DM Mono', monospace; }
 `;
 
-function pageHtml(active: 'orders' | 'metrics' | 'printers' | 'jobs', title: string, body: string): string {
+function pageHtml(
+  active: 'orders' | 'metrics' | 'printers' | 'jobs',
+  title: string,
+  body: string,
+  role: AdminRole = 'full',
+): string {
+  const isOperator = role === 'operator';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -544,13 +548,13 @@ function pageHtml(active: 'orders' | 'metrics' | 'printers' | 'jobs', title: str
         </g>
         <text x="56" y="40" font-family="Outfit, system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="#FBF7F0" letter-spacing="-0.56">fusionprints</text>
       </svg>
-      <span class="admin-tag">admin</span>
+      <span class="admin-tag">${isOperator ? 'operator' : 'admin'}</span>
     </div>
     <nav class="nav-tabs">
       <a href="/admin/jobs" class="nav-tab ${active === 'jobs' ? 'active' : ''}">Print Queue</a>
       <a href="/admin" class="nav-tab ${active === 'orders' ? 'active' : ''}">Completed Orders</a>
       <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers</a>
-      <a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>
+      ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
     </nav>
   </header>
   <main>${body}</main>
@@ -674,7 +678,7 @@ function metricsPageHtml(): string {
 }
 
 // Printers page
-function printersPageHtml(): string {
+function printersPageHtml(role: AdminRole = 'full'): string {
   const body = `
   <div class="page-header">
     <div class="page-title">🖨️ Printer Status</div>
@@ -683,7 +687,7 @@ function printersPageHtml(): string {
 
   <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;">
     <button class="btn" onclick="loadPrinters()">↻ Refresh</button>
-    <button class="btn" onclick="resetStuck()">🔧 Reset stuck jobs</button>
+    ${role === 'operator' ? '' : '<button class="btn" onclick="resetStuck()">🔧 Reset stuck jobs</button>'}
   </div>
 
   <div id="content"><div class="loading">Loading printers...</div></div>
@@ -766,11 +770,11 @@ function printersPageHtml(): string {
       50% { opacity: 0.3; }
     }
   </style>`;
-  return pageHtml('printers', 'Printers', body);
+  return pageHtml('printers', 'Printers', body, role);
 }
 
 // Jobs page — orders grouped, expandable, selectable jobs
-function jobsPageHtml(): string {
+function jobsPageHtml(role: AdminRole = 'full'): string {
   const body = `
   <div class="page-header">
     <div class="page-title">🛠️ Print Queue</div>
@@ -1135,7 +1139,7 @@ function jobsPageHtml(): string {
       z-index: 100;
     }
   </style>`;
-  return pageHtml('jobs', 'Print Queue', body);
+  return pageHtml('jobs', 'Print Queue', body, role);
 }
 
 /**
@@ -1269,19 +1273,27 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
 
   // ===== Pages =====
 
+  // Metrics page — full admin only. Operator gets redirected to /admin
+  // (their home page) with a soft "admin access required" notice.
   app.get('/admin/metrics', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    if (!requireFullAdminPage(request, reply)) return;
     reply.type('text/html').send(metricsPageHtml());
   });
 
+  // Printers page — both roles. Operator gets read-only mode (action
+  // buttons hidden) via the role param passed into the HTML renderer.
   app.get('/admin/printers', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
-    reply.type('text/html').send(printersPageHtml());
+    const role = checkAuth(request, reply);
+    if (role === null) return;
+    reply.type('text/html').send(printersPageHtml(role));
   });
 
+  // Print Queue page — both roles. Operator has full access (their job
+  // is to ensure jobs print successfully).
   app.get('/admin/jobs', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
-    reply.type('text/html').send(jobsPageHtml());
+    const role = checkAuth(request, reply);
+    if (role === null) return;
+    reply.type('text/html').send(jobsPageHtml(role));
   });
 
   // ===== API =====
@@ -1325,9 +1337,9 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Send receipt via WhatsApp
+  // Send receipt via WhatsApp — full admin only (financial document)
   app.post('/admin/api/ops/orders/:id/send-receipt', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    if (!requireFullAdmin(request, reply)) return;
     try {
       const { id } = request.params as { id: string };
       const ok = await sendReceiptViaWhatsApp(id);
@@ -1338,9 +1350,9 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Preview receipt text (admin can review before sending)
+  // Preview receipt text — full admin only (shows pricing)
   app.get('/admin/api/ops/orders/:id/receipt-preview', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    if (!requireFullAdmin(request, reply)) return;
     try {
       const { id } = request.params as { id: string };
       const text = await generateReceiptText(id);
@@ -1366,9 +1378,9 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Metrics dashboard data
+  // Metrics dashboard data — full admin only (revenue, business KPIs)
   app.get('/admin/api/ops/metrics', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    if (!requireFullAdmin(request, reply)) return;
     try {
       const { days } = request.query as { days?: string };
       const daysBack = days ? Math.max(1, Math.min(365, parseInt(days, 10))) : 30;
@@ -1392,9 +1404,9 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Reprint a batch of jobs by ID
+  // Reprint a batch of jobs — full admin only (potential cost impact)
   app.post('/admin/api/ops/jobs/reprint-batch', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    if (!requireFullAdmin(request, reply)) return;
     try {
       const { jobIds } = request.body as { jobIds: string[] };
       if (!Array.isArray(jobIds) || jobIds.length === 0) {
@@ -1409,9 +1421,9 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Reset stuck print jobs (admin maintenance action)
+  // Reset stuck print jobs — full admin only (system maintenance)
   app.post('/admin/api/ops/reset-stuck-jobs', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    if (!requireFullAdmin(request, reply)) return;
     try {
       const count = await resetStuckJobs();
       return { ok: true, count };

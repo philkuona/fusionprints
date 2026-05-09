@@ -18,33 +18,21 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
+import { authenticate, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers } from '@/db/schema.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
 
 // ===== Auth middleware =====
 
-function checkAuth(request: FastifyRequest, reply: FastifyReply): boolean {
-  const auth = request.headers.authorization;
-  if (!auth || !auth.startsWith('Basic ')) {
-    reply.header('WWW-Authenticate', 'Basic realm="FusionPrints Admin"');
-    reply.status(401).send('Unauthorized');
-    return false;
-  }
-
-  const [username, password] = Buffer.from(auth.slice(6), 'base64')
-    .toString()
-    .split(':');
-
-  if (username !== env.ADMIN_USERNAME || password !== env.ADMIN_PASSWORD) {
-    reply.header('WWW-Authenticate', 'Basic realm="FusionPrints Admin"');
-    reply.status(401).send('Unauthorized');
-    return false;
-  }
-
-  return true;
+/**
+ * Backward-compatible wrapper around the shared authenticate() helper.
+ * Returns the role string when authenticated, null otherwise (with 401
+ * already set on reply).
+ */
+function checkAuth(request: FastifyRequest, reply: FastifyReply): AdminRole | null {
+  return authenticate(request, reply);
 }
 
 // ===== Data helpers =====
@@ -169,7 +157,8 @@ async function getOrderDetails(orderId: string) {
 
 // ===== Dashboard HTML =====
 
-function dashboardHtml(): string {
+function dashboardHtml(role: AdminRole = 'full'): string {
+  const isOperator = role === 'operator';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -224,7 +213,7 @@ function dashboardHtml(): string {
       gap: 8px;
     }
 
-    .logo svg { display: block; height: 28px; width: auto; }
+    .logo svg { display: block; height: 36px; width: auto; }
 
     .logo .admin-tag {
       font-family: 'DM Mono', monospace;
@@ -613,13 +602,13 @@ function dashboardHtml(): string {
       </g>
       <text x="56" y="40" font-family="Outfit, system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="#FBF7F0" letter-spacing="-0.56">fusionprints</text>
     </svg>
-    <span class="admin-tag">admin</span>
+    <span class="admin-tag">${isOperator ? 'operator' : 'admin'}</span>
   </div>
   <nav class="nav-tabs">
     <a href="/admin/jobs" class="nav-tab">Print Queue</a>
     <a href="/admin" class="nav-tab active">Completed Orders</a>
     <a href="/admin/printers" class="nav-tab">Printers</a>
-    <a href="/admin/metrics" class="nav-tab">Key Metrics</a>
+    ${isOperator ? '' : '<a href="/admin/metrics" class="nav-tab">Key Metrics</a>'}
   </nav>
   <div class="header-right">
     <div class="live-indicator">
@@ -674,6 +663,8 @@ function dashboardHtml(): string {
 </div>
 
 <script>
+  const VIEWER_ROLE = ${JSON.stringify(role)};
+  const IS_OPERATOR = VIEWER_ROLE === 'operator';
   let currentFilter = 'today';
   let refreshTimer;
 
@@ -718,7 +709,7 @@ function dashboardHtml(): string {
     if (order.status === 'ready_for_collection' || order.status === 'ready_for_pickup') {
       btns.push(\`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil', event)">Collected</button>\`);
     }
-    if (!['fulfilled', 'cancelled', 'failed'].includes(order.status)) {
+    if (!IS_OPERATOR && !['fulfilled', 'cancelled', 'failed'].includes(order.status)) {
       btns.push(\`<button class="action-btn cancel" onclick="doAction('\${order.id}', 'cancel', event)">✕</button>\`);
     }
     return btns.join('');
@@ -758,10 +749,10 @@ function dashboardHtml(): string {
         <div class="stat-label">Today's orders</div>
         <div class="stat-value orange">\${stats.todayOrders}</div>
       </div>
-      <div class="stat-card" onclick="setFilterByClick('today')">
+      \${IS_OPERATOR ? '' : \`<div class="stat-card" onclick="setFilterByClick('today')">
         <div class="stat-label">Today's revenue</div>
         <div class="stat-value green">$\${stats.todayRevenue}</div>
-      </div>
+      </div>\`}
     \`;
   }
 
@@ -788,7 +779,7 @@ function dashboardHtml(): string {
           <div class="customer-phone">\${o.customerPhone || ''}</div>
         </td>
         <td><span class="badge badge-\${o.status}">\${statusLabel(o.status)}</span></td>
-        <td><span class="amount">$\${parseFloat(o.totalUsd).toFixed(2)}</span></td>
+        \${IS_OPERATOR ? '' : \`<td><span class="amount">$\${parseFloat(o.totalUsd).toFixed(2)}</span></td>\`}
         <td><span class="fulfillment-icon">\${o.fulfillmentMethod === 'collection' ? '🏪' : '🚚'}</span></td>
         <td><span class="time-ago">\${timeAgo(o.createdAt)}</span></td>
         <td onclick="event.stopPropagation()">\${actionButtons(o)}</td>
@@ -802,7 +793,7 @@ function dashboardHtml(): string {
             <th>Order</th>
             <th>Customer</th>
             <th>Status</th>
-            <th>Amount</th>
+            \${IS_OPERATOR ? '' : '<th>Amount</th>'}
             <th>Type</th>
             <th>Created</th>
             <th>Actions</th>
@@ -831,7 +822,7 @@ function dashboardHtml(): string {
     const itemsHtml = items.map(item => \`
       <div class="item-row">
         <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})</span>
-        <span>$\${parseFloat(item.lineTotalUsd).toFixed(2)}</span>
+        \${IS_OPERATOR ? '' : \`<span>$\${parseFloat(item.lineTotalUsd).toFixed(2)}</span>\`}
       </div>
     \`).join('');
 
@@ -848,10 +839,10 @@ function dashboardHtml(): string {
         <span class="detail-label">Status</span>
         <span class="detail-value"><span class="badge badge-\${order.status}">\${statusLabel(order.status)}</span></span>
       </div>
-      <div class="detail-row">
+      \${IS_OPERATOR ? '' : \`<div class="detail-row">
         <span class="detail-label">Total</span>
         <span class="detail-value">$\${parseFloat(order.totalUsd).toFixed(2)}</span>
-      </div>
+      </div>\`}
       <div class="detail-row">
         <span class="detail-label">Fulfillment</span>
         <span class="detail-value">\${order.fulfillmentMethod === 'collection' ? '🏪 Collection' : '🚚 Delivery'}</span>
@@ -897,7 +888,7 @@ function dashboardHtml(): string {
         \${(order.status === 'ready_for_collection' || order.status === 'ready_for_pickup' || order.status === 'shipped') ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">✓ Mark fulfilled</button>\` : ''}
         \${jobs.some(j => j.status === 'failed') ? \`<button class="action-btn approve" onclick="reprintOrder('\${order.id}')">↻ Reprint failed jobs</button>\` : ''}
         <button class="action-btn ready" onclick="previewReceipt('\${order.id}')">📄 Receipt</button>
-        \${!['fulfilled','cancelled','failed'].includes(order.status) ? \`<button class="action-btn cancel" onclick="doAction('\${order.id}', 'cancel'); closeModal()">Cancel order</button>\` : ''}
+        \${(!IS_OPERATOR && !['fulfilled','cancelled','failed'].includes(order.status)) ? \`<button class="action-btn cancel" onclick="doAction('\${order.id}', 'cancel'); closeModal()">Cancel order</button>\` : ''}
       </div>
     \`;
   }
@@ -1008,15 +999,23 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
 
   // Serve the dashboard HTML
   app.get('/admin', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
-    reply.type('text/html').send(dashboardHtml());
+    const role = checkAuth(request, reply);
+    if (role === null) return;
+    reply.type('text/html').send(dashboardHtml(role));
   });
 
   // Stats API
   app.get('/admin/api/stats', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    const role = checkAuth(request, reply);
+    if (role === null) return;
     try {
-      return await getStats();
+      const stats = await getStats();
+      // Operator role: strip revenue figure. The UI hides the card, but
+      // we don't trust client-side hiding alone — the API also redacts.
+      if (role === 'operator') {
+        return { ...stats, todayRevenue: null };
+      }
+      return stats;
     } catch (err) {
       logger.error({ err }, 'Failed to get stats');
       reply.status(500).send({ error: 'Failed to load stats' });
@@ -1025,11 +1024,17 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
 
   // Orders list API
   app.get('/admin/api/orders', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    const role = checkAuth(request, reply);
+    if (role === null) return;
     try {
       // Accepts ?status= (legacy) or ?filter= (today/all/status name)
       const { filter, status } = request.query as { filter?: string; status?: string };
-      return await getOrders(filter ?? status);
+      const list = await getOrders(filter ?? status);
+      if (role === 'operator') {
+        // Strip the totalUsd field — operator doesn't see prices anywhere.
+        return list.map(({ totalUsd: _totalUsd, ...rest }) => rest);
+      }
+      return list;
     } catch (err) {
       logger.error({ err }, 'Failed to get orders');
       reply.status(500).send({ error: 'Failed to load orders' });
@@ -1038,13 +1043,23 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
 
   // Order detail API
   app.get('/admin/api/orders/:id', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    const role = checkAuth(request, reply);
+    if (role === null) return;
     try {
       const { id } = request.params as { id: string };
       const detail = await getOrderDetails(id);
       if (!detail) {
         reply.status(404).send({ error: 'Order not found' });
         return;
+      }
+      if (role === 'operator') {
+        // Strip dollar fields from order + items. Operator sees the
+        // operational picture (status, items, jobs) but no prices.
+        const { totalUsd: _t, deliveryFeeUsd: _d, ...orderRest } = detail.order;
+        const items = detail.items.map(
+          ({ unitPriceUsd: _u, lineTotalUsd: _l, ...itemRest }) => itemRest,
+        );
+        return { ...detail, order: orderRest, items };
       }
       return detail;
     } catch (err) {
@@ -1150,9 +1165,9 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
     }
   });
 
-  // Cancel order
+  // Cancel order — full admin only (cancellation is a financial decision)
   app.post('/admin/api/orders/:id/cancel', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
+    if (!requireFullAdmin(request, reply)) return;
     try {
       const { id } = request.params as { id: string };
       await db.update(orders)

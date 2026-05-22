@@ -258,7 +258,8 @@ export async function registerAdminLogin(app: FastifyInstance): Promise<void> {
       return reply.redirect('/admin/login');
     }
 
-    (request as any).session.role = role;
+    // Autologin is always operator role — Beelink is Tobias's machine
+    (request as any).session.role = 'operator';
     logger.info({ role }, 'Beelink autologin successful');
     return reply.redirect('/admin');
   });

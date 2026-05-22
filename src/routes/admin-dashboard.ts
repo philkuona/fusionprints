@@ -19,7 +19,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { logger } from '@/utils/logger.js';
-import { authenticate, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
+import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers } from '@/db/schema.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
@@ -999,7 +999,7 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
 
   // Serve the dashboard HTML
   app.get('/admin', async (request, reply) => {
-    const role = checkAuth(request, reply);
+    const role = authenticatePage(request, reply);
     if (role === null) return;
     reply.type('text/html').send(dashboardHtml(role));
   });

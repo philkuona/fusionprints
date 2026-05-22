@@ -1,7 +1,7 @@
 {
   "name": "fusionprints",
   "version": "0.1.0",
-  "description": "FusionPrints \u2014 WhatsApp-driven photo and poster printing service for Zimbabwe",
+  "description": "FusionPrints — WhatsApp-driven photo and poster printing service for Zimbabwe",
   "private": true,
   "type": "module",
   "engines": {
@@ -23,7 +23,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1039.0",
     "@aws-sdk/lib-storage": "^3.1039.0",
+    "@fastify/cookie": "^11.0.2",
     "@fastify/multipart": "^10.0.0",
+    "@fastify/session": "^11.1.1",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.4",
     "fastify": "^5.1.0",
@@ -31,8 +33,8 @@
     "pino-pretty": "^11.3.0",
     "postgres": "^3.4.5",
     "sharp": "^0.34.5",
-    "zod": "^3.23.8",
-    "tsx": "^4.19.2"
+    "tsx": "^4.19.2",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

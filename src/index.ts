@@ -19,11 +19,22 @@ import { registerAdminOps } from '@/routes/admin-ops.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
 import { registerAgentRoutes } from '@/routes/agent-api.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
+import cookie from '@fastify/cookie';
+import session from '@fastify/session';
+import { registerAdminLogin } from '@/routes/admin-login.js';
 
 async function main(): Promise<void> {
   const app = Fastify({
     logger: false, // we use our own logger; Fastify's would duplicate
     trustProxy: true,
+  });
+
+  // ===== Plugins =====
+  await app.register(cookie);
+  await app.register(session, {
+    secret: env.ADMIN_SESSION_SECRET || 'dev-only-not-for-production-use-pad!!',
+    cookie: { secure: env.NODE_ENV === 'production', httpOnly: true, maxAge: 86400 * 7, sameSite: 'lax' as const },
+    saveUninitialized: false,
   });
 
   // ===== Routes =====
@@ -50,6 +61,8 @@ async function main(): Promise<void> {
 
   // Register WhatsApp webhook routes
   await registerWhatsAppWebhook(app);
+
+  await registerAdminLogin(app);
 
   // Register admin dashboard
   await registerAdminDashboard(app);

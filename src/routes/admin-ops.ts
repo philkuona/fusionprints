@@ -27,7 +27,7 @@ import {
 } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
-import { authenticate, requireFullAdmin, requireFullAdminPage, type AdminRole } from '@/utils/auth.js';
+import { authenticate, authenticatePage, requireFullAdmin, requireFullAdminPage, type AdminRole } from '@/utils/auth.js';
 
 // Reuse the auth helper from admin-dashboard.ts
 /**
@@ -1283,7 +1283,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
   // Printers page — both roles. Operator gets read-only mode (action
   // buttons hidden) via the role param passed into the HTML renderer.
   app.get('/admin/printers', async (request, reply) => {
-    const role = checkAuth(request, reply);
+    const role = authenticatePage(request, reply);
     if (role === null) return;
     reply.type('text/html').send(printersPageHtml(role));
   });
@@ -1291,7 +1291,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
   // Print Queue page — both roles. Operator has full access (their job
   // is to ensure jobs print successfully).
   app.get('/admin/jobs', async (request, reply) => {
-    const role = checkAuth(request, reply);
+    const role = authenticatePage(request, reply);
     if (role === null) return;
     reply.type('text/html').send(jobsPageHtml(role));
   });

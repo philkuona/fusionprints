@@ -70,6 +70,13 @@ const envSchema = z.object({
   OPERATOR_USERNAME: z.string().default('operator'),
   OPERATOR_PASSWORD: z.string().default('changeme-operator'),
 
+  // Beelink autologin token (Chrome shortcut on Harare PC). Min 32 chars.
+  BEELINK_AUTOLOGIN_TOKEN: z.string().default(''),
+
+  // Beelink autologin (Chrome shortcut on the Harare Beelink PC)
+  // Must be a random string >=32 chars; empty = feature disabled
+  
+
   // Payment providers
   PAYMENT_PROVIDER: z.enum(['stub', 'magetsi', 'stripe']).default('stub'),
   MAGETSI_API_BASE: z.string().default(''),

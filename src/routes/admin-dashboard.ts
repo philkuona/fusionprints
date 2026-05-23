@@ -19,9 +19,8 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { isEnabled as qboEnabled, isSetupComplete, createSalesReceipt, createRefundReceipt } from '@/services/qbo.js';
-import { db as _db } from '@/db/client.js';
-import { orders as _orders, orderItems as _orderItems, payments as _payments } from '@/db/schema.js';
-import { eq as _eq, desc as _desc } from 'drizzle-orm';
+import { payments } from '@/db/schema.js';
+import { desc } from 'drizzle-orm';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';

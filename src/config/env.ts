@@ -84,6 +84,10 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().default(''),
   STRIPE_WEBHOOK_SECRET: z.string().default(''),
 
+  // QuickBooks Online integration
+  QBO_CLIENT_ID: z.string().default(''),
+  QBO_CLIENT_SECRET: z.string().default(''),
+
   // Webhook authentication (HTTP Basic auth on /webhook/whatsapp)
   // Set both to enable; leave blank to disable auth (dev only)
   WHATSAPP_WEBHOOK_USER: z.string().default(''),

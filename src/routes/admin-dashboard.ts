@@ -18,6 +18,10 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { isEnabled as qboEnabled, isSetupComplete, createSalesReceipt, createRefundReceipt } from '@/services/qbo.js';
+import { db as _db } from '@/db/client.js';
+import { orders as _orders, orderItems as _orderItems, payments as _payments } from '@/db/schema.js';
+import { eq as _eq, desc as _desc } from 'drizzle-orm';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
@@ -609,6 +613,7 @@ function dashboardHtml(role: AdminRole = 'full'): string {
     <a href="/admin" class="nav-tab active">Completed Orders</a>
     <a href="/admin/printers" class="nav-tab">Printers</a>
     ${isOperator ? '' : '<a href="/admin/metrics" class="nav-tab">Key Metrics</a>'}
+    ${isOperator ? '' : '<a href="/admin/qbo" class="nav-tab">QuickBooks</a>'}
   </nav>
   <div class="header-right">
     <div class="live-indicator">
@@ -993,6 +998,69 @@ function dashboardHtml(role: AdminRole = 'full'): string {
 </html>`;
 }
 
+
+// ===== QBO hook helpers =====
+
+async function postQboSalesReceipt(orderId: string): Promise<void> {
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) return;
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const [payment] = await db
+    .select({ paymentMethod: payments.paymentMethod })
+    .from(payments)
+    .where(eq(payments.orderId, orderId))
+    .orderBy(desc(payments.completedAt))
+    .limit(1);
+  await createSalesReceipt(
+    {
+      orderNumber:    order.orderNumber,
+      subtotalUsd:    order.subtotalUsd,
+      deliveryFeeUsd: order.deliveryFeeUsd,
+      totalUsd:       order.totalUsd,
+      fulfilledAt:    order.fulfilledAt,
+      createdAt:      order.createdAt,
+    },
+    items.map(i => ({
+      sizeCode:     i.sizeCode,
+      quantity:     i.quantity,
+      unitPriceUsd: i.unitPriceUsd,
+      lineTotalUsd: i.lineTotalUsd,
+      productType:  i.productType,
+    })),
+    payment?.paymentMethod ?? null,
+  );
+}
+
+async function postQboRefundIfPaid(orderId: string): Promise<void> {
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order || !order.paidAt) return; // only refund if order was actually paid
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const [payment] = await db
+    .select({ paymentMethod: payments.paymentMethod })
+    .from(payments)
+    .where(eq(payments.orderId, orderId))
+    .orderBy(desc(payments.completedAt))
+    .limit(1);
+  await createRefundReceipt(
+    {
+      orderNumber:    order.orderNumber,
+      subtotalUsd:    order.subtotalUsd,
+      deliveryFeeUsd: order.deliveryFeeUsd,
+      totalUsd:       order.totalUsd,
+      fulfilledAt:    order.fulfilledAt,
+      createdAt:      order.createdAt,
+    },
+    items.map(i => ({
+      sizeCode:     i.sizeCode,
+      quantity:     i.quantity,
+      unitPriceUsd: i.unitPriceUsd,
+      lineTotalUsd: i.lineTotalUsd,
+      productType:  i.productType,
+    })),
+    payment?.paymentMethod ?? null,
+  );
+}
+
 // ===== Route registration =====
 
 export async function registerAdminDashboard(app: FastifyInstance): Promise<void> {
@@ -1158,6 +1226,12 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
         .set({ status: 'fulfilled', fulfilledAt: new Date() })
         .where(eq(orders.id, id));
       logger.info({ orderId: id }, 'Order fulfilled');
+      // Fire-and-forget QBO Sales Receipt
+      if (qboEnabled() && isSetupComplete()) {
+        void postQboSalesReceipt(id).catch(err =>
+          logger.error({ err, orderId: id }, 'QBO Sales Receipt failed — manual entry needed')
+        );
+      }
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to fulfil order');
@@ -1174,6 +1248,12 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
         .set({ status: 'cancelled' })
         .where(eq(orders.id, id));
       logger.info({ orderId: id }, 'Order cancelled from dashboard');
+      // Fire-and-forget QBO Refund Receipt (only if order was paid)
+      if (qboEnabled() && isSetupComplete()) {
+        void postQboRefundIfPaid(id).catch(err =>
+          logger.error({ err, orderId: id }, 'QBO Refund Receipt failed — manual entry needed')
+        );
+      }
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to cancel order');

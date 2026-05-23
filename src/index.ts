@@ -19,6 +19,7 @@ import { registerAdminOps } from '@/routes/admin-ops.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
 import { registerAgentRoutes } from '@/routes/agent-api.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
+import { registerQboRoutes } from '@/routes/qbo-auth.js';
 import cookie from '@fastify/cookie';
 import session from '@fastify/session';
 import { registerAdminLogin } from '@/routes/admin-login.js';
@@ -71,6 +72,9 @@ async function main(): Promise<void> {
 
   // Register print agent API routes
   await registerAgentRoutes(app);
+
+  // Register QBO OAuth + admin routes
+  await registerQboRoutes(app);
 
   // Register web upload routes (for bulk photo uploads)
   await registerUploadRoutes(app);

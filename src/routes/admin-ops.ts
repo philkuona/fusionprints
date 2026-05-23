@@ -555,6 +555,7 @@ function pageHtml(
       <a href="/admin" class="nav-tab ${active === 'orders' ? 'active' : ''}">Completed Orders</a>
       <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers</a>
       ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
+      ${isOperator ? '' : `<a href="/admin/qbo" class="nav-tab">QuickBooks</a>`}
     </nav>
   </header>
   <main>${body}</main>

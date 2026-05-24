@@ -21,6 +21,7 @@ import { registerAgentRoutes } from '@/routes/agent-api.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
 import { registerQboRoutes } from '@/routes/qbo-auth.js';
 import { registerLandingRoutes } from '@/routes/landing.js';
+import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import session from '@fastify/session';
 import { registerAdminLogin } from '@/routes/admin-login.js';
@@ -32,6 +33,10 @@ async function main(): Promise<void> {
   });
 
   // ===== Plugins =====
+  await app.register(cors, {
+    origin: ['https://fusionprints.co.zw', 'https://www.fusionprints.co.zw'],
+    methods: ['GET', 'POST'],
+  });
   await app.register(cookie);
   await app.register(session, {
     secret: env.ADMIN_SESSION_SECRET || 'dev-only-not-for-production-use-pad!!',

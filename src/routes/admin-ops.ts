@@ -665,11 +665,13 @@ function metricsPageHtml(): string {
         chart.innerHTML = '<div class="muted">No visits yet.</div>';
       } else {
         const max = Math.max(...data.daily.map(d => d.visits), 1);
-        chart.innerHTML = '<div style="display:flex;align-items:flex-end;gap:4px;height:120px;">' +
+        const CHART_HEIGHT = 100;
+        chart.innerHTML = '<div style="display:flex;align-items:flex-end;gap:3px;height:' + (CHART_HEIGHT + 20) + 'px;overflow-x:auto;">' +
           data.daily.map(d => \`
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
-              <div title="\${d.day}: \${d.visits} visits" style="width:100%;background:var(--blue, #3b82f6);height:\${(d.visits/max)*100}px;min-height:2px;border-radius:3px 3px 0 0;"></div>
-              <div style="font-size:10px;color:var(--text2);font-family:'DM Mono',monospace">\${d.day.slice(5)}</div>
+            <div style="min-width:28px;flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
+              <div style="font-size:10px;color:var(--text2);font-family:'DM Mono',monospace;">\${d.visits}</div>
+              <div title="\${d.day}: \${d.visits} visits" style="width:100%;background:#3b82f6;height:\${Math.max((d.visits/max)*CHART_HEIGHT, 3)}px;border-radius:3px 3px 0 0;"></div>
+              <div style="font-size:10px;color:var(--text2);font-family:'DM Mono',monospace;white-space:nowrap;">\${d.day.slice(5)}</div>
             </div>
           \`).join('') + '</div>';
       }

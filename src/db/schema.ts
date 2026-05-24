@@ -402,3 +402,39 @@ export const uploadSessions = pgTable(
 
 export type UploadSession = typeof uploadSessions.$inferSelect;
 export type NewUploadSession = typeof uploadSessions.$inferInsert;
+
+// ===== Site Visits (landing page tracking) =====
+
+export const siteVisits = pgTable(
+  'site_visits',
+  {
+    id:        uuid('id').primaryKey().defaultRandom(),
+    visitedAt: timestamp('visited_at', { withTimezone: true }).notNull().defaultNow(),
+    referrer:  text('referrer'),
+    userAgent: text('user_agent'),
+    ipHash:    text('ip_hash'),
+  },
+  (table) => ({
+    visitedAtIdx: index('site_visits_visited_at_idx').on(table.visitedAt),
+  }),
+);
+
+export type SiteVisit = typeof siteVisits.$inferSelect;
+
+// ===== Waitlist =====
+
+export const waitlist = pgTable(
+  'waitlist',
+  {
+    id:          uuid('id').primaryKey().defaultRandom(),
+    name:        text('name').notNull(),
+    whatsapp:    text('whatsapp').notNull(),
+    createdAt:   timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    notifiedAt:  timestamp('notified_at', { withTimezone: true }),
+  },
+  (table) => ({
+    whatsappIdx: uniqueIndex('waitlist_whatsapp_idx').on(table.whatsapp),
+  }),
+);
+
+export type Waitlist = typeof waitlist.$inferSelect;

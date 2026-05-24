@@ -24,6 +24,8 @@ import {
   printJobs,
   printers,
   customers,
+  siteVisits,
+  waitlist,
 } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
@@ -630,8 +632,62 @@ function metricsPageHtml(): string {
           <div style="font-weight:600;margin-bottom:14px;">Order status breakdown</div>
           \${renderStatusBreakdown(d.statusBreakdown)}
         </div>
+
+        <div class="card" style="margin-top:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <div style="font-weight:600;">Landing page traffic</div>
+            <div style="display:flex;gap:16px;">
+              <div style="text-align:right;"><div class="muted" style="font-size:11px;">Today</div><div style="font-family:'DM Mono',monospace;font-weight:600;" id="visits-today">—</div></div>
+              <div style="text-align:right;"><div class="muted" style="font-size:11px;">Total</div><div style="font-family:'DM Mono',monospace;font-weight:600;" id="visits-total">—</div></div>
+              <div style="text-align:right;"><div class="muted" style="font-size:11px;">Waitlist</div><div style="font-family:'DM Mono',monospace;font-weight:600;" id="waitlist-count">—</div></div>
+            </div>
+          </div>
+          <div id="traffic-chart"><div class="muted">Loading...</div></div>
+          <div id="waitlist-table" style="margin-top:20px;"></div>
+        </div>
       \`;
       document.getElementById('content').innerHTML = html;
+      loadTraffic();
+    }
+
+    async function loadTraffic() {
+      const days = document.getElementById('days-select').value;
+      const r = await fetch('/admin/api/ops/traffic?days=' + days);
+      const data = await r.json();
+
+      document.getElementById('visits-today').textContent = fmtInt(data.totals.today);
+      document.getElementById('visits-total').textContent = fmtInt(data.totals.total);
+      document.getElementById('waitlist-count').textContent = fmtInt(data.signups.length);
+
+      // Traffic bar chart
+      const chart = document.getElementById('traffic-chart');
+      if (!data.daily.length) {
+        chart.innerHTML = '<div class="muted">No visits yet.</div>';
+      } else {
+        const max = Math.max(...data.daily.map(d => d.visits), 1);
+        chart.innerHTML = '<div style="display:flex;align-items:flex-end;gap:4px;height:120px;">' +
+          data.daily.map(d => \`
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
+              <div title="\${d.day}: \${d.visits} visits" style="width:100%;background:var(--blue, #3b82f6);height:\${(d.visits/max)*100}px;min-height:2px;border-radius:3px 3px 0 0;"></div>
+              <div style="font-size:10px;color:var(--text2);font-family:'DM Mono',monospace">\${d.day.slice(5)}</div>
+            </div>
+          \`).join('') + '</div>';
+      }
+
+      // Waitlist table
+      const table = document.getElementById('waitlist-table');
+      if (!data.signups.length) {
+        table.innerHTML = '<div class="muted" style="font-size:13px;">No waitlist signups yet.</div>';
+      } else {
+        table.innerHTML = '<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text2);margin-bottom:8px;">Waitlist (' + data.signups.length + ')</div>' +
+          data.signups.map(s => \`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+              <div style="font-weight:500;">\${s.name}</div>
+              <div style="font-family:'DM Mono',monospace;color:var(--text2);">\${s.whatsapp}</div>
+              <div style="color:var(--text2);font-size:11px;">\${new Date(s.createdAt).toLocaleDateString()}</div>
+            </div>
+          \`).join('');
+      }
     }
 
     function renderDailyChart(data) {
@@ -1419,6 +1475,56 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error({ err }, 'Failed to batch reprint');
       reply.status(500).send({ error: 'Failed to reprint' });
+    }
+  });
+
+  // Landing page traffic + waitlist — full admin only
+  app.get('/admin/api/ops/traffic', async (request, reply) => {
+    if (!requireFullAdmin(request, reply)) return;
+    try {
+      const { days } = request.query as { days?: string };
+      const daysBack = days ? Math.max(1, Math.min(365, parseInt(days, 10))) : 30;
+      const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+      const daily = await db
+        .select({
+          day:   sql<string>`DATE(${siteVisits.visitedAt})::text`,
+          visits: sql<string>`COUNT(*)::text`,
+        })
+        .from(siteVisits)
+        .where(gte(siteVisits.visitedAt, cutoff))
+        .groupBy(sql`DATE(${siteVisits.visitedAt})`)
+        .orderBy(sql`DATE(${siteVisits.visitedAt})`);
+
+      const [totals] = await db
+        .select({
+          total:     sql<string>`COUNT(*)::text`,
+          today:     sql<string>`COUNT(*) FILTER (WHERE DATE(${siteVisits.visitedAt}) = CURRENT_DATE)::text`,
+        })
+        .from(siteVisits);
+
+      const signups = await db
+        .select({
+          id:        waitlist.id,
+          name:      waitlist.name,
+          whatsapp:  waitlist.whatsapp,
+          createdAt: waitlist.createdAt,
+          notifiedAt: waitlist.notifiedAt,
+        })
+        .from(waitlist)
+        .orderBy(sql`${waitlist.createdAt} DESC`);
+
+      return {
+        daily: daily.map(r => ({ day: r.day, visits: parseInt(r.visits, 10) })),
+        totals: {
+          total: parseInt(totals?.total ?? '0', 10),
+          today: parseInt(totals?.today ?? '0', 10),
+        },
+        signups,
+      };
+    } catch (err) {
+      logger.error({ err }, 'Failed to get traffic data');
+      reply.status(500).send({ error: 'Failed to load traffic' });
     }
   });
 

@@ -699,7 +699,27 @@ function dashboardHtml(role: AdminRole = 'full'): string {
     </div>
     <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
   </div>
+<button class="hamburger" id="hamburger-btn" onclick="toggleMobileNav()">&#9776;</button>
 </header>
+<div class="mobile-nav" id="mobile-nav">
+  <a href="/admin/jobs">Print Queue</a>
+  <a href="/admin" class="active">Completed Orders</a>
+  <a href="/admin/printers">Printers</a>
+  <a href="/admin/metrics">Key Metrics</a>
+  <a href="/admin/qbo">QuickBooks</a>
+</div>
+<script>
+  function toggleMobileNav() {
+    document.getElementById('mobile-nav').classList.toggle('open');
+  }
+  document.addEventListener('click', function(e) {
+    var nav = document.getElementById('mobile-nav');
+    var btn = document.getElementById('hamburger-btn');
+    if (nav && btn && !nav.contains(e.target) && !btn.contains(e.target)) {
+      nav.classList.remove('open');
+    }
+  });
+</script>
 
 <main>
   <div id="alert-banner"></div>

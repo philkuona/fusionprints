@@ -612,6 +612,64 @@ function dashboardHtml(role: AdminRole = 'full'): string {
       .orders-container { overflow-x: auto; }
       table { min-width: 500px; }
     }
+
+    .hamburger {
+      display: none;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .mobile-nav {
+      display: none;
+      position: fixed;
+      top: 57px;
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      z-index: 99;
+      padding: 8px 0;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .mobile-nav.open { display: block; }
+    .mobile-nav a {
+      display: block;
+      padding: 13px 20px;
+      color: var(--text2);
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 500;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+    .mobile-nav a:last-child { border-bottom: none; }
+    .mobile-nav a:hover, .mobile-nav a.active {
+      background: var(--surface2);
+      color: var(--accent);
+    }
+    @media (max-width: 768px) {
+      .nav-tabs { display: none !important; }
+      .hamburger { display: block; }
+      .live-indicator span { display: none; }
+      header { padding: 10px 14px; }
+      main { padding: 12px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .stat-value { font-size: 22px; }
+      .action-btn { padding: 4px 7px; font-size: 10px; margin-right: 2px; }
+      .modal-overlay { padding: 0; align-items: flex-end; }
+      .modal { max-width: 100%; max-height: 92vh; border-radius: 12px 12px 0 0; }
+      .filters { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+      .filter-btn { white-space: nowrap; }
+      .orders-container { overflow-x: auto; }
+      table { min-width: 500px; }
+      table th:nth-child(4), table td:nth-child(4),
+      table th:nth-child(5), table td:nth-child(5) { display: none; }
+    }
   </style>
 </head>
 <body>

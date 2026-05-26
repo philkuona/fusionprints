@@ -559,7 +559,27 @@ function pageHtml(
       ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
       ${isOperator ? '' : `<a href="/admin/qbo" class="nav-tab">QuickBooks</a>`}
     </nav>
+  <button class="hamburger" id="hamburger-btn" onclick="toggleMobileNav()">&#9776;</button>
   </header>
+  <div class="mobile-nav" id="mobile-nav">
+    <a href="/admin/jobs" class="${active === 'jobs' ? 'active' : ''}">Print Queue</a>
+    <a href="/admin" class="${active === 'orders' ? 'active' : ''}">Completed Orders</a>
+    <a href="/admin/printers" class="${active === 'printers' ? 'active' : ''}">Printers</a>
+    ${isOperator ? '' : `<a href="/admin/metrics" class="${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
+    ${isOperator ? '' : '<a href="/admin/qbo">QuickBooks</a>'}
+  </div>
+  <script>
+    function toggleMobileNav() {
+      document.getElementById('mobile-nav').classList.toggle('open');
+    }
+    document.addEventListener('click', function(e) {
+      var nav = document.getElementById('mobile-nav');
+      var btn = document.getElementById('hamburger-btn');
+      if (nav && btn && !nav.contains(e.target) && !btn.contains(e.target)) {
+        nav.classList.remove('open');
+      }
+    });
+  </script>
   <main>${body}</main>
 </body>
 </html>`;

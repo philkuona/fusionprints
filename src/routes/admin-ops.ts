@@ -488,11 +488,6 @@ header {
 .nav-tab:hover { color: var(--text); background: var(--bg); }
 .nav-tab.active { color: var(--accent); background: var(--bg); }
 
- header { padding: 10px 14px; } main { padding: 12px; } }
-
-  main { padding: 12px; }
-}
-
 main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 
 .page-header { margin-bottom: 20px; }
@@ -528,6 +523,50 @@ main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 
 .muted { color: var(--text2); font-size: 13px; }
 .mono { font-family: 'DM Mono', monospace; }
+.hamburger {
+  display: none;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+.mobile-nav {
+  display: none;
+  position: fixed;
+  top: 57px;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 999;
+  padding: 8px 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.mobile-nav.open { display: block; }
+.mobile-nav a {
+  display: block;
+  padding: 14px 20px;
+  color: var(--text2);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+.mobile-nav a:last-child { border-bottom: none; }
+.mobile-nav a.active, .mobile-nav a:hover {
+  background: var(--surface2);
+  color: var(--accent);
+}
+@media (max-width: 768px) {
+  .nav-tabs { display: none !important; }
+  .hamburger { display: block; }
+  header { padding: 10px 14px; }
+  main { padding: 12px; }
+}
 `;
 
 function pageHtml(
@@ -564,6 +603,27 @@ function pageHtml(
       ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
       ${isOperator ? '' : `<a href="/admin/qbo" class="nav-tab">QuickBooks</a>`}
     </nav>
+  <button class="hamburger" id="hamburger-btn" onclick="toggleMobileNav()">&#9776;</button>
+  </header>
+  <div class="mobile-nav" id="mobile-nav">
+    <a href="/admin/jobs" class="${active === 'jobs' ? 'active' : ''}">Print Queue</a>
+    <a href="/admin" class="${active === 'orders' ? 'active' : ''}">Completed Orders</a>
+    <a href="/admin/printers" class="${active === 'printers' ? 'active' : ''}">Printers</a>
+    ${isOperator ? '' : `<a href="/admin/metrics" class="${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
+    ${isOperator ? '' : '<a href="/admin/qbo">QuickBooks</a>'}
+  </div>
+  <script>
+    function toggleMobileNav() {
+      document.getElementById('mobile-nav').classList.toggle('open');
+    }
+    document.addEventListener('click', function(e) {
+      var nav = document.getElementById('mobile-nav');
+      var btn = document.getElementById('hamburger-btn');
+      if (nav && btn && !nav.contains(e.target) && !btn.contains(e.target)) {
+        nav.classList.remove('open');
+      }
+    });
+  </script>
   <main>${body}</main>
 </body>
 </html>`;

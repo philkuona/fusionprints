@@ -592,6 +592,26 @@ function dashboardHtml(role: AdminRole = 'full'): string {
     }
 
     .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    @media (max-width: 768px) {
+      header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+      .nav-tabs { order: 3; width: 100%; margin-left: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; flex-wrap: nowrap; }
+      .nav-tab { white-space: nowrap; font-size: 12px; padding: 6px 10px; }
+      .header-right { order: 2; }
+      .live-indicator span { display: none; }
+      main { padding: 12px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .stat-value { font-size: 22px; }
+      table th:nth-child(4), table td:nth-child(4),
+      table th:nth-child(5), table td:nth-child(5) { display: none; }
+      .action-btn { padding: 4px 7px; font-size: 10px; margin-right: 2px; }
+      .modal-overlay { padding: 0; align-items: flex-end; }
+      .modal { max-width: 100%; max-height: 92vh; border-radius: 12px 12px 0 0; }
+      .filters { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+      .filter-btn { white-space: nowrap; }
+      .orders-container { overflow-x: auto; }
+      table { min-width: 500px; }
+    }
   </style>
 </head>
 <body>

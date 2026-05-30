@@ -100,6 +100,12 @@ export function handleMessage(
 ): BotResponse {
   const text = message.text.trim().toUpperCase();
 
+  // ===== Reset shortcut — greetings always restart the conversation =====
+  const RESET_WORDS = ['HI', 'HELLO', 'HEY', 'START', 'MENU', 'RESTART', 'HIE', 'HOLA', 'YO'];
+  if (RESET_WORDS.includes(text)) {
+    return handleIdle(emptyContext(), customer);
+  }
+
   // ===== Global commands — work from any step =====
 
   if (text === 'HELP') {

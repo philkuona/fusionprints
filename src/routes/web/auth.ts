@@ -26,8 +26,6 @@ import {
   clearWebUserSession,
 } from '@/utils/web-auth.js';
 
-const resend = new Resend(env.RESEND_API_KEY || undefined);
-
 // ── Zod schemas ────────────────────────────────────────────────────────────
 
 const signupSchema = z.object({
@@ -96,6 +94,7 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
     // Send verification email
     const verifyUrl = `${env.WEB_URL}/auth/verify?token=${emailVerificationToken}`;
     try {
+      const resend = new Resend(env.RESEND_API_KEY);
       await resend.emails.send({
         from: 'FusionPrints <noreply@fusionprints.co.zw>',
         to: normalizedEmail,

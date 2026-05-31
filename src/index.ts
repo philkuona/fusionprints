@@ -28,6 +28,7 @@ import { registerAdminLogin } from '@/routes/admin-login.js';
 import { registerWebAuthRoutes } from '@/routes/web/auth.js';
 import { registerWebProfileRoutes } from '@/routes/web/profile.js';
 import { registerWebAddressRoutes } from '@/routes/web/addresses.js';
+import { registerWebCatalogRoutes } from '@/routes/web/catalog.js';
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -102,6 +103,7 @@ async function main(): Promise<void> {
   await registerWebAuthRoutes(app);
   await registerWebProfileRoutes(app);
   await registerWebAddressRoutes(app);
+  await registerWebCatalogRoutes(app);
 
   // ===== Start the server =====
 

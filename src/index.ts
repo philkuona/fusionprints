@@ -25,6 +25,7 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import session from '@fastify/session';
 import { registerAdminLogin } from '@/routes/admin-login.js';
+import { registerWebAuthRoutes } from '@/routes/web/auth.js';
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -33,9 +34,16 @@ async function main(): Promise<void> {
   });
 
   // ===== Plugins =====
+  const allowedOrigins = [
+    'https://fusionprints.co.zw',
+    'https://www.fusionprints.co.zw',
+    ...(env.NODE_ENV === 'development' ? ['http://localhost:3001'] : []),
+    ...(env.WEB_URL && env.WEB_URL !== 'http://localhost:3001' ? [env.WEB_URL] : []),
+  ];
   await app.register(cors, {
-    origin: ['https://fusionprints.co.zw', 'https://www.fusionprints.co.zw'],
-    methods: ['GET', 'POST'],
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true, // required for cookie-based auth from the web frontend
   });
   await app.register(cookie);
   await app.register(session, {
@@ -87,6 +95,9 @@ async function main(): Promise<void> {
 
   // Register web upload routes (for bulk photo uploads)
   await registerUploadRoutes(app);
+
+  // Register web platform auth routes
+  await registerWebAuthRoutes(app);
 
   // ===== Start the server =====
 

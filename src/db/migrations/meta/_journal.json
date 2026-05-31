@@ -36,6 +36,20 @@
       "when": 1777940000000,
       "tag": "0004_phase_d_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1748000000000,
+      "tag": "0005_landing_page_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780215529745,
+      "tag": "0006_web_users",
+      "breakpoints": true
     }
   ]
 }

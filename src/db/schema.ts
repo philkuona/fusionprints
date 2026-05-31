@@ -438,3 +438,36 @@ export const waitlist = pgTable(
 );
 
 export type Waitlist = typeof waitlist.$inferSelect;
+
+// ===== Web Platform Users =====
+
+/**
+ * Web platform accounts — separate from WhatsApp customers.
+ * Created when a user signs up via the web platform.
+ * Optionally linked to an existing WhatsApp customer via whatsappNumber.
+ */
+export const webUsers = pgTable(
+  'web_users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: text('email').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    emailVerified: boolean('email_verified').notNull().default(false),
+    emailVerificationToken: text('email_verification_token'),
+    emailVerificationExpiresAt: timestamp('email_verification_expires_at', {
+      withTimezone: true,
+    }),
+    whatsappNumber: text('whatsapp_number'), // optional E.164, links to WA customer
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  },
+  (table) => ({
+    emailIdx: uniqueIndex('web_users_email_idx').on(table.email),
+    verificationTokenIdx: index('web_users_verification_token_idx').on(
+      table.emailVerificationToken,
+    ),
+  }),
+);
+
+export type WebUser = typeof webUsers.$inferSelect;
+export type NewWebUser = typeof webUsers.$inferInsert;

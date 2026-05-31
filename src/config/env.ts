@@ -92,6 +92,11 @@ const envSchema = z.object({
   // Set both to enable; leave blank to disable auth (dev only)
   WHATSAPP_WEBHOOK_USER: z.string().default(''),
   WHATSAPP_WEBHOOK_PASS: z.string().default(''),
+
+  // Web platform
+  RESEND_API_KEY: z.string().default(''),
+  WEB_URL: z.string().default('http://localhost:3001'), // frontend origin for CORS + email links
+  WEB_SESSION_SECRET: z.string().default(''), // if empty, falls back to ADMIN_SESSION_SECRET
 });
 
 const parsed = envSchema.safeParse(process.env);

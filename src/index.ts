@@ -26,6 +26,8 @@ import cookie from '@fastify/cookie';
 import session from '@fastify/session';
 import { registerAdminLogin } from '@/routes/admin-login.js';
 import { registerWebAuthRoutes } from '@/routes/web/auth.js';
+import { registerWebProfileRoutes } from '@/routes/web/profile.js';
+import { registerWebAddressRoutes } from '@/routes/web/addresses.js';
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -96,8 +98,10 @@ async function main(): Promise<void> {
   // Register web upload routes (for bulk photo uploads)
   await registerUploadRoutes(app);
 
-  // Register web platform auth routes
+  // Register web platform routes
   await registerWebAuthRoutes(app);
+  await registerWebProfileRoutes(app);
+  await registerWebAddressRoutes(app);
 
   // ===== Start the server =====
 

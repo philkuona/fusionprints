@@ -471,3 +471,34 @@ export const webUsers = pgTable(
 
 export type WebUser = typeof webUsers.$inferSelect;
 export type NewWebUser = typeof webUsers.$inferInsert;
+
+// ===== Customer Addresses (web platform) =====
+
+/**
+ * Delivery addresses for web platform users.
+ * Zimbabwe addresses are semi-structured — suburb + city + instructions
+ * matter more than strict postal codes.
+ */
+export const customerAddresses = pgTable(
+  'customer_addresses',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    webUserId: uuid('web_user_id')
+      .notNull()
+      .references(() => webUsers.id, { onDelete: 'cascade' }),
+    label: text('label').notNull().default('Home'), // 'Home', 'Office', etc.
+    recipientName: text('recipient_name').notNull(),
+    addressLine1: text('address_line1').notNull(),
+    suburb: text('suburb'),
+    city: text('city').notNull(),
+    deliveryInstructions: text('delivery_instructions'),
+    isDefault: boolean('is_default').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    webUserIdx: index('customer_addresses_web_user_idx').on(table.webUserId),
+  }),
+);
+
+export type CustomerAddress = typeof customerAddresses.$inferSelect;
+export type NewCustomerAddress = typeof customerAddresses.$inferInsert;

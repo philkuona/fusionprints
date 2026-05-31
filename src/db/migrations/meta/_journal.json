@@ -50,6 +50,13 @@
       "when": 1780215529745,
       "tag": "0006_web_users",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780216703984,
+      "tag": "0007_customer_addresses",
+      "breakpoints": true
     }
   ]
 }

@@ -57,6 +57,13 @@
       "when": 1780216703984,
       "tag": "0007_customer_addresses",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780374277656,
+      "tag": "0008_luxuriant_leper_queen",
+      "breakpoints": true
     }
   ]
 }

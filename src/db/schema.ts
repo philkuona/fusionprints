@@ -135,17 +135,27 @@ export const conversationState = pgTable('conversation_state', {
 });
 
 /**
- * Images — uploaded by customers.
+ * Images — uploaded by customers (WhatsApp) or web platform users.
  * Stored externally (Backblaze B2); this table holds metadata + URL.
- * Auto-deleted 30 days after fulfillment via a scheduled job.
+ *
+ * Polymorphic owner: exactly ONE of customerId / webUserId is set.
+ *   - customerId set  → uploaded via WhatsApp (30-day retention)
+ *   - webUserId  set  → uploaded via the web platform (90-day retention)
+ * Enforced in application logic; both are nullable at the DB level so the
+ * same table (and order_items/images relation) is shared across channels.
+ *
+ * Auto-deleted after its retention window via a scheduled job.
  */
 export const images = pgTable(
   'images',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    customerId: uuid('customer_id')
-      .notNull()
-      .references(() => customers.id, { onDelete: 'cascade' }),
+    customerId: uuid('customer_id').references(() => customers.id, {
+      onDelete: 'cascade',
+    }),
+    webUserId: uuid('web_user_id').references(() => webUsers.id, {
+      onDelete: 'cascade',
+    }),
     storageUrl: text('storage_url').notNull(),
     storageKey: text('storage_key').notNull(), // path within bucket, for deletion
     originalFilename: text('original_filename'),
@@ -159,6 +169,7 @@ export const images = pgTable(
   },
   (table) => ({
     customerIdx: index('images_customer_idx').on(table.customerId),
+    webUserIdx: index('images_web_user_idx').on(table.webUserId),
     deleteAfterIdx: index('images_delete_after_idx').on(table.deleteAfter),
   }),
 );

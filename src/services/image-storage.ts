@@ -16,7 +16,13 @@
  * This makes it easy to find all images for a customer or order.
  */
 
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
 import { randomUUID } from 'crypto';
 import { env } from '@/config/env.js';
@@ -217,6 +223,123 @@ export async function storeImage(
 }
 
 /**
+ * Store an image uploaded via the web platform.
+ *
+ * Differs from the WhatsApp `storeImage` path:
+ *   - Owner is a web_users row (customerId stays null)
+ *   - Storage key is namespaced under web-users/{webUserId}/
+ *   - Retention is 90 days (vs 30 for WhatsApp uploads)
+ *   - EXIF orientation is baked into the pixels via sharp `.rotate()`, so the
+ *     stored file always renders upright regardless of the camera flag. This
+ *     also keeps the stored width/height honest for the low-res check.
+ *
+ * @param buffer - the raw uploaded file bytes
+ * @param webUserId - UUID of the web platform user
+ * @param mimeType - e.g. 'image/jpeg'
+ * @param originalFilename - optional original filename
+ */
+export async function storeWebImage(
+  buffer: Buffer,
+  webUserId: string,
+  mimeType: string,
+  originalFilename?: string,
+): Promise<StoredImage | null> {
+  try {
+    // Bake EXIF orientation into the pixels and strip the now-redundant
+    // orientation flag. `.rotate()` with no args auto-rotates from EXIF.
+    let uploadBuffer: Buffer;
+    let outputMime = mimeType;
+    try {
+      const pipeline = sharp(buffer).rotate();
+      // Re-encode in the original format where we can, so dims/orientation
+      // are finalised. sharp picks the encoder from the input format.
+      uploadBuffer = await pipeline.toBuffer();
+    } catch {
+      // If sharp can't re-encode (rare formats), fall back to the raw bytes —
+      // validation below will reject anything truly unreadable.
+      uploadBuffer = buffer;
+    }
+
+    // Validate and get real (post-rotation) dimensions from the file
+    const validation = await validateImageBuffer(uploadBuffer);
+
+    if (!validation.valid) {
+      logger.warn({ webUserId, reason: validation.reason }, 'Web image validation failed');
+      return null;
+    }
+
+    // sharp normalises the encoded format; keep the mime in sync with it.
+    outputMime = `image/${validation.format}`;
+
+    // Generate a unique storage key namespaced to the web user
+    const imageUuid = randomUUID();
+    const ext = validation.format === 'jpeg' ? 'jpg' : validation.format;
+    const storageKey = `web-users/${webUserId}/${imageUuid}.${ext}`;
+
+    // Upload to B2
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: env.B2_BUCKET_NAME,
+        Key: storageKey,
+        Body: uploadBuffer,
+        ContentType: outputMime,
+        ContentLength: uploadBuffer.length,
+        Metadata: {
+          webUserId,
+          originalFilename: originalFilename ?? '',
+        },
+      }),
+    );
+
+    const storageUrl = `https://${env.B2_BUCKET_NAME}.${env.B2_ENDPOINT}/${storageKey}`;
+
+    // Create database record — 90-day retention for web uploads
+    const deleteAfter = new Date();
+    deleteAfter.setDate(deleteAfter.getDate() + 90);
+
+    const [imageRecord] = await db
+      .insert(images)
+      .values({
+        webUserId,
+        storageUrl,
+        storageKey,
+        originalFilename: originalFilename ?? null,
+        widthPx: validation.widthPx,
+        heightPx: validation.heightPx,
+        fileSizeBytes: validation.fileSizeBytes,
+        format: validation.format,
+        wasCompressed: false,
+        deleteAfter,
+      })
+      .returning();
+
+    logger.info(
+      {
+        imageId: imageRecord.id,
+        webUserId,
+        dimensions: `${validation.widthPx}x${validation.heightPx}`,
+        fileSizeBytes: validation.fileSizeBytes,
+      },
+      'Web image stored successfully',
+    );
+
+    return {
+      imageId: imageRecord.id,
+      storageUrl,
+      storageKey,
+      widthPx: validation.widthPx,
+      heightPx: validation.heightPx,
+      fileSizeBytes: validation.fileSizeBytes,
+      format: validation.format,
+      wasCompressed: false,
+    };
+  } catch (err) {
+    logger.error({ err, webUserId }, 'Failed to store web image');
+    return null;
+  }
+}
+
+/**
  * Delete an image from B2 and mark it deleted in the database.
  * Called by the cleanup job 30 days after fulfillment.
  */
@@ -251,6 +374,30 @@ export async function deleteImage(imageId: string): Promise<void> {
   } catch (err) {
     logger.error({ err, imageId }, 'Failed to delete image');
   }
+}
+
+/**
+ * Generate a presigned GET URL for a stored image.
+ *
+ * The B2 bucket is private, so raw storage URLs return 401. Customer-facing
+ * surfaces (e.g. the web photo library) need a temporary, signed URL the
+ * browser — and Next's image optimizer — can fetch without credentials.
+ *
+ * Default expiry is 24 hours: long enough that a library page stays usable
+ * for a session, short enough to bound exposure of a leaked link.
+ *
+ * @param storageKey - the object key within the bucket
+ * @param expiresInSeconds - signature lifetime (default 86400 = 24h, max 7d)
+ */
+export async function getSignedImageUrl(
+  storageKey: string,
+  expiresInSeconds = 24 * 60 * 60,
+): Promise<string> {
+  return getSignedUrl(
+    s3,
+    new GetObjectCommand({ Bucket: env.B2_BUCKET_NAME, Key: storageKey }),
+    { expiresIn: expiresInSeconds },
+  );
 }
 
 /**

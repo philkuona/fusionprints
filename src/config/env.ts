@@ -98,6 +98,11 @@ const envSchema = z.object({
   WEB_URL: z.string().default('http://localhost:3001'), // frontend origin for CORS + email links
   WEB_SESSION_SECRET: z.string().default(''), // if empty, falls back to ADMIN_SESSION_SECRET
 
+  // Google OAuth (Phase 2.1.7) — both blank = Google sign-in disabled.
+  // The callback is derived from PUBLIC_URL: {PUBLIC_URL}/web/api/auth/google/callback
+  GOOGLE_CLIENT_ID: z.string().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().default(''),
+
   // Image expiry cleanup (Phase 2.1.6)
   // ENABLED: run the in-process daily cleanup scheduler at all.
   // DRY_RUN: when true (default), the job only LOGS what it would delete and

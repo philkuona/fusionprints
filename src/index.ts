@@ -30,6 +30,7 @@ import { registerWebProfileRoutes } from '@/routes/web/profile.js';
 import { registerWebAddressRoutes } from '@/routes/web/addresses.js';
 import { registerWebCatalogRoutes } from '@/routes/web/catalog.js';
 import { registerWebPhotoRoutes } from '@/routes/web/photos.js';
+import { startImageCleanupSchedule } from '@/services/image-cleanup.js';
 
 async function main(): Promise<void> {
   const app = Fastify({
@@ -122,6 +123,10 @@ async function main(): Promise<void> {
     logger.info(`📍 Environment: ${env.NODE_ENV}`);
     logger.info(`💾 Database: ${env.DATABASE_URL.replace(/:[^:@]*@/, ':***@')}`);
     logger.info(`🏥 Health check: ${address}/health`);
+
+    // Start the daily image-expiry cleanup (Phase 2.1.6). Safe by default:
+    // dry-run unless IMAGE_CLEANUP_DRY_RUN=false. Timers are unref-ed.
+    startImageCleanupSchedule();
   } catch (err) {
     logger.fatal({ err }, 'Failed to start server');
     process.exit(1);

@@ -97,6 +97,19 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().default(''),
   WEB_URL: z.string().default('http://localhost:3001'), // frontend origin for CORS + email links
   WEB_SESSION_SECRET: z.string().default(''), // if empty, falls back to ADMIN_SESSION_SECRET
+
+  // Image expiry cleanup (Phase 2.1.6)
+  // ENABLED: run the in-process daily cleanup scheduler at all.
+  // DRY_RUN: when true (default), the job only LOGS what it would delete and
+  //   removes nothing — flip to false to actually delete expired images.
+  IMAGE_CLEANUP_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false'),
+  IMAGE_CLEANUP_DRY_RUN: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false'),
 });
 
 const parsed = envSchema.safeParse(process.env);

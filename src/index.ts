@@ -44,6 +44,7 @@ async function main(): Promise<void> {
   const allowedOrigins = [
     'https://fusionprints.co.zw',
     'https://www.fusionprints.co.zw',
+    'https://app.fusionprints.co.zw', // web app (staging → launch), shares the registrable domain
     ...(env.NODE_ENV === 'development' ? ['http://localhost:3001'] : []),
     ...(env.WEB_URL && env.WEB_URL !== 'http://localhost:3001' ? [env.WEB_URL] : []),
   ];

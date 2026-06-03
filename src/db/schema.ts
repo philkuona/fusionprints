@@ -495,6 +495,42 @@ export const webUsers = pgTable(
 export type WebUser = typeof webUsers.$inferSelect;
 export type NewWebUser = typeof webUsers.$inferInsert;
 
+/**
+ * Edited, print-ready renders produced by the web editor (Phase 2.2).
+ * One source image can have many processed renders (different sizes/crops/
+ * filters), so this is a child of `images`. The edit payload is stored so a
+ * render can be reproduced or re-edited. Keyed uniquely by storage key (a hash
+ * of the payload) so re-applying the same edit overwrites the same object.
+ */
+export const processedImages = pgTable(
+  'processed_images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceImageId: uuid('source_image_id')
+      .notNull()
+      .references(() => images.id, { onDelete: 'cascade' }),
+    webUserId: uuid('web_user_id')
+      .notNull()
+      .references(() => webUsers.id, { onDelete: 'cascade' }),
+    sizeCode: text('size_code').notNull(),
+    editPayload: jsonb('edit_payload').notNull(),
+    processedStorageKey: text('processed_storage_key').notNull(),
+    processedStorageUrl: text('processed_storage_url').notNull(),
+    widthPx: integer('width_px').notNull(),
+    heightPx: integer('height_px').notNull(),
+    format: text('format').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    deleteAfter: timestamp('delete_after', { withTimezone: true }),
+  },
+  (table) => ({
+    sourceIdx: index('processed_images_source_idx').on(table.sourceImageId),
+    webUserIdx: index('processed_images_web_user_idx').on(table.webUserId),
+    keyIdx: uniqueIndex('processed_images_key_idx').on(table.processedStorageKey),
+  }),
+);
+
+export type ProcessedImage = typeof processedImages.$inferSelect;
+
 // ===== Customer Addresses (web platform) =====
 
 /**

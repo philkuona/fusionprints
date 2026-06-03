@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { db } from '@/db/client.js';
-import { images } from '@/db/schema.js';
+import { images, processedImages } from '@/db/schema.js';
 import { eq } from 'drizzle-orm';
 
 // ===== S3 client (Backblaze B2 compatible) =====
@@ -398,6 +398,96 @@ export async function getSignedImageUrl(
     new GetObjectCommand({ Bucket: env.B2_BUCKET_NAME, Key: storageKey }),
     { expiresIn: expiresInSeconds },
   );
+}
+
+/**
+ * Download a stored object's bytes from B2 (server-side). Used by the editor
+ * applier to fetch the original before re-rendering it.
+ */
+export async function getImageBuffer(storageKey: string): Promise<Buffer> {
+  const res = await s3.send(
+    new GetObjectCommand({ Bucket: env.B2_BUCKET_NAME, Key: storageKey }),
+  );
+  if (!res.Body) throw new Error(`No body for ${storageKey}`);
+  const bytes = await res.Body.transformToByteArray();
+  return Buffer.from(bytes);
+}
+
+export interface StoredProcessedImage {
+  id: string;
+  storageKey: string;
+  signedUrl: string;
+  widthPx: number;
+  heightPx: number;
+}
+
+/**
+ * Upload an edited, print-ready render to B2 and upsert its processed_images
+ * row. The key embeds a hash of the edit payload, so re-applying the same edit
+ * overwrites the same object (idempotent). 90-day retention like web uploads.
+ */
+export async function storeProcessedImage(params: {
+  buffer: Buffer;
+  webUserId: string;
+  sourceImageId: string;
+  sizeCode: string;
+  payloadHash: string;
+  editPayload: unknown;
+  widthPx: number;
+  heightPx: number;
+  mimeType: string;
+}): Promise<StoredProcessedImage | null> {
+  try {
+    const ext = params.mimeType.split('/')[1] ?? 'jpg';
+    const storageKey = `web-users/${params.webUserId}/processed/${params.sourceImageId}-${params.payloadHash}.${ext === 'jpeg' ? 'jpg' : ext}`;
+
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: env.B2_BUCKET_NAME,
+        Key: storageKey,
+        Body: params.buffer,
+        ContentType: params.mimeType,
+        ContentLength: params.buffer.length,
+        Metadata: { webUserId: params.webUserId, sourceImageId: params.sourceImageId },
+      }),
+    );
+
+    const storageUrl = `https://${env.B2_BUCKET_NAME}.${env.B2_ENDPOINT}/${storageKey}`;
+    const deleteAfter = new Date();
+    deleteAfter.setDate(deleteAfter.getDate() + 90);
+
+    const [row] = await db
+      .insert(processedImages)
+      .values({
+        sourceImageId: params.sourceImageId,
+        webUserId: params.webUserId,
+        sizeCode: params.sizeCode,
+        editPayload: params.editPayload as object,
+        processedStorageKey: storageKey,
+        processedStorageUrl: storageUrl,
+        widthPx: params.widthPx,
+        heightPx: params.heightPx,
+        format: ext,
+        deleteAfter,
+      })
+      .onConflictDoUpdate({
+        target: processedImages.processedStorageKey,
+        set: {
+          editPayload: params.editPayload as object,
+          sizeCode: params.sizeCode,
+          widthPx: params.widthPx,
+          heightPx: params.heightPx,
+          deleteAfter,
+        },
+      })
+      .returning({ id: processedImages.id });
+
+    const signedUrl = await getSignedImageUrl(storageKey);
+    return { id: row.id, storageKey, signedUrl, widthPx: params.widthPx, heightPx: params.heightPx };
+  } catch (err) {
+    logger.error({ err, webUserId: params.webUserId }, 'Failed to store processed image');
+    return null;
+  }
 }
 
 /**

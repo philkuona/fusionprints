@@ -71,6 +71,13 @@
       "when": 1780447628519,
       "tag": "0009_ordinary_jubilee",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780465180637,
+      "tag": "0010_motionless_wendigo",
+      "breakpoints": true
     }
   ]
 }

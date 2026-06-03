@@ -31,6 +31,7 @@ import { registerWebProfileRoutes } from '@/routes/web/profile.js';
 import { registerWebAddressRoutes } from '@/routes/web/addresses.js';
 import { registerWebCatalogRoutes } from '@/routes/web/catalog.js';
 import { registerWebPhotoRoutes } from '@/routes/web/photos.js';
+import { registerWebEditorRoutes } from '@/routes/web/editor.js';
 import { startImageCleanupSchedule } from '@/services/image-cleanup.js';
 
 async function main(): Promise<void> {
@@ -109,6 +110,7 @@ async function main(): Promise<void> {
   await registerWebAddressRoutes(app);
   await registerWebCatalogRoutes(app);
   await registerWebPhotoRoutes(app);
+  await registerWebEditorRoutes(app);
 
   // ===== Start the server =====
 

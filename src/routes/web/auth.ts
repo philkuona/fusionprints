@@ -184,13 +184,16 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
       .where(eq(webUsers.email, normalizedEmail))
       .limit(1);
 
-    // Use constant-time comparison to avoid timing attacks
+    // Use constant-time comparison to avoid timing attacks. A Google-only
+    // account has a null passwordHash — treat it like a nonexistent user for
+    // password login (they must use "Continue with Google").
     const dummyHash = '$2a$12$dummy.hash.to.prevent.timing.attack.on.nonexistent';
-    const passwordValid = user
-      ? await verifyPassword(password, user.passwordHash)
-      : await verifyPassword(password, dummyHash).then(() => false);
+    const passwordValid =
+      user && user.passwordHash
+        ? await verifyPassword(password, user.passwordHash)
+        : await verifyPassword(password, dummyHash).then(() => false);
 
-    if (!user || !passwordValid) {
+    if (!user || !user.passwordHash || !passwordValid) {
       return reply.status(401).send({
         error: 'invalid_credentials',
         message: 'Incorrect email or password.',
@@ -237,6 +240,8 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
         email: webUsers.email,
         emailVerified: webUsers.emailVerified,
         whatsappNumber: webUsers.whatsappNumber,
+        displayName: webUsers.displayName,
+        avatarUrl: webUsers.avatarUrl,
         createdAt: webUsers.createdAt,
         lastLoginAt: webUsers.lastLoginAt,
       })

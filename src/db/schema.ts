@@ -456,13 +456,22 @@ export type Waitlist = typeof waitlist.$inferSelect;
  * Web platform accounts — separate from WhatsApp customers.
  * Created when a user signs up via the web platform.
  * Optionally linked to an existing WhatsApp customer via whatsappNumber.
+ *
+ * Accounts are either password-based (signup) or Google-based (OAuth):
+ * exactly one of passwordHash / googleId is set. This is enforced in app
+ * logic (no DB CHECK) — see src/routes/web/auth.ts + google-auth.ts.
+ * A password account can later be auto-linked to Google on the same email,
+ * at which point both may be set.
  */
 export const webUsers = pgTable(
   'web_users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     email: text('email').notNull(),
-    passwordHash: text('password_hash').notNull(),
+    passwordHash: text('password_hash'), // nullable — null for Google-only accounts
+    googleId: text('google_id'), // Google "sub" claim — null for password-only accounts
+    displayName: text('display_name'), // from Google profile, optional
+    avatarUrl: text('avatar_url'), // Google profile picture, optional
     emailVerified: boolean('email_verified').notNull().default(false),
     emailVerificationToken: text('email_verification_token'),
     emailVerificationExpiresAt: timestamp('email_verification_expires_at', {
@@ -474,6 +483,9 @@ export const webUsers = pgTable(
   },
   (table) => ({
     emailIdx: uniqueIndex('web_users_email_idx').on(table.email),
+    // Postgres treats NULLs as distinct, so many password-only users with
+    // NULL google_id coexist under this unique index.
+    googleIdIdx: uniqueIndex('web_users_google_id_idx').on(table.googleId),
     verificationTokenIdx: index('web_users_verification_token_idx').on(
       table.emailVerificationToken,
     ),

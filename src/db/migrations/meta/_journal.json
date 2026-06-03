@@ -64,6 +64,13 @@
       "when": 1780374277656,
       "tag": "0008_luxuriant_leper_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780447628519,
+      "tag": "0009_ordinary_jubilee",
+      "breakpoints": true
     }
   ]
 }

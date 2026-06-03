@@ -26,6 +26,7 @@ import cookie from '@fastify/cookie';
 import session from '@fastify/session';
 import { registerAdminLogin } from '@/routes/admin-login.js';
 import { registerWebAuthRoutes } from '@/routes/web/auth.js';
+import { registerWebGoogleAuthRoutes } from '@/routes/web/google-auth.js';
 import { registerWebProfileRoutes } from '@/routes/web/profile.js';
 import { registerWebAddressRoutes } from '@/routes/web/addresses.js';
 import { registerWebCatalogRoutes } from '@/routes/web/catalog.js';
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
 
   // Register web platform routes
   await registerWebAuthRoutes(app);
+  await registerWebGoogleAuthRoutes(app);
   await registerWebProfileRoutes(app);
   await registerWebAddressRoutes(app);
   await registerWebCatalogRoutes(app);

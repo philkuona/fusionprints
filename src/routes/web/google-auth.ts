@@ -4,6 +4,13 @@
  *   GET /web/api/auth/google           — start flow: redirect to Google consent
  *   GET /web/api/auth/google/callback  — handle Google's redirect, sign user in
  *
+ * Two presentation modes, chosen by the `?popup=1` query on the start route
+ * (remembered on the session for the callback):
+ *   - Redirect mode (default): the callback 302s the whole tab to the app.
+ *   - Popup mode: the button opened a small window; the callback returns a
+ *     tiny self-closing page that postMessages the result to window.opener,
+ *     which then routes the main page and closes the popup.
+ *
  * Account model: one web_users row per email.
  *   - Found by googleId        → existing Google account, sign in.
  *   - Found by email (no link) → AUTO-LINK: attach googleId, mark verified,
@@ -16,6 +23,7 @@
  * top-level GET redirect back from Google.
  */
 
+import type { FastifyReply } from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import crypto from 'crypto';
 import { eq } from 'drizzle-orm';
@@ -30,15 +38,50 @@ import {
   exchangeCodeForProfile,
 } from '@/services/google-oauth.js';
 
+/**
+ * Self-closing page for popup mode. Posts the outcome to the opener (the
+ * page that launched the popup) and closes itself. If there is no opener
+ * (e.g. the popup was blocked and this became a full navigation), it falls
+ * back to the same destinations the redirect flow would use.
+ */
+function popupResultHtml(ok: boolean, error?: string): string {
+  const payload = JSON.stringify({ source: 'fp-google-auth', ok, error: error ?? null });
+  const target = JSON.stringify(env.WEB_URL);
+  const fallback = JSON.stringify(
+    ok ? `${env.WEB_URL}/account` : `${env.WEB_URL}/login?error=${error ?? 'google'}`,
+  );
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Signing in…</title></head>
+<body style="margin:0;font-family:system-ui,-apple-system,sans-serif;background:#FBF7F0;color:#1F1B16;display:flex;align-items:center;justify-content:center;height:100vh">
+<p>${ok ? 'Signing you in…' : 'Sign-in failed — you can close this window.'}</p>
+<script>
+(function () {
+  var hasOpener = window.opener && !window.opener.closed;
+  try { if (hasOpener) window.opener.postMessage(${payload}, ${target}); } catch (e) {}
+  if (hasOpener) { window.close(); }
+  else { window.location.replace(${fallback}); }
+})();
+</script>
+</body>
+</html>`;
+}
+
 export async function registerWebGoogleAuthRoutes(app: FastifyInstance): Promise<void> {
   // GET /web/api/auth/google — kick off the OAuth flow
   app.get('/web/api/auth/google', async (request, reply) => {
+    const { popup } = request.query as { popup?: string };
+    const isPopup = popup === '1';
+
     if (!isEnabled()) {
-      return reply.redirect(`${env.WEB_URL}/login?error=google_disabled`);
+      return isPopup
+        ? reply.type('text/html').send(popupResultHtml(false, 'google_disabled'))
+        : reply.redirect(`${env.WEB_URL}/login?error=google_disabled`);
     }
 
     const state = crypto.randomBytes(16).toString('hex');
     (request as any).session.googleOAuthState = state;
+    (request as any).session.googleOAuthPopup = isPopup;
 
     return reply.redirect(getAuthorizationUrl(state));
   });
@@ -52,15 +95,23 @@ export async function registerWebGoogleAuthRoutes(app: FastifyInstance): Promise
     };
 
     const expectedState = (request as any).session?.googleOAuthState as string | undefined;
+    const isPopup = (request as any).session?.googleOAuthPopup === true;
     // One-time use — clear regardless of outcome.
     (request as any).session.googleOAuthState = undefined;
+    (request as any).session.googleOAuthPopup = undefined;
+
+    // Emit the right kind of failure for the mode we're in.
+    const fail = (reply: FastifyReply) =>
+      isPopup
+        ? reply.type('text/html').send(popupResultHtml(false, 'google'))
+        : reply.redirect(`${env.WEB_URL}/login?error=google`);
 
     if (error || !code || !state || !expectedState || state !== expectedState) {
       logger.warn(
-        { error, hasCode: !!code, stateMatch: state === expectedState },
+        { error, hasCode: !!code, stateMatch: state === expectedState, isPopup },
         'Google OAuth callback rejected',
       );
-      return reply.redirect(`${env.WEB_URL}/login?error=google`);
+      return fail(reply);
     }
 
     try {
@@ -127,10 +178,12 @@ export async function registerWebGoogleAuthRoutes(app: FastifyInstance): Promise
       }
 
       setWebUserSession(request, userId);
-      return reply.redirect(`${env.WEB_URL}/account`);
+      return isPopup
+        ? reply.type('text/html').send(popupResultHtml(true))
+        : reply.redirect(`${env.WEB_URL}/account`);
     } catch (err) {
       logger.error({ err }, 'Google OAuth callback failed');
-      return reply.redirect(`${env.WEB_URL}/login?error=google`);
+      return fail(reply);
     }
   });
 }

@@ -79,6 +79,16 @@ function isIdentity(m: Mat3): boolean {
   return true;
 }
 
+/**
+ * White-border option per size (inches), or null if the size offers no border.
+ * MUST match borderInchesForSize in the frontend (lib/editor/sizes.ts).
+ */
+function borderInchesForSize(sizeCode: string): number | null {
+  if (['4x6', '5x7', '6x6', '6x8'].includes(sizeCode)) return 0.25;
+  if (['8x10', '11x14'].includes(sizeCode)) return 0.5;
+  return null;
+}
+
 /** Oriented print dimensions in inches for a sizeCode + orientation. */
 function orientedInches(sizeCode: string, orientation: EditPayload['crop']['orientation']): [number, number] {
   const [a, b] = sizeCode.split('x').map(Number);
@@ -157,10 +167,11 @@ export async function applyEdit(
 
   // ── Resize to print target (+ optional ½" white border) ──
   const target = orientedTarget(product.recommendedResolution, crop.orientation);
-  if (payload.border) {
+  const borderInches = borderInchesForSize(payload.sizeCode);
+  if (payload.border && borderInches) {
     const [pw] = orientedInches(payload.sizeCode, crop.orientation);
     const dpi = target.w / pw;
-    const m = Math.max(1, Math.round(0.5 * dpi));
+    const m = Math.max(1, Math.round(borderInches * dpi));
     img = img
       .resize(Math.max(1, target.w - 2 * m), Math.max(1, target.h - 2 * m), { fit: 'cover' })
       .extend({ top: m, bottom: m, left: m, right: m, background: '#ffffff' });

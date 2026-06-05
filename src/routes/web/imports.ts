@@ -49,6 +49,15 @@ function isAllowedDropboxUrl(raw: string): boolean {
 }
 
 export async function registerWebImportRoutes(app: FastifyInstance): Promise<void> {
+  // GET /web/api/imports/config — which cloud-import options are available.
+  // Runtime feature flags so the frontend shows/hides options without a rebuild.
+  app.get('/web/api/imports/config', async (_request, reply) => {
+    return reply.send({
+      googlePhotos: env.GOOGLE_PHOTOS_IMPORT_ENABLED && googleEnabled(),
+      dropboxAppKey: env.DROPBOX_APP_KEY || null,
+    });
+  });
+
   // POST /web/api/imports/from-urls — Dropbox Chooser links
   app.post('/web/api/imports/from-urls', async (request, reply) => {
     const userId = authenticateWebUser(request, reply);

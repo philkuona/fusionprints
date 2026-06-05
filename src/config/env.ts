@@ -103,6 +103,17 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
 
+  // Cloud photo import (runtime feature flags — surfaced via GET /web/api/imports/config
+  // so the frontend shows each option without a rebuild).
+  // GOOGLE_PHOTOS_IMPORT_ENABLED: turn on only after the Google Cloud setup
+  //   (Photos Picker API enabled + scope on the consent screen + redirect URI).
+  GOOGLE_PHOTOS_IMPORT_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+  // DROPBOX_APP_KEY: Dropbox Chooser app key (public by design). Blank = hidden.
+  DROPBOX_APP_KEY: z.string().default(''),
+
   // Image expiry cleanup (Phase 2.1.6)
   // ENABLED: run the in-process daily cleanup scheduler at all.
   // DRY_RUN: when true (default), the job only LOGS what it would delete and

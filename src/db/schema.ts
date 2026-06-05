@@ -574,3 +574,30 @@ export const customerAddresses = pgTable(
 
 export type CustomerAddress = typeof customerAddresses.$inferSelect;
 export type NewCustomerAddress = typeof customerAddresses.$inferInsert;
+
+/**
+ * Persistent web session store (@fastify/session backend).
+ *
+ * Sessions were previously kept in the default in-memory store, so every
+ * backend restart (each deploy, crash, or reboot) silently logged every user
+ * out regardless of the cookie lifetime. Persisting them here means a session
+ * lasts its full cookie lifetime across restarts.
+ *
+ *   sid    — the session id (cookie value)
+ *   sess   — the serialized session object
+ *   expire — when the row may be evicted; indexed for cheap sweeping
+ */
+export const webSessions = pgTable(
+  'web_sessions',
+  {
+    sid: text('sid').primaryKey(),
+    sess: jsonb('sess').notNull(),
+    expire: timestamp('expire', { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    expireIdx: index('web_sessions_expire_idx').on(table.expire),
+  }),
+);
+
+export type WebSession = typeof webSessions.$inferSelect;
+export type NewWebSession = typeof webSessions.$inferInsert;

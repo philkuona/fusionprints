@@ -24,6 +24,7 @@ import { registerLandingRoutes } from '@/routes/landing.js';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import session from '@fastify/session';
+import { PgSessionStore, sweepExpiredSessions } from '@/utils/session-store.js';
 import { registerAdminLogin } from '@/routes/admin-login.js';
 import { registerWebAuthRoutes } from '@/routes/web/auth.js';
 import { registerWebGoogleAuthRoutes } from '@/routes/web/google-auth.js';
@@ -59,9 +60,22 @@ async function main(): Promise<void> {
   await app.register(cookie);
   await app.register(session, {
     secret: env.ADMIN_SESSION_SECRET || 'dev-only-not-for-production-use-pad!!',
-    cookie: { secure: env.NODE_ENV === 'production', httpOnly: true, maxAge: 86400 * 7, sameSite: 'lax' as const },
+    // Persistent store so sessions survive backend restarts (deploys/reboots),
+    // instead of the default in-memory store that logged everyone out on each
+    // restart. maxAge is in milliseconds; rolling renews it on every request so
+    // active users stay signed in and only idle sessions expire.
+    store: new PgSessionStore(),
+    cookie: {
+      secure: env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+      sameSite: 'lax' as const,
+    },
+    rolling: true,
     saveUninitialized: false,
   });
+  // Evict expired session rows daily (cheap; indexed on expire).
+  setInterval(() => void sweepExpiredSessions(), 1000 * 60 * 60 * 24).unref();
 
   // ===== Routes =====
 

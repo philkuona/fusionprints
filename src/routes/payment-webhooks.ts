@@ -41,6 +41,9 @@ async function notifyCustomerOfPayment(orderNumber: string): Promise<void> {
   // Look up the customer to send them a confirmation
   const order = await getOrderByNumber(orderNumber);
   if (!order) return;
+  // This is the WhatsApp payment-confirmation path; web orders (no WhatsApp
+  // customer) are confirmed via the web channel, not here.
+  if (!order.customerId) return;
 
   const [customer] = await db
     .select()

@@ -51,6 +51,10 @@ export const fulfillmentMethodEnum = pgEnum('fulfillment_method', [
   'delivery',
 ]);
 
+// Which channel an order came through. Defaults to 'whatsapp' so existing rows
+// and the WhatsApp flow are unaffected; web (self-serve) orders set 'web'.
+export const orderChannelEnum = pgEnum('order_channel', ['whatsapp', 'web']);
+
 export const productTypeEnum = pgEnum('product_type', ['photo_print', 'poster']);
 
 export const paymentStatusEnum = pgEnum('payment_status', [
@@ -182,9 +186,10 @@ export const orders = pgTable(
   'orders',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    customerId: uuid('customer_id')
-      .notNull()
-      .references(() => customers.id),
+    // Nullable now: WhatsApp orders set customerId; web orders set webUserId.
+    customerId: uuid('customer_id').references(() => customers.id),
+    webUserId: uuid('web_user_id').references(() => webUsers.id),
+    channel: orderChannelEnum('channel').notNull().default('whatsapp'),
     orderNumber: text('order_number').notNull(), // human-friendly: 'FP-2026-0042'
     status: orderStatusEnum('status').notNull().default('pending_payment'),
     subtotalUsd: numeric('subtotal_usd', { precision: 10, scale: 2 }).notNull(),
@@ -205,6 +210,7 @@ export const orders = pgTable(
   (table) => ({
     orderNumberIdx: uniqueIndex('orders_order_number_idx').on(table.orderNumber),
     customerIdx: index('orders_customer_idx').on(table.customerId),
+    webUserIdx: index('orders_web_user_idx').on(table.webUserId),
     statusIdx: index('orders_status_idx').on(table.status),
     createdAtIdx: index('orders_created_at_idx').on(table.createdAt),
   }),
@@ -221,11 +227,14 @@ export const orderItems = pgTable(
     orderId: uuid('order_id')
       .notNull()
       .references(() => orders.id, { onDelete: 'cascade' }),
-    imageId: uuid('image_id')
-      .notNull()
-      .references(() => images.id),
+    // Source image. Nullable now: web items reference the edited render via
+    // processedImageId; imageId carries the original source image when known.
+    imageId: uuid('image_id').references(() => images.id),
+    // Web (edited) items point at the print-ready render the editor produced.
+    processedImageId: uuid('processed_image_id').references(() => processedImages.id),
     productType: productTypeEnum('product_type').notNull(),
     sizeCode: text('size_code').notNull(), // '4x6', '5x7', '11x14', etc.
+    paper: text('paper'), // finish chosen on web ('glossy' | 'satin'); null = product default
     quantity: integer('quantity').notNull().default(1),
     unitPriceUsd: numeric('unit_price_usd', { precision: 10, scale: 2 }).notNull(),
     lineTotalUsd: numeric('line_total_usd', { precision: 10, scale: 2 }).notNull(),
@@ -233,6 +242,7 @@ export const orderItems = pgTable(
   },
   (table) => ({
     orderIdx: index('order_items_order_idx').on(table.orderId),
+    processedImageIdx: index('order_items_processed_image_idx').on(table.processedImageId),
   }),
 );
 

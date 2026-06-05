@@ -9,9 +9,9 @@
  * Resets sequence each year.
  */
 
-import { eq, and, like, desc } from 'drizzle-orm';
+import { eq, like, desc } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, images, slipJobs, customers } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, slipJobs, customers } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
@@ -200,6 +200,144 @@ export async function createOrder(
   }
 }
 
+// ===== Web (self-serve) order creation =====
+
+export interface CreateWebOrderItem {
+  /** The print-ready render the editor produced + stored (processed_images.id). */
+  processedImageId: string;
+  /** The original source image, when known (order_items.imageId). */
+  sourceImageId?: string | null;
+  sizeCode: string;
+  quantity: number;
+  /** Finish chosen on web: 'glossy' | 'satin'. */
+  paper?: string | null;
+}
+
+export interface CreateWebOrderInput {
+  webUserId: string;
+  items: CreateWebOrderItem[];
+  fulfillmentMethod?: 'collection' | 'delivery';
+  /** Delivery zone for the fee calc; 'collection' when picking up. */
+  deliveryZone?: string;
+  deliveryAddress?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * Create a web order from a signed-in user's cart. Mirrors createOrder() but
+ * keyed on webUserId (channel = 'web', no WhatsApp customer) and links each line
+ * to its edited render via processedImageId. Starts in 'pending_payment'.
+ *
+ * Pricing/printer-routing reuse the shared services so web and WhatsApp orders
+ * price and route identically. quote.items is 1:1 (and in order) with the input
+ * items, so we map them back by index — this preserves multiple photos that
+ * share the same size code (which the WhatsApp size-match path can't).
+ */
+export async function createWebOrder(
+  input: CreateWebOrderInput,
+): Promise<CreateOrderResult | CreateOrderError> {
+  const { webUserId, items, deliveryAddress, notes } = input;
+
+  if (!items || items.length === 0) {
+    return { ok: false, reason: 'Cart is empty' };
+  }
+
+  const fulfillmentMethod = input.fulfillmentMethod ?? 'collection';
+  const deliveryZone = input.deliveryZone ?? 'collection';
+
+  const cartItems = items.map((i) => ({ sizeCode: i.sizeCode, quantity: i.quantity }));
+  const quoteResult = calculateQuote(cartItems, fulfillmentMethod, deliveryZone);
+
+  if (!quoteResult.ok) {
+    logger.error({ reason: quoteResult.error }, 'Quote calculation failed during web order creation');
+    return { ok: false, reason: quoteResult.error.message };
+  }
+
+  const quote = quoteResult.quote;
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const orderNumber = await generateOrderNumber();
+
+      const [order] = await tx
+        .insert(orders)
+        .values({
+          webUserId,
+          channel: 'web',
+          orderNumber,
+          status: 'pending_payment',
+          subtotalUsd: String(quote.subtotalUsd),
+          deliveryFeeUsd: String(quote.deliveryFeeUsd),
+          totalUsd: String(quote.totalUsd),
+          fulfillmentMethod,
+          deliveryAddress: deliveryAddress ?? null,
+          notes: notes ?? null,
+        })
+        .returning();
+
+      const allPrinters = await tx.select().from(printers);
+      const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
+      const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
+
+      for (let i = 0; i < quote.items.length; i++) {
+        const priced = quote.items[i];
+        const src = items[i];
+
+        const [orderItem] = await tx
+          .insert(orderItems)
+          .values({
+            orderId: order.id,
+            imageId: src.sourceImageId ?? null,
+            processedImageId: src.processedImageId,
+            productType: priced.productType as 'photo_print' | 'poster',
+            sizeCode: priced.sizeCode,
+            paper: src.paper ?? null,
+            quantity: priced.quantity,
+            unitPriceUsd: String(priced.unitPriceUsd),
+            lineTotalUsd: String(priced.lineTotalUsd),
+            requiresManualReview: priced.requiresManualReview,
+          })
+          .returning();
+
+        const product = getProduct(priced.sizeCode);
+        const isLargeFormat = ['8x10', '11x14', '12x18', '16x20'].includes(priced.sizeCode);
+        const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;
+        const targetPrinterType = product
+          ? (product.printer === 'dnp_ds620a_4x6' ? 'dye_sub_4x6' as const
+            : product.printer === 'dnp_ds620a_5x7' ? 'dye_sub_5x7' as const
+            : 'inkjet' as const)
+          : null;
+        const jobStatus = priced.requiresManualReview ? 'awaiting_approval' : 'queued';
+
+        await tx.insert(printJobs).values({
+          orderItemId: orderItem.id,
+          printerId: assignedPrinter?.id ?? null,
+          targetPrinterType,
+          status: jobStatus,
+        });
+      }
+
+      logger.info({ orderNumber, webUserId, total: quote.totalUsd }, 'Web order created successfully');
+      return { order, orderNumber };
+    });
+
+    return { ok: true, order: result.order, orderNumber: result.orderNumber };
+  } catch (err) {
+    logger.error({ err, webUserId }, 'Failed to create web order');
+    return { ok: false, reason: 'Database error creating order' };
+  }
+}
+
+/** Recent orders for a web user (newest first). Used by the web order history. */
+export async function getWebUserOrders(webUserId: string, limit = 20): Promise<Order[]> {
+  return db
+    .select()
+    .from(orders)
+    .where(eq(orders.webUserId, webUserId))
+    .orderBy(desc(orders.createdAt))
+    .limit(limit);
+}
+
 /**
  * Mark an order as paid.
  * Called when the payment webhook confirms successful payment.
@@ -260,6 +398,13 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
 
   if (items.length === 0) {
     logger.warn({ orderNumber }, 'Cannot queue slips — order has no items');
+    return;
+  }
+
+  // Web orders have no WhatsApp customer. Web slip handling (using the web user's
+  // details) lands in Phase 2.3 W4 — for now the order is paid without slips.
+  if (!order.customerId) {
+    logger.warn({ orderNumber, channel: order.channel }, 'Skipping slip queue — web order (slips pending W4)');
     return;
   }
 
@@ -386,6 +531,8 @@ export async function releaseOrderForPickup(orderNumber: string): Promise<void> 
 async function sendReadyForPickupNotification(orderNumber: string): Promise<void> {
   const order = await getOrderByNumber(orderNumber);
   if (!order) return;
+  // Web orders aren't notified over WhatsApp (handled via email / in-app in W5).
+  if (!order.customerId) return;
 
   const customer = await db
     .select()

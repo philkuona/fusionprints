@@ -288,6 +288,7 @@ async function getDashboardMetrics(daysBack = 30) {
 async function generateReceiptText(orderId: string): Promise<string | null> {
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order) return null;
+  if (!order.customerId) return null; // WhatsApp-customer receipt; web receipts handled separately
 
   const [customer] = await db
     .select()
@@ -344,6 +345,7 @@ async function sendReceiptViaWhatsApp(orderId: string): Promise<boolean> {
 
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order) return false;
+  if (!order.customerId) return false; // WhatsApp receipt path; web orders handled separately
 
   const [customer] = await db
     .select()

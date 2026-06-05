@@ -78,6 +78,13 @@
       "when": 1780465180637,
       "tag": "0010_motionless_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1780619788333,
+      "tag": "0011_open_bloodaxe",
+      "breakpoints": true
     }
   ]
 }

@@ -127,6 +127,9 @@ async function getOrderDetails(orderId: string) {
     .limit(1);
 
   if (!order) return null;
+  // Web orders have no WhatsApp customer; they aren't surfaced in this WhatsApp
+  // admin view yet (web order admin support lands later in Phase 2.3).
+  if (!order.customerId) return null;
 
   const [customer] = await db
     .select()

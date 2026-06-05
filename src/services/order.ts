@@ -9,9 +9,9 @@
  * Resets sequence each year.
  */
 
-import { eq, like, desc } from 'drizzle-orm';
+import { eq, and, like, desc, inArray } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, slipJobs, customers } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
@@ -275,49 +275,28 @@ export async function createWebOrder(
         })
         .returning();
 
-      const allPrinters = await tx.select().from(printers);
-      const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
-      const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
-
+      // Web orders insert only the line items here. Print jobs are NOT created
+      // until payment is confirmed (see enqueueWebPrintJobs in markOrderPaid),
+      // so the print agent can never pick up an unpaid web order.
       for (let i = 0; i < quote.items.length; i++) {
         const priced = quote.items[i];
         const src = items[i];
 
-        const [orderItem] = await tx
-          .insert(orderItems)
-          .values({
-            orderId: order.id,
-            imageId: src.sourceImageId ?? null,
-            processedImageId: src.processedImageId,
-            productType: priced.productType as 'photo_print' | 'poster',
-            sizeCode: priced.sizeCode,
-            paper: src.paper ?? null,
-            quantity: priced.quantity,
-            unitPriceUsd: String(priced.unitPriceUsd),
-            lineTotalUsd: String(priced.lineTotalUsd),
-            requiresManualReview: priced.requiresManualReview,
-          })
-          .returning();
-
-        const product = getProduct(priced.sizeCode);
-        const isLargeFormat = ['8x10', '11x14', '12x18', '16x20'].includes(priced.sizeCode);
-        const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;
-        const targetPrinterType = product
-          ? (product.printer === 'dnp_ds620a_4x6' ? 'dye_sub_4x6' as const
-            : product.printer === 'dnp_ds620a_5x7' ? 'dye_sub_5x7' as const
-            : 'inkjet' as const)
-          : null;
-        const jobStatus = priced.requiresManualReview ? 'awaiting_approval' : 'queued';
-
-        await tx.insert(printJobs).values({
-          orderItemId: orderItem.id,
-          printerId: assignedPrinter?.id ?? null,
-          targetPrinterType,
-          status: jobStatus,
+        await tx.insert(orderItems).values({
+          orderId: order.id,
+          imageId: src.sourceImageId ?? null,
+          processedImageId: src.processedImageId,
+          productType: priced.productType as 'photo_print' | 'poster',
+          sizeCode: priced.sizeCode,
+          paper: src.paper ?? null,
+          quantity: priced.quantity,
+          unitPriceUsd: String(priced.unitPriceUsd),
+          lineTotalUsd: String(priced.lineTotalUsd),
+          requiresManualReview: priced.requiresManualReview,
         });
       }
 
-      logger.info({ orderNumber, webUserId, total: quote.totalUsd }, 'Web order created successfully');
+      logger.info({ orderNumber, webUserId, total: quote.totalUsd }, 'Web order created (pending payment)');
       return { order, orderNumber };
     });
 
@@ -328,6 +307,46 @@ export async function createWebOrder(
   }
 }
 
+/**
+ * Create print jobs for every item in an order, with the same printer routing
+ * as the WhatsApp flow. Called once a web order's payment is confirmed. Safe to
+ * skip if jobs already exist (idempotent guard against double webhooks).
+ */
+export async function enqueueWebPrintJobs(orderId: string): Promise<void> {
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  if (items.length === 0) return;
+
+  const existing = await db
+    .select({ id: printJobs.id })
+    .from(printJobs)
+    .where(inArray(printJobs.orderItemId, items.map((i) => i.id)));
+  if (existing.length > 0) return; // already enqueued
+
+  const allPrinters = await db.select().from(printers);
+  const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
+  const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
+
+  for (const item of items) {
+    const product = getProduct(item.sizeCode);
+    const isLargeFormat = ['8x10', '11x14', '12x18', '16x20'].includes(item.sizeCode);
+    const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;
+    const targetPrinterType = product
+      ? (product.printer === 'dnp_ds620a_4x6' ? 'dye_sub_4x6' as const
+        : product.printer === 'dnp_ds620a_5x7' ? 'dye_sub_5x7' as const
+        : 'inkjet' as const)
+      : null;
+    const jobStatus = item.requiresManualReview ? 'awaiting_approval' : 'queued';
+
+    await db.insert(printJobs).values({
+      orderItemId: item.id,
+      printerId: assignedPrinter?.id ?? null,
+      targetPrinterType,
+      status: jobStatus,
+    });
+  }
+  logger.info({ orderId, jobs: items.length }, 'Enqueued web print jobs after payment');
+}
+
 /** Recent orders for a web user (newest first). Used by the web order history. */
 export async function getWebUserOrders(webUserId: string, limit = 20): Promise<Order[]> {
   return db
@@ -336,6 +355,19 @@ export async function getWebUserOrders(webUserId: string, limit = 20): Promise<O
     .where(eq(orders.webUserId, webUserId))
     .orderBy(desc(orders.createdAt))
     .limit(limit);
+}
+
+/** A single web order by number, scoped to its owner (ownership check). */
+export async function getWebOrderByNumber(
+  webUserId: string,
+  orderNumber: string,
+): Promise<Order | null> {
+  const [order] = await db
+    .select()
+    .from(orders)
+    .where(and(eq(orders.orderNumber, orderNumber), eq(orders.webUserId, webUserId)))
+    .limit(1);
+  return order ?? null;
 }
 
 /**
@@ -364,6 +396,17 @@ export async function markOrderPaid(
     .where(eq(orders.orderNumber, orderNumber));
 
   logger.info({ orderNumber, paymentReference }, 'Order marked as paid');
+
+  // Web orders create their print jobs now (not at order time), so an unpaid
+  // web order is never dispatchable. WhatsApp orders already have their jobs.
+  try {
+    const paidOrder = await getOrderByNumber(orderNumber);
+    if (paidOrder?.channel === 'web') {
+      await enqueueWebPrintJobs(paidOrder.id);
+    }
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to enqueue web print jobs after payment');
+  }
 
   // Queue slips alongside customer prints.
   // Errors here are logged but do NOT throw — order remains paid even if slip rendering fails.
@@ -401,22 +444,37 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
     return;
   }
 
-  // Web orders have no WhatsApp customer. Web slip handling (using the web user's
-  // details) lands in Phase 2.3 W4 — for now the order is paid without slips.
-  if (!order.customerId) {
-    logger.warn({ orderNumber, channel: order.channel }, 'Skipping slip queue — web order (slips pending W4)');
-    return;
-  }
-
-  const customer = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.id, order.customerId))
-    .limit(1)
-    .then((rows) => rows[0]);
-
-  if (!customer) {
-    logger.warn({ orderNumber }, 'Cannot queue slips — customer not found');
+  // Resolve the recipient from either the WhatsApp customer or the web user.
+  let customerName = 'Customer';
+  let customerPhone = '';
+  if (order.customerId) {
+    const customer = await db
+      .select()
+      .from(customers)
+      .where(eq(customers.id, order.customerId))
+      .limit(1)
+      .then((rows) => rows[0]);
+    if (!customer) {
+      logger.warn({ orderNumber }, 'Cannot queue slips — customer not found');
+      return;
+    }
+    customerName = customer.name ?? 'Customer';
+    customerPhone = customer.phoneNumber;
+  } else if (order.webUserId) {
+    const webUser = await db
+      .select()
+      .from(webUsers)
+      .where(eq(webUsers.id, order.webUserId))
+      .limit(1)
+      .then((rows) => rows[0]);
+    if (!webUser) {
+      logger.warn({ orderNumber }, 'Cannot queue slips — web user not found');
+      return;
+    }
+    customerName = webUser.displayName ?? webUser.email;
+    customerPhone = webUser.whatsappNumber ?? '';
+  } else {
+    logger.warn({ orderNumber }, 'Cannot queue slips — no recipient on order');
     return;
   }
 
@@ -429,7 +487,6 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
     };
   });
 
-  const customerName = customer.name ?? 'Customer';
   const orderedAt = order.createdAt;
 
   // ===== Slip 1: end_separator (sequence 0, prints first) =====
@@ -453,7 +510,7 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
     const orderInfoData: OrderInfoSlipData = {
       orderNumber,
       customerName,
-      customerPhone: customer.phoneNumber,
+      customerPhone,
       fulfillmentMethod: order.fulfillmentMethod,
       items: slipItems,
       orderedAt,
@@ -477,7 +534,7 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
     const labelData: EnvelopeLabelData = {
       orderNumber,
       customerName,
-      customerPhone: customer.phoneNumber,
+      customerPhone,
       paymentMethod,
       fulfillmentMethod: order.fulfillmentMethod,
       items: slipItems,

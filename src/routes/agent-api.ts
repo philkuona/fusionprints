@@ -15,9 +15,10 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, images, customers, conversationState, slipJobs } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, images, customers, conversationState, slipJobs, processedImages } from '@/db/schema.js';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
+import { getSignedImageUrl } from '@/services/image-storage.js';
 
 // ===== Auth =====
 
@@ -160,6 +161,15 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         ? await db.select().from(images).where(eq(images.id, item.imageId)).limit(1)
         : [null];
 
+      // Web (edited) items print the processed render, not the original photo.
+      const [processed] = item.processedImageId
+        ? await db.select().from(processedImages).where(eq(processedImages.id, item.processedImageId)).limit(1)
+        : [null];
+      const printStorageKey = processed?.processedStorageKey ?? image?.storageKey ?? '';
+      const printUrl = processed
+        ? await getSignedImageUrl(processed.processedStorageKey)
+        : image?.storageUrl ?? '';
+
       // Get order + customer info
       const [order] = await db
         .select({
@@ -180,8 +190,8 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         sizeCode: item.sizeCode,
         productType: item.productType,
         quantity: item.quantity,
-        imageStorageKey: image?.storageKey ?? '',
-        imageUrl: image?.storageUrl ?? '',
+        imageStorageKey: printStorageKey,
+        imageUrl: printUrl,
         orderNumber: order?.orderNumber ?? '',
         customerName: order?.customerName ?? null,
       };

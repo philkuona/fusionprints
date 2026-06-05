@@ -67,6 +67,7 @@ export const paymentStatusEnum = pgEnum('payment_status', [
 export const paymentProviderEnum = pgEnum('payment_provider', [
   'paynow',
   'flutterwave',
+  'virtual', // service-virtualised provider (web checkout) until a real gateway is live
 ]);
 
 export const printJobStatusEnum = pgEnum('print_job_status', [

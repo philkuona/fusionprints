@@ -85,6 +85,13 @@
       "when": 1780619788333,
       "tag": "0011_open_bloodaxe",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780621589679,
+      "tag": "0012_overjoyed_vulcan",
+      "breakpoints": true
     }
   ]
 }

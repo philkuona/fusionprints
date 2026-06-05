@@ -235,6 +235,9 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
 
   // GET /web/api/auth/me
   app.get('/web/api/auth/me', async (request, reply) => {
+    // Never cache the auth check — a stale 200 here is what kept the header
+    // signed in after logout.
+    reply.header('Cache-Control', 'no-store');
     const userId = authenticateWebUser(request, reply);
     if (!userId) return;
 

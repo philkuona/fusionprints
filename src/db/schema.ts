@@ -230,9 +230,11 @@ export const orderItems = pgTable(
       .references(() => orders.id, { onDelete: 'cascade' }),
     // Source image. Nullable now: web items reference the edited render via
     // processedImageId; imageId carries the original source image when known.
-    imageId: uuid('image_id').references(() => images.id),
+    // SET NULL on delete so a customer can remove a photo without the FK
+    // blocking it — the order record (price/size snapshot) is preserved.
+    imageId: uuid('image_id').references(() => images.id, { onDelete: 'set null' }),
     // Web (edited) items point at the print-ready render the editor produced.
-    processedImageId: uuid('processed_image_id').references(() => processedImages.id),
+    processedImageId: uuid('processed_image_id').references(() => processedImages.id, { onDelete: 'set null' }),
     productType: productTypeEnum('product_type').notNull(),
     sizeCode: text('size_code').notNull(), // '4x6', '5x7', '11x14', etc.
     paper: text('paper'), // finish chosen on web ('glossy' | 'satin'); null = product default

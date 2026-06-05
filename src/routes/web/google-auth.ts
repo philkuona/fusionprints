@@ -48,7 +48,7 @@ function popupResultHtml(ok: boolean, error?: string): string {
   const payload = JSON.stringify({ source: 'fp-google-auth', ok, error: error ?? null });
   const target = JSON.stringify(env.WEB_URL);
   const fallback = JSON.stringify(
-    ok ? `${env.WEB_URL}/account` : `${env.WEB_URL}/login?error=${error ?? 'google'}`,
+    ok ? `${env.WEB_URL}/` : `${env.WEB_URL}/login?error=${error ?? 'google'}`,
   );
   return `<!DOCTYPE html>
 <html lang="en">
@@ -180,7 +180,7 @@ export async function registerWebGoogleAuthRoutes(app: FastifyInstance): Promise
       setWebUserSession(request, userId);
       return isPopup
         ? reply.type('text/html').send(popupResultHtml(true))
-        : reply.redirect(`${env.WEB_URL}/account`);
+        : reply.redirect(`${env.WEB_URL}/`);
     } catch (err) {
       logger.error({ err }, 'Google OAuth callback failed');
       return fail(reply);

@@ -8,7 +8,7 @@
  * GET  /web/api/auth/me       — return current web user
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { Resend } from 'resend';
@@ -222,14 +222,33 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
     });
   });
 
-  // POST /web/api/auth/logout
-  app.post('/web/api/auth/logout', async (request, reply) => {
+  // Logout. Destroys the session and clears the cookie with the SAME attributes
+  // it was set with (path/secure/httpOnly/sameSite) so the browser actually
+  // drops it. The GET variant does a top-level redirect — the most reliable
+  // browser logout: the session cookie rides the navigation and the clearing
+  // cookie is committed in one full page load. POST stays for programmatic use.
+  async function doLogout(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     clearWebUserSession(request);
-    await (request as any).session.destroy();
-    // Explicitly drop the session cookie too, so the browser can't replay it on
-    // the next request (otherwise the header's /me re-check re-authenticates and
-    // it looks like logout needs two clicks).
-    reply.clearCookie('sessionId', { path: '/' });
+    try {
+      await (request as unknown as { session: { destroy: () => Promise<void> } }).session.destroy();
+    } catch {
+      /* session already gone — fine */
+    }
+    reply.clearCookie('sessionId', {
+      path: '/',
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    });
+  }
+
+  app.get('/web/api/auth/logout', async (request, reply) => {
+    await doLogout(request, reply);
+    return reply.redirect(`${env.WEB_URL}/`);
+  });
+
+  app.post('/web/api/auth/logout', async (request, reply) => {
+    await doLogout(request, reply);
     return reply.send({ success: true });
   });
 

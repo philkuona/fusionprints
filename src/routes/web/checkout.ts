@@ -21,6 +21,7 @@ import {
   type CreateWebOrderItem,
 } from '@/services/order.js';
 import { initiateWebPayment } from '@/services/web-payment.js';
+import { sendWebOrderConfirmation } from '@/services/web-order-email.js';
 import { logger } from '@/utils/logger.js';
 
 const checkoutSchema = z.object({
@@ -179,6 +180,8 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
           .set({ status: 'success', completedAt: new Date() })
           .where(eq(payments.orderId, order.id));
         await markOrderPaid(order.orderNumber, `VIRT-${order.orderNumber}`);
+        // Confirmation email — best effort, never blocks the response.
+        await sendWebOrderConfirmation(order.orderNumber).catch(() => {});
       }
       return reply.send({ status: 'paid', orderNumber });
     }

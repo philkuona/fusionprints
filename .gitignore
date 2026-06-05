@@ -32,3 +32,6 @@ src/db/migrations/meta/_journal.json.bak
 tmp/
 scratch/
 *.tmp
+
+# Virtual print agent output tray (printer service virtualization)
+virtual-prints/

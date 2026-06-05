@@ -111,8 +111,6 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
-  // DROPBOX_APP_KEY: Dropbox Chooser app key (public by design). Blank = hidden.
-  DROPBOX_APP_KEY: z.string().default(''),
 
   // Image expiry cleanup (Phase 2.1.6)
   // ENABLED: run the in-process daily cleanup scheduler at all.

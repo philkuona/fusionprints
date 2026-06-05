@@ -1,7 +1,6 @@
 /**
  * Web photo-import routes — /web/api/imports/*
  *
- * POST /web/api/imports/from-urls         — import photos from URLs (Dropbox Chooser)
  * GET  /web/api/imports/google/start      — begin Google Photos picker (OAuth → picker)
  * GET  /web/api/imports/google/callback   — OAuth callback → create picker session
  * POST /web/api/imports/google/poll       — poll picker; download + store picked photos
@@ -11,7 +10,6 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import crypto from 'node:crypto';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
@@ -29,24 +27,6 @@ import {
 } from '@/services/google-photos.js';
 
 const MAX_BYTES = 50 * 1024 * 1024;
-
-const fromUrlsSchema = z.object({
-  files: z
-    .array(z.object({ url: z.string().url(), filename: z.string().max(200).optional() }))
-    .min(1)
-    .max(30),
-});
-
-/** SSRF guard: only allow Dropbox-hosted https links (the Chooser's source). */
-function isAllowedDropboxUrl(raw: string): boolean {
-  try {
-    const u = new URL(raw);
-    if (u.protocol !== 'https:') return false;
-    return u.hostname === 'dropbox.com' || u.hostname.endsWith('.dropbox.com') || u.hostname.endsWith('.dropboxusercontent.com');
-  } catch {
-    return false;
-  }
-}
 
 type StoredImage = NonNullable<Awaited<ReturnType<typeof storeWebImage>>>;
 
@@ -68,40 +48,7 @@ export async function registerWebImportRoutes(app: FastifyInstance): Promise<voi
   app.get('/web/api/imports/config', async (_request, reply) => {
     return reply.send({
       googlePhotos: env.GOOGLE_PHOTOS_IMPORT_ENABLED && googleEnabled(),
-      dropboxAppKey: env.DROPBOX_APP_KEY || null,
     });
-  });
-
-  // POST /web/api/imports/from-urls — Dropbox Chooser links
-  app.post('/web/api/imports/from-urls', async (request, reply) => {
-    const userId = authenticateWebUser(request, reply);
-    if (!userId) return;
-
-    const parsed = fromUrlsSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: 'validation_error', issues: parsed.error.flatten().fieldErrors });
-    }
-
-    const photos = [];
-    for (const f of parsed.data.files) {
-      if (!isAllowedDropboxUrl(f.url)) {
-        logger.warn({ userId, url: f.url }, 'Rejected non-Dropbox import URL');
-        continue;
-      }
-      try {
-        const res = await fetch(f.url);
-        if (!res.ok) continue;
-        const buf = Buffer.from(await res.arrayBuffer());
-        if (buf.length === 0 || buf.length > MAX_BYTES) continue;
-        const ct = res.headers.get('content-type') ?? 'image/jpeg';
-        const stored = await storeWebImage(buf, userId, ct, f.filename ?? 'dropbox-photo.jpg');
-        if (stored) photos.push(await toApiPhoto(stored));
-      } catch (err) {
-        logger.warn({ userId, err }, 'Failed to import a Dropbox URL');
-      }
-    }
-
-    return reply.send({ photos });
   });
 
   // GET /web/api/imports/google/start — kick off the picker OAuth (in a popup)

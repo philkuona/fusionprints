@@ -226,6 +226,10 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
   app.post('/web/api/auth/logout', async (request, reply) => {
     clearWebUserSession(request);
     await (request as any).session.destroy();
+    // Explicitly drop the session cookie too, so the browser can't replay it on
+    // the next request (otherwise the header's /me re-check re-authenticates and
+    // it looks like logout needs two clicks).
+    reply.clearCookie('sessionId', { path: '/' });
     return reply.send({ success: true });
   });
 

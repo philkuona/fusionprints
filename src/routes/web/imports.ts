@@ -16,7 +16,7 @@ import crypto from 'node:crypto';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { authenticateWebUser } from '@/utils/web-auth.js';
-import { storeWebImage } from '@/services/image-storage.js';
+import { storeWebImage, getSignedImageUrl } from '@/services/image-storage.js';
 import {
   isEnabled as googleEnabled,
   getPickerAuthorizationUrl,
@@ -46,6 +46,20 @@ function isAllowedDropboxUrl(raw: string): boolean {
   } catch {
     return false;
   }
+}
+
+type StoredImage = NonNullable<Awaited<ReturnType<typeof storeWebImage>>>;
+
+/** Shape stored photos the same way the upload route does: id + a SIGNED url. */
+async function toApiPhoto(stored: StoredImage) {
+  return {
+    id: stored.imageId,
+    storageUrl: await getSignedImageUrl(stored.storageKey),
+    widthPx: stored.widthPx,
+    heightPx: stored.heightPx,
+    fileSizeBytes: stored.fileSizeBytes,
+    format: stored.format,
+  };
 }
 
 export async function registerWebImportRoutes(app: FastifyInstance): Promise<void> {
@@ -81,7 +95,7 @@ export async function registerWebImportRoutes(app: FastifyInstance): Promise<voi
         if (buf.length === 0 || buf.length > MAX_BYTES) continue;
         const ct = res.headers.get('content-type') ?? 'image/jpeg';
         const stored = await storeWebImage(buf, userId, ct, f.filename ?? 'dropbox-photo.jpg');
-        if (stored) photos.push(stored);
+        if (stored) photos.push(await toApiPhoto(stored));
       } catch (err) {
         logger.warn({ userId, err }, 'Failed to import a Dropbox URL');
       }
@@ -144,6 +158,10 @@ export async function registerWebImportRoutes(app: FastifyInstance): Promise<voi
       const ready = await isSessionReady(picker.accessToken, picker.sessionId);
       if (!ready) return reply.send({ status: 'pending' });
 
+      // Claim the session immediately so an overlapping/duplicate poll can't
+      // re-import the same selection while this one downloads.
+      delete session.googlePicker;
+
       const media = await listPickedMedia(picker.accessToken, picker.sessionId);
       const photos = [];
       for (const m of media) {
@@ -151,14 +169,13 @@ export async function registerWebImportRoutes(app: FastifyInstance): Promise<voi
           const buf = await downloadPickedMedia(picker.accessToken, m.baseUrl);
           if (buf.length === 0 || buf.length > MAX_BYTES) continue;
           const stored = await storeWebImage(buf, userId, m.mimeType, m.filename);
-          if (stored) photos.push(stored);
+          if (stored) photos.push(await toApiPhoto(stored));
         } catch (err) {
           logger.warn({ userId, err }, 'Failed to import a Google Photos item');
         }
       }
 
       await deletePickerSession(picker.accessToken, picker.sessionId);
-      delete session.googlePicker;
       logger.info({ userId, count: photos.length }, 'Imported photos from Google Photos');
       return reply.send({ status: 'done', photos });
     } catch (err) {

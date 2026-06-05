@@ -24,7 +24,7 @@ import { desc } from 'drizzle-orm';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
-import { orders, orderItems, customers, printJobs, printers } from '@/db/schema.js';
+import { orders, orderItems, customers, printJobs, printers, webUsers } from '@/db/schema.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
 
 // ===== Auth middleware =====
@@ -97,11 +97,14 @@ async function getOrders(filter?: string, limit = 50) {
       createdAt: orders.createdAt,
       paidAt: orders.paidAt,
       readyAt: orders.readyAt,
-      customerName: customers.name,
-      customerPhone: customers.phoneNumber,
+      // WhatsApp orders carry a customer; web orders carry a web user instead.
+      // Fall back through both so the name/phone show for either channel.
+      customerName: sql<string | null>`COALESCE(${customers.name}, ${webUsers.displayName}, ${webUsers.email})`,
+      customerPhone: sql<string | null>`COALESCE(${customers.phoneNumber}, ${webUsers.whatsappNumber})`,
     })
     .from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id))
+    .leftJoin(webUsers, eq(orders.webUserId, webUsers.id))
     .orderBy(desc(orders.createdAt))
     .limit(limit);
 
@@ -127,15 +130,28 @@ async function getOrderDetails(orderId: string) {
     .limit(1);
 
   if (!order) return null;
-  // Web orders have no WhatsApp customer; they aren't surfaced in this WhatsApp
-  // admin view yet (web order admin support lands later in Phase 2.3).
-  if (!order.customerId) return null;
 
-  const [customer] = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.id, order.customerId))
-    .limit(1);
+  // Resolve the buyer from whichever channel the order came in on: a WhatsApp
+  // customer, or (for web orders) the web user. The detail view only reads
+  // name + phoneNumber, so a web user is mapped onto that shape.
+  let customer:
+    | { name: string | null; phoneNumber: string | null }
+    | undefined;
+  if (order.customerId) {
+    const [c] = await db
+      .select()
+      .from(customers)
+      .where(eq(customers.id, order.customerId))
+      .limit(1);
+    customer = c;
+  } else if (order.webUserId) {
+    const [wu] = await db
+      .select()
+      .from(webUsers)
+      .where(eq(webUsers.id, order.webUserId))
+      .limit(1);
+    if (wu) customer = { name: wu.displayName ?? wu.email, phoneNumber: wu.whatsappNumber };
+  }
 
   const items = await db
     .select()

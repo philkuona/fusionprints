@@ -220,6 +220,8 @@ export interface CreateWebOrderInput {
   /** Delivery zone for the fee calc; 'collection' when picking up. */
   deliveryZone?: string;
   deliveryAddress?: string | null;
+  /** Contact phone captured at checkout (required for web orders). */
+  contactPhone?: string | null;
   notes?: string | null;
 }
 
@@ -236,7 +238,7 @@ export interface CreateWebOrderInput {
 export async function createWebOrder(
   input: CreateWebOrderInput,
 ): Promise<CreateOrderResult | CreateOrderError> {
-  const { webUserId, items, deliveryAddress, notes } = input;
+  const { webUserId, items, deliveryAddress, contactPhone, notes } = input;
 
   if (!items || items.length === 0) {
     return { ok: false, reason: 'Cart is empty' };
@@ -271,6 +273,7 @@ export async function createWebOrder(
           totalUsd: String(quote.totalUsd),
           fulfillmentMethod,
           deliveryAddress: deliveryAddress ?? null,
+          contactPhone: contactPhone ?? null,
           notes: notes ?? null,
         })
         .returning();

@@ -24,7 +24,8 @@ import { desc } from 'drizzle-orm';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
-import { orders, orderItems, customers, printJobs, printers, webUsers } from '@/db/schema.js';
+import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages } from '@/db/schema.js';
+import { getSignedImageUrl } from '@/services/image-storage.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
 
 // ===== Auth middleware =====
@@ -100,7 +101,7 @@ async function getOrders(filter?: string, limit = 50) {
       // WhatsApp orders carry a customer; web orders carry a web user instead.
       // Fall back through both so the name/phone show for either channel.
       customerName: sql<string | null>`COALESCE(${customers.name}, ${webUsers.displayName}, ${webUsers.email})`,
-      customerPhone: sql<string | null>`COALESCE(${customers.phoneNumber}, ${webUsers.whatsappNumber})`,
+      customerPhone: sql<string | null>`COALESCE(${customers.phoneNumber}, ${orders.contactPhone}, ${webUsers.whatsappNumber})`,
     })
     .from(orders)
     .leftJoin(customers, eq(orders.customerId, customers.id))
@@ -150,13 +151,43 @@ async function getOrderDetails(orderId: string) {
       .from(webUsers)
       .where(eq(webUsers.id, order.webUserId))
       .limit(1);
-    if (wu) customer = { name: wu.displayName ?? wu.email, phoneNumber: wu.whatsappNumber };
+    // Prefer the phone captured at checkout, fall back to the profile WhatsApp number.
+    if (wu) customer = { name: wu.displayName ?? wu.email, phoneNumber: order.contactPhone ?? wu.whatsappNumber };
   }
 
-  const items = await db
+  const rawItems = await db
     .select()
     .from(orderItems)
     .where(eq(orderItems.orderId, orderId));
+
+  // Attach a signed preview URL per item so the operator can see what's printing:
+  // the edited render if there is one, otherwise the original source image.
+  const items = await Promise.all(
+    rawItems.map(async (it) => {
+      let previewUrl: string | null = null;
+      try {
+        if (it.processedImageId) {
+          const [p] = await db
+            .select({ key: processedImages.processedStorageKey })
+            .from(processedImages)
+            .where(eq(processedImages.id, it.processedImageId))
+            .limit(1);
+          if (p?.key) previewUrl = await getSignedImageUrl(p.key);
+        }
+        if (!previewUrl && it.imageId) {
+          const [img] = await db
+            .select({ key: images.storageKey })
+            .from(images)
+            .where(eq(images.id, it.imageId))
+            .limit(1);
+          if (img?.key) previewUrl = await getSignedImageUrl(img.key);
+        }
+      } catch {
+        previewUrl = null; // never let a missing image break the detail view
+      }
+      return { ...it, previewUrl };
+    }),
+  );
 
   const jobs = await db
     .select({
@@ -942,7 +973,12 @@ function dashboardHtml(role: AdminRole = 'full'): string {
 
     const itemsHtml = items.map(item => \`
       <div class="item-row">
-        <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})</span>
+        <span style="display:flex;align-items:center;gap:10px;">
+          \${item.previewUrl
+            ? \`<a href="\${item.previewUrl}" target="_blank" rel="noopener"><img src="\${item.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\`
+            : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🖼</span>'}
+          <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})</span>
+        </span>
         \${IS_OPERATOR ? '' : \`<span>$\${parseFloat(item.lineTotalUsd).toFixed(2)}</span>\`}
       </div>
     \`).join('');

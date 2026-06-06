@@ -200,6 +200,9 @@ export const orders = pgTable(
     totalUsd: numeric('total_usd', { precision: 10, scale: 2 }).notNull(),
     fulfillmentMethod: fulfillmentMethodEnum('fulfillment_method').notNull(),
     deliveryAddress: text('delivery_address'),
+    // Contact phone captured at web checkout (required there). WhatsApp orders
+    // use the customer's phone instead, so this stays nullable at the column level.
+    contactPhone: text('contact_phone'),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),

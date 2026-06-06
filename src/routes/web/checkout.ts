@@ -38,6 +38,12 @@ const checkoutSchema = z.object({
   fulfillmentMethod: z.enum(['collection', 'delivery']),
   deliveryZone: z.string().optional(),
   addressId: z.string().uuid().optional().nullable(),
+  // Required: a contact number so we can reach the customer about the order
+  // (and send the "ready for pickup" WhatsApp). E.164-ish.
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\+?[1-9]\d{7,14}$/, 'Enter a valid phone number, e.g. +263771234567.'),
 });
 
 const confirmSchema = z.object({ outcome: z.enum(['success', 'fail']) });
@@ -73,7 +79,7 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
         issues: parsed.error.flatten().fieldErrors,
       });
     }
-    const { items, fulfillmentMethod, addressId } = parsed.data;
+    const { items, fulfillmentMethod, addressId, phone } = parsed.data;
 
     // Verify every processed image belongs to this user and matches its size.
     const procIds = [...new Set(items.map((i) => i.processedImageId))];
@@ -130,6 +136,7 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
       fulfillmentMethod,
       deliveryZone,
       deliveryAddress,
+      contactPhone: phone,
     });
     if (!res.ok) {
       return reply.status(400).send({ error: 'order_failed', message: res.reason });

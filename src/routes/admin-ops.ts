@@ -22,6 +22,7 @@ import {
   orders,
   orderItems,
   printJobs,
+  slipJobs,
   printers,
   customers,
   siteVisits,
@@ -66,6 +67,8 @@ async function markShipped(orderId: string): Promise<void> {
  * Resets status to queued so the agent picks it up on next poll.
  */
 async function reprintJob(jobId: string): Promise<void> {
+  // A job id is either a print job or a slip job (UUIDs are unique across both),
+  // so reset in both tables — one update is a no-op.
   await db
     .update(printJobs)
     .set({
@@ -75,7 +78,16 @@ async function reprintJob(jobId: string): Promise<void> {
       completedAt: null,
     })
     .where(eq(printJobs.id, jobId));
-  logger.info({ jobId }, 'Print job requeued for reprint');
+  await db
+    .update(slipJobs)
+    .set({
+      status: 'queued',
+      errorMessage: null,
+      startedAt: null,
+      completedAt: null,
+    })
+    .where(eq(slipJobs.id, jobId));
+  logger.info({ jobId }, 'Print/slip job requeued for reprint');
 }
 
 /**
@@ -97,14 +109,27 @@ async function reprintOrder(orderId: string): Promise<number> {
     )
     .returning({ id: printJobs.id });
 
+  // Failed slips for the same order (separator / order-info / promos).
+  const slipResult = await db
+    .update(slipJobs)
+    .set({
+      status: 'queued',
+      errorMessage: null,
+      startedAt: null,
+      completedAt: null,
+    })
+    .where(and(eq(slipJobs.orderId, orderId), eq(slipJobs.status, 'failed')))
+    .returning({ id: slipJobs.id });
+
   // Bump the order back to printing if it was marked failed
   await db
     .update(orders)
     .set({ status: 'queued_for_print' })
     .where(and(eq(orders.id, orderId), eq(orders.status, 'failed')));
 
-  logger.info({ orderId, count: result.length }, 'Order print jobs requeued');
-  return result.length;
+  const count = result.length + slipResult.length;
+  logger.info({ orderId, prints: result.length, slips: slipResult.length }, 'Order print/slip jobs requeued');
+  return count;
 }
 
 // ===== Printer status =====
@@ -1377,6 +1402,7 @@ async function getJobsGroupedByOrder(filter?: string) {
  */
 async function reprintJobBatch(jobIds: string[]): Promise<number> {
   if (jobIds.length === 0) return 0;
+  const idList = sql.join(jobIds.map((id) => sql`${id}`), sql`, `);
   const result = await db
     .update(printJobs)
     .set({
@@ -1385,11 +1411,24 @@ async function reprintJobBatch(jobIds: string[]): Promise<number> {
       startedAt: null,
       completedAt: null,
     })
-    .where(sql`${printJobs.id} IN (${sql.join(jobIds.map((id) => sql`${id}`), sql`, `)})`)
+    .where(sql`${printJobs.id} IN (${idList})`)
     .returning({ id: printJobs.id });
 
-  logger.info({ count: result.length }, 'Batch of print jobs requeued');
-  return result.length;
+  // Ids may reference slip jobs too (separator / order-info / promos).
+  const slipResult = await db
+    .update(slipJobs)
+    .set({
+      status: 'queued',
+      errorMessage: null,
+      startedAt: null,
+      completedAt: null,
+    })
+    .where(sql`${slipJobs.id} IN (${idList})`)
+    .returning({ id: slipJobs.id });
+
+  const count = result.length + slipResult.length;
+  logger.info({ prints: result.length, slips: slipResult.length }, 'Batch of jobs requeued');
+  return count;
 }
 
 // ===== Route registration =====

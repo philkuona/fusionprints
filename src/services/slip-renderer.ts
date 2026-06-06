@@ -157,6 +157,18 @@ export async function renderOrderInfoSlip(
  * Returns the public URL of the rendered PNG.
  */
 export async function renderEndSeparatorSlip(orderNumber: string): Promise<string> {
+  // The "Any issues? WhatsApp us" number must be the business WhatsApp line the
+  // customer actually messages. Single source of truth: env.BUSINESS_PHONE (the
+  // same value the upload page uses for its wa.me link). Keep BUSINESS_PHONE set
+  // to the live WhatsApp-channel display number. Omitted from the card if unset.
+  const businessPhone = env.BUSINESS_PHONE?.trim() ?? '';
+  const h = DYE_SUB_4X6_PX.height;
+  const cx = DYE_SUB_4X6_PX.width / 2;
+  const whatsappBlock = businessPhone
+    ? `
+  <text x="${cx}" y="${h - 185}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="34" font-weight="400" fill="${BRAND.ink}" opacity="0.7">Any issues? WhatsApp us</text>
+  <text x="${cx}" y="${h - 135}" text-anchor="middle" font-family="${BRAND.fontMono}" font-size="38" font-weight="500" fill="${BRAND.ink}">${escapeXml(businessPhone)}</text>`
+    : '';
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DYE_SUB_4X6_PX.width}" height="${DYE_SUB_4X6_PX.height}" viewBox="0 0 ${DYE_SUB_4X6_PX.width} ${DYE_SUB_4X6_PX.height}">
   <rect width="100%" height="100%" fill="${BRAND.cream}"/>
@@ -175,10 +187,10 @@ export async function renderEndSeparatorSlip(orderNumber: string): Promise<strin
   <text x="${DYE_SUB_4X6_PX.width / 2}" y="${DYE_SUB_4X6_PX.height / 2 + 200}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="40" font-weight="500" fill="${BRAND.ink}" opacity="0.7">— FusionPrints</text>
 
   <!-- Thank-you and find-us at bottom -->
-  <text x="${DYE_SUB_4X6_PX.width / 2}" y="${DYE_SUB_4X6_PX.height - 280}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="36" font-weight="400" fill="${BRAND.ink}" opacity="0.7">Thank you for trusting us</text>
-  <text x="${DYE_SUB_4X6_PX.width / 2}" y="${DYE_SUB_4X6_PX.height - 230}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="36" font-weight="400" fill="${BRAND.ink}" opacity="0.7">with your memories.</text>
-
-  <text x="${DYE_SUB_4X6_PX.width / 2}" y="${DYE_SUB_4X6_PX.height - 130}" text-anchor="middle" font-family="${BRAND.fontMono}" font-size="32" font-weight="500" fill="${BRAND.ink}">@fusionprints  ·  fusionprints.co.zw</text>
+  <text x="${cx}" y="${h - 320}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="36" font-weight="400" fill="${BRAND.ink}" opacity="0.7">Thank you for trusting us</text>
+  <text x="${cx}" y="${h - 272}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="36" font-weight="400" fill="${BRAND.ink}" opacity="0.7">with your memories.</text>
+${whatsappBlock}
+  <text x="${cx}" y="${h - 70}" text-anchor="middle" font-family="${BRAND.fontMono}" font-size="30" font-weight="500" fill="${BRAND.ink}" opacity="0.6">@fusionprints  ·  fusionprints.co.zw</text>
 </svg>
 `;
 

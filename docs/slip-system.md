@@ -41,13 +41,11 @@ the 360dialog account (`WHATSAPP_PHONE_NUMBER_ID`; its human-readable form
 arrives on inbound webhooks as `metadata.display_phone_number`). It must **not**
 be the customer's own phone, and must not drift from the live channel number.
 
-Implementation note / known bug: the current WIP `slip-renderer.ts` renders
-`data.customerPhone` on this line — that prints the *customer's* number. Fix:
-source it from one config value that is the WhatsApp business number (set
-`BUSINESS_PHONE` to exactly the 360dialog display number and use it for the slip,
-the upload-page WhatsApp link, and anywhere else the business number appears), or
-persist `display_phone_number` from the webhook and read that. One source, used
-everywhere.
+Status (✅ done): the `end_separator` now renders "Any issues? WhatsApp us
+{number}" sourced from **`env.BUSINESS_PHONE`** — the same single value the
+upload page uses for its wa.me link. **Ops requirement:** keep `BUSINESS_PHONE`
+set to the live 360dialog display number so the card matches the channel. (The
+`order_info` card correctly shows the *customer's* phone — that's their receipt.)
 
 ---
 
@@ -144,7 +142,7 @@ slip rows + sequence numbers are needed.
 | Promo cards (launch) | none | 2 **static** PNGs (referral + upsell) in B2 `campaigns/`, reused per order |
 | Campaign management | none | admin CRUD: active campaign + slot defs + images |
 | Referral system | none | **deferred post-launch** (launch referral is a static card, no live codes) |
-| `end_separator` WhatsApp number | renders `customerPhone` (WIP — wrong) | the WhatsApp channel number, single source of truth (§2a) |
+| `end_separator` WhatsApp number | ✅ **done** | "Any issues? WhatsApp us {number}" from `env.BUSINESS_PHONE` (single source; keep = 360dialog display number) (§2a) |
 | **Print agent slip consumption** | ✅ **built** (image slips); 🟡 thermal unverified | Agent now polls per printer type (dye_sub_4x6/5x7, inkjet, thermal_label) so the per-order slip sequencing runs; downloads image slips by B2 key and prints them as-is (no crop). Envelope-label ZPL path coded but **unverified (no hardware)** — only polled when `THERMAL_PRINTER_NAME` set. next-job exposes the derived key. **Physical print still needs the print PC + a paid order to confirm.** |
 | Thermal label | ZPL generator built | unchanged; **hardware not yet** — verify ZPL logically |
 

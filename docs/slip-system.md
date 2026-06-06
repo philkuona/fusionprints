@@ -156,6 +156,13 @@ slip rows + sequence numbers are needed.
 2. **Static promo PNGs** — design the referral + upsell cards in HTML, render to
    PNG (skills/offline or campaign-save), store under B2 `campaigns/`. No
    per-order render for promos at launch.
+   - **Pipeline: ✅ proven** — HTML templates render to 4×6/300 DPI PNG via
+     headless Edge (no backend browser). Templates: `docs/slip-templates/`.
+   - **Creative: 🟡 PROVISIONAL / revisit before launch** — the current
+     referral + upsell cards are TEST placeholders (copy/offer/images are
+     stand-ins). Real launch creative + final offers to be produced when ready
+     for launch. Referral redemption is **manual/honour-system** at launch (no
+     referrer field on web yet; that's the deferred live-referral system).
 3. **Queue promos** in `order.ts` at payment: promo 1 (seq 60) + promo 2 (seq 70),
    each pointing at the active campaign's PNG, each in its own try/catch so a slip
    failure never blocks customer prints. Idempotent with `markOrderPaid`.

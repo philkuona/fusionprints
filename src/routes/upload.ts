@@ -24,9 +24,10 @@ import multipart from '@fastify/multipart';
 import { eq, and, gte } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { db } from '@/db/client.js';
-import { uploadSessions, customers } from '@/db/schema.js';
+import { uploadSessions } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { storeImage } from '@/services/image-storage.js';
+import { BRAND_FONT_CSS } from '@/routes/admin-fonts.js';
 import { env } from '@/config/env.js';
 
 // ===== Helpers =====
@@ -80,10 +81,8 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Upload your photos · FusionPrints</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
+    ${BRAND_FONT_CSS}
     :root {
       --bg: #FBF7F0;
       --bg-2: #F4ECDD;

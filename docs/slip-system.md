@@ -145,6 +145,7 @@ slip rows + sequence numbers are needed.
 | Campaign management | none | admin CRUD: active campaign + slot defs + images |
 | Referral system | none | **deferred post-launch** (launch referral is a static card, no live codes) |
 | `end_separator` WhatsApp number | renders `customerPhone` (WIP — wrong) | the WhatsApp channel number, single source of truth (§2a) |
+| **Print agent slip consumption** | **NONE — agent has zero slip handling** | agent must process `slip` / `envelope_label` jobs, downloading by **B2 key** (bucket is private; the stored direct URL 401s — prints already download by key with the agent's own creds). Slip jobs/agent-api must expose the storage key. Affects ALL slips, not just promos. |
 | Thermal label | ZPL generator built | unchanged; **hardware not yet** — verify ZPL logically |
 
 ---

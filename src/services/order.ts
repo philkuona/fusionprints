@@ -11,8 +11,9 @@
 
 import { eq, and, like, desc, inArray } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
+import { env } from '@/config/env.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
 import {
@@ -530,6 +531,43 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
     logger.info({ orderNumber }, 'Queued order_info slip');
   } catch (err) {
     logger.error({ orderNumber, err }, 'Failed to queue order_info slip');
+  }
+
+  // ===== Promo slips (sequence 60 & 70): static campaign cards =====
+  // Both promo cards are static per campaign (pre-rendered PNGs in B2), so we
+  // just point the slip at the active campaign's image — no per-order render.
+  // They sit between customer prints (50) and order_info (100), so they land on
+  // top of the customer's prints and below the order-info card.
+  try {
+    const [campaign] = await db
+      .select()
+      .from(promoCampaigns)
+      .where(eq(promoCampaigns.active, true))
+      .limit(1);
+    if (campaign) {
+      const slots = [
+        { slot: campaign.slot1, seq: 60 },
+        { slot: campaign.slot2, seq: 70 },
+      ];
+      for (const { slot, seq } of slots) {
+        if (!slot?.imageKey) continue; // a slot with no rendered card is skipped
+        const url = `https://${env.B2_BUCKET_NAME}.${env.B2_ENDPOINT}/${slot.imageKey}`;
+        await db.insert(slipJobs).values({
+          orderId: order.id,
+          slipType: 'promo',
+          targetPrinterType: 'dye_sub_4x6',
+          sequencePosition: seq,
+          printReadyFileUrl: url,
+          campaignId: campaign.id,
+          status: 'queued',
+        });
+      }
+      logger.info({ orderNumber, campaign: campaign.name }, 'Queued promo slips');
+    } else {
+      logger.info({ orderNumber }, 'No active promo campaign — skipping promo slips');
+    }
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to queue promo slips');
   }
 
   // ===== Slip 3: envelope_label (thermal, no PNG, just ZPL) =====

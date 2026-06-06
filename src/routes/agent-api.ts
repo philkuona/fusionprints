@@ -80,9 +80,10 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         return {
           id: slip.id,
           jobKind: 'slip' as const,
-          slipType: slip.slipType,
-          targetPrinterType: slip.targetPrinterType,
-          payloadJson: slip.payloadJson, // contains { zpl: "..." }
+          slipType: slip.slipType, // 'envelope_label'
+          printerType: 'thermal' as const,
+          quantity: 1,
+          zpl: (slip.payloadJson as { zpl?: string } | null)?.zpl ?? '',
           sequencePosition: slip.sequencePosition,
         };
       }
@@ -168,12 +169,25 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         // before them, slips at or above only once the order's prints are done.
         const PRINT_SEQUENCE = 50;
         if (slip && (!orderPrint || slip.sequencePosition < PRINT_SEQUENCE)) {
+          // Slips are pre-rendered print-ready 4x6 PNGs. The agent downloads by
+          // B2 key (the bucket is private; the stored direct URL 401s), so we
+          // derive the key from the URL and hand it over like a print job —
+          // flagged isPreRendered so the agent prints it as-is (no crop/resize).
+          const slipKey = slip.printReadyFileUrl
+            ? new URL(slip.printReadyFileUrl).pathname.replace(/^\/+/, '')
+            : '';
           return {
             id: slip.id,
             jobKind: 'slip' as const,
-            slipType: slip.slipType,
-            targetPrinterType: slip.targetPrinterType,
-            printReadyFileUrl: slip.printReadyFileUrl,
+            slipType: slip.slipType, // end_separator | order_info | promo
+            printerType: 'dye_sub' as const,
+            printerOsName: env.DNP_PRINTER_NAME,
+            sizeCode: '4x6',
+            productType: 'photo_print' as const,
+            quantity: 1,
+            isPreRendered: true,
+            imageStorageKey: slipKey,
+            imageUrl: slip.printReadyFileUrl,
             sequencePosition: slip.sequencePosition,
           };
         }

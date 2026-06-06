@@ -406,6 +406,22 @@ export const promoCampaigns = pgTable(
   }),
 );
 
+/**
+ * Admin-editable price overrides (USD). The structural catalog (sizes, finish,
+ * printer routing) stays in config/catalog.ts; only the price is overridable
+ * here. One row per sizeCode; absent → the config default applies. Loaded at
+ * startup and applied onto the in-memory catalog so display, the WhatsApp bot,
+ * and order totals all read the same number. See services/price-overrides.ts.
+ */
+export const productPrices = pgTable('product_prices', {
+  sizeCode: text('size_code').primaryKey(),
+  unitPriceUsd: numeric('unit_price_usd', { precision: 10, scale: 2 }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ProductPrice = typeof productPrices.$inferSelect;
+export type NewProductPrice = typeof productPrices.$inferInsert;
+
 // ===== Type exports for use throughout the app =====
 
 export type Customer = typeof customers.$inferSelect;

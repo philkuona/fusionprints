@@ -629,6 +629,7 @@ function pageHtml(
       <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers</a>
       ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
       ${isOperator ? '' : `<a href="/admin/promos" class="nav-tab">Promos</a>`}
+      ${isOperator ? '' : `<a href="/admin/pricing" class="nav-tab">Pricing</a>`}
       ${isOperator ? '' : `<a href="/admin/qbo" class="nav-tab">QuickBooks</a>`}
     </nav>
   <button class="hamburger" id="hamburger-btn" onclick="toggleMobileNav()">&#9776;</button>

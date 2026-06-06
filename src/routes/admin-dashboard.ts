@@ -741,6 +741,7 @@ function dashboardHtml(role: AdminRole = 'full'): string {
     <a href="/admin/printers" class="nav-tab">Printers</a>
     ${isOperator ? '' : '<a href="/admin/metrics" class="nav-tab">Key Metrics</a>'}
     ${isOperator ? '' : '<a href="/admin/promos" class="nav-tab">Promos</a>'}
+    ${isOperator ? '' : '<a href="/admin/pricing" class="nav-tab">Pricing</a>'}
     ${isOperator ? '' : '<a href="/admin/qbo" class="nav-tab">QuickBooks</a>'}
   </nav>
   <div class="header-right">
@@ -758,6 +759,7 @@ function dashboardHtml(role: AdminRole = 'full'): string {
   <a href="/admin/printers">Printers</a>
   <a href="/admin/metrics">Key Metrics</a>
   <a href="/admin/promos">Promos</a>
+  <a href="/admin/pricing">Pricing</a>
   <a href="/admin/qbo">QuickBooks</a>
 </div>
 <script>

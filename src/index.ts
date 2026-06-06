@@ -17,6 +17,8 @@ import { registerWhatsAppWebhook } from '@/routes/whatsapp-webhook.js';
 import { registerAdminDashboard } from '@/routes/admin-dashboard.js';
 import { registerAdminOps } from '@/routes/admin-ops.js';
 import { registerAdminPromos } from '@/routes/admin-promos.js';
+import { registerAdminPricing } from '@/routes/admin-pricing.js';
+import { loadAndApplyPriceOverrides } from '@/services/price-overrides.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
 import { registerAgentRoutes } from '@/routes/agent-api.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
@@ -109,6 +111,7 @@ async function main(): Promise<void> {
   await registerAdminDashboard(app);
   await registerAdminOps(app);
   await registerAdminPromos(app);
+  await registerAdminPricing(app);
   await registerPaymentWebhooks(app);
 
   // Register print agent API routes
@@ -134,6 +137,9 @@ async function main(): Promise<void> {
   await registerWebCheckoutRoutes(app);
   await registerWebOrderRoutes(app);
   await registerWebImportRoutes(app);
+
+  // Apply admin price overrides onto the in-memory catalog before serving.
+  await loadAndApplyPriceOverrides();
 
   // ===== Start the server =====
 

@@ -71,16 +71,22 @@ async function main(): Promise<void> {
     secret: env.ADMIN_SESSION_SECRET || 'dev-only-not-for-production-use-pad!!',
     // Persistent store so sessions survive backend restarts (deploys/reboots),
     // instead of the default in-memory store that logged everyone out on each
-    // restart. maxAge is in milliseconds; rolling renews it on every request so
-    // active users stay signed in and only idle sessions expire.
+    // restart. maxAge is in milliseconds; the 30-day window runs from sign-in.
+    //
+    // rolling is OFF deliberately: with rolling on, the session was re-saved on
+    // EVERY request, and our async (Postgres) store made that cookie write race
+    // the response — landing after headers were sent it threw ERR_HTTP_HEADERS_
+    // SENT mid-response, corrupting authenticated admin pages into blank/white
+    // pages. With rolling off the session is only written when it actually
+    // changes (sign-in), eliminating the per-request race.
     store: new PgSessionStore(),
     cookie: {
       secure: env.NODE_ENV === 'production',
       httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days from sign-in
       sameSite: 'lax' as const,
     },
-    rolling: true,
+    rolling: false,
     saveUninitialized: false,
   });
   // Evict expired session rows daily (cheap; indexed on expire).
@@ -90,7 +96,8 @@ async function main(): Promise<void> {
   // onResponse runs AFTER the response is sent, so it only reads — it can never
   // touch already-sent headers (unlike the onSend hook that crash-looped).
   app.addHook('onResponse', async (request, reply) => {
-    if (reply.statusCode >= 400) {
+    // Skip the agent long-poll's expected "no job right now" 404s (high volume).
+    if (reply.statusCode >= 400 && !request.url.includes('/agent/jobs/next')) {
       logger.warn({ method: request.method, url: request.url, status: reply.statusCode }, 'HTTP error response');
     }
   });

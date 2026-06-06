@@ -41,6 +41,10 @@ import { registerWebCheckoutRoutes } from '@/routes/web/checkout.js';
 import { registerWebOrderRoutes } from '@/routes/web/orders.js';
 import { registerWebImportRoutes } from '@/routes/web/imports.js';
 import { startImageCleanupSchedule } from '@/services/image-cleanup.js';
+import { registerBrandFonts } from '@/utils/fonts.js';
+
+// Make bundled brand fonts available to Sharp/librsvg before anything renders.
+registerBrandFonts();
 
 async function main(): Promise<void> {
   const app = Fastify({

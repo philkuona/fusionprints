@@ -20,6 +20,7 @@ import {
   renderOrderInfoSlip,
   renderEndSeparatorSlip,
   generateEnvelopeLabelZpl,
+  extractFirstName,
   type OrderInfoSlipData,
   type EnvelopeLabelData,
 } from '@/services/slip-renderer.js';
@@ -495,7 +496,7 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
 
   // ===== Slip 1: end_separator (sequence 0, prints first) =====
   try {
-    const url = await renderEndSeparatorSlip(orderNumber);
+    const url = await renderEndSeparatorSlip(orderNumber, extractFirstName(customerName));
     await db.insert(slipJobs).values({
       orderId: order.id,
       slipType: 'end_separator',
@@ -515,6 +516,7 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
       orderNumber,
       customerName,
       customerPhone,
+      paymentMethod,
       fulfillmentMethod: order.fulfillmentMethod,
       items: slipItems,
       orderedAt,

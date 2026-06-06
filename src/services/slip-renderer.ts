@@ -16,6 +16,10 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
+import { registerBrandFonts } from '@/utils/fonts.js';
+
+// Ensure Sharp/librsvg can see the bundled brand fonts before any slip renders.
+registerBrandFonts();
 
 // Reuse the same B2 client config as image-storage.ts
 const s3 = new S3Client({
@@ -29,9 +33,15 @@ const s3 = new S3Client({
 
 // ===== Brand constants (from locked Sunlit theme) =====
 
+// Sunlit-theme palette + brand fonts. Mirrors the COLORS map in the approved
+// slip mockup (docs/slip-templates) exactly so the rendered cards match it.
+// Serif resolves to the real bundled Fraunces (Georgia only as a safety net).
 const BRAND = {
-  cream: '#FBF7F0',
+  cream: '#FBF7F0', // bg
+  bgWarm: '#F4ECDD', // warm panel fill (items box)
   ink: '#1F1B16',
+  inkSoft: '#4A3F32',
+  inkMute: '#8A7B66',
   malachite: '#05D668',
   coral: '#FF7A59',
   fontSerif: 'Fraunces, Georgia, serif',
@@ -49,6 +59,7 @@ export interface OrderInfoSlipData {
   orderNumber: string;
   customerName: string;
   customerPhone: string;
+  paymentMethod: string; // e.g. "EcoCash" or "Card" — shown as a status pill
   fulfillmentMethod: 'collection' | 'delivery';
   items: Array<{
     quantity: number;
@@ -70,6 +81,75 @@ export interface EnvelopeLabelData {
   orderedAt: Date;
 }
 
+// ===== SVG builders (pure — no I/O, so they can be previewed offline) =====
+
+/**
+ * Build the order-info card SVG (4×6, 300 DPI) — a faithful port of the approved
+ * mockup (docs/slip-templates "slips-svg-preview"). Lands on top of the stack:
+ * logo lockup + date, order number, customer name + phone, an items panel, the
+ * Paid/method pills, and the "— ORDER START —" footer bar.
+ */
+export function buildOrderInfoSvg(data: OrderInfoSlipData): string {
+  registerBrandFonts();
+  const W = DYE_SUB_4X6_PX.width;
+  const H = DYE_SUB_4X6_PX.height;
+  const { dateStr, timeStr } = formatDateParts(data.orderedAt);
+
+  // Items sit INSIDE the warm panel (matching the designed CSS mockup; the SVG
+  // mockup had a coordinate bug that dropped them below an empty box).
+  const visibleItems = data.items.slice(0, 4);
+  const remainingItems = data.items.length - visibleItems.length;
+  const ITEM_ROW_Y = 858; // first row baseline
+  const ITEM_ROW_STEP = 66;
+  const itemRows = visibleItems
+    .map((item, i) => {
+      const y = ITEM_ROW_Y + i * ITEM_ROW_STEP;
+      const label = item.sizeLabel;
+      return `
+  <text x="120" y="${y}" font-family="${BRAND.fontSans}" font-size="36" font-weight="500" fill="${BRAND.ink}">${escapeXml(label)}</text>
+  <text x="1080" y="${y}" font-family="${BRAND.fontMono}" font-size="32" font-weight="500" fill="${BRAND.inkSoft}" text-anchor="end">×${item.quantity}</text>`;
+    })
+    .join('');
+  const remainingNote =
+    remainingItems > 0
+      ? `<text x="120" y="${ITEM_ROW_Y + visibleItems.length * ITEM_ROW_STEP}" font-family="${BRAND.fontMono}" font-size="26" fill="${BRAND.inkMute}">+ ${remainingItems} more item${remainingItems === 1 ? '' : 's'}</text>`
+      : '';
+  const rowCount = visibleItems.length + (remainingItems > 0 ? 1 : 0);
+  // Panel encloses header + rows: top 700, last row at ITEM_ROW_Y+(rowCount-1)*STEP, +40 pad.
+  const itemsBoxH = data.items.length > 0 ? ITEM_ROW_Y + (rowCount - 1) * ITEM_ROW_STEP + 40 - 700 : 100;
+  const methodW = Math.max(160, data.paymentMethod.length * 22 + 60);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <rect width="${W}" height="${H}" fill="${BRAND.cream}"/>
+  <g transform="translate(80, 100)">
+    <g transform="scale(2.4)">
+      <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="${BRAND.ink}"/>
+      <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="${BRAND.malachite}"/>
+    </g>
+    <text x="160" y="96" font-family="${BRAND.fontSans}" font-size="84" font-weight="700" fill="${BRAND.ink}" letter-spacing="-1.7">fusionprints</text>
+  </g>
+  <text x="${W - 80}" y="160" font-family="${BRAND.fontMono}" font-size="28" fill="${BRAND.inkMute}" text-anchor="end" letter-spacing="1.2">${escapeXml(dateStr)} · ${escapeXml(timeStr)}</text>
+  <rect x="80" y="240" width="${W - 160}" height="2" fill="${BRAND.ink}" fill-opacity="0.10"/>
+  <text x="80" y="330" font-family="${BRAND.fontMono}" font-size="26" fill="${BRAND.inkMute}" letter-spacing="3.1">ORDER</text>
+  <text x="80" y="430" font-family="${BRAND.fontSerif}" font-size="84" font-weight="500" fill="${BRAND.ink}" letter-spacing="-1.5">${escapeXml(data.orderNumber)}</text>
+  <text x="80" y="540" font-family="${BRAND.fontSans}" font-size="52" font-weight="600" fill="${BRAND.ink}">${escapeXml(data.customerName)}</text>
+  <text x="80" y="600" font-family="${BRAND.fontMono}" font-size="34" fill="${BRAND.inkSoft}">${escapeXml(data.customerPhone)}</text>
+  <rect x="80" y="700" width="${W - 160}" height="${itemsBoxH}" rx="20" fill="${BRAND.bgWarm}"/>
+  <text x="120" y="770" font-family="${BRAND.fontMono}" font-size="26" fill="${BRAND.inkMute}" letter-spacing="3.1">ITEMS</text>${itemRows}
+  ${remainingNote}
+  <g transform="translate(80, ${H - 320})">
+    <rect x="0" y="0" width="200" height="64" rx="32" fill="${BRAND.malachite}"/>
+    <text x="100" y="42" font-family="${BRAND.fontMono}" font-size="26" font-weight="500" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="2.0">✓ PAID</text>
+    <rect x="220" y="0" width="${methodW}" height="64" rx="32" fill="${BRAND.ink}"/>
+    <text x="${220 + methodW / 2}" y="42" font-family="${BRAND.fontMono}" font-size="24" font-weight="500" fill="${BRAND.cream}" text-anchor="middle" letter-spacing="1.8">${escapeXml(data.paymentMethod.toUpperCase())}</text>
+  </g>
+  <rect x="0" y="${H - 100}" width="${W}" height="100" fill="${BRAND.ink}"/>
+  <text x="${W / 2}" y="${H - 50}" font-family="${BRAND.fontMono}" font-size="28" font-weight="500" fill="${BRAND.malachite}" text-anchor="middle" letter-spacing="3.0">— ORDER START —</text>
+</svg>
+`;
+}
+
 // ===== Renderers =====
 
 /**
@@ -79,61 +159,7 @@ export interface EnvelopeLabelData {
 export async function renderOrderInfoSlip(
   data: OrderInfoSlipData,
 ): Promise<string> {
-  const lastName = extractLastName(data.customerName);
-  const orderedDate = formatDate(data.orderedAt);
-
-  // Customer name must stay inside the card: shrink to fit the printable
-  // width, then truncate with an ellipsis if it's still too long (emails
-  // used as display names easily exceed the 4×6 width at 96px).
-  const name = fitSvgText(lastName.toUpperCase(), {
-    baseSize: 96,
-    minSize: 52,
-    maxWidth: DYE_SUB_4X6_PX.width - 200,
-  });
-
-  // Items area has room for 11 lines before the footer strip; summarise the rest.
-  const MAX_ITEM_LINES = 10;
-  const visibleItems = data.items.slice(0, MAX_ITEM_LINES);
-  const itemTexts = visibleItems.map((it) => `${it.quantity} × ${it.sizeLabel}`);
-  if (data.items.length > MAX_ITEM_LINES) {
-    itemTexts.push(`+ ${data.items.length - MAX_ITEM_LINES} more`);
-  }
-  const itemLines = itemTexts
-    .map((text) => `<tspan x="100" dy="60">${escapeXml(text)}</tspan>`)
-    .join('\n');
-
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${DYE_SUB_4X6_PX.width}" height="${DYE_SUB_4X6_PX.height}" viewBox="0 0 ${DYE_SUB_4X6_PX.width} ${DYE_SUB_4X6_PX.height}">
-  <rect width="100%" height="100%" fill="${BRAND.cream}"/>
-
-  <!-- Header strip -->
-  <rect x="0" y="0" width="${DYE_SUB_4X6_PX.width}" height="160" fill="${BRAND.ink}"/>
-  <text x="100" y="105" font-family="${BRAND.fontSerif}" font-size="80" font-weight="700" fill="${BRAND.cream}">FusionPrints</text>
-
-  <!-- Customer name -->
-  <text x="100" y="280" font-family="${BRAND.fontSans}" font-size="36" font-weight="500" fill="${BRAND.ink}" opacity="0.6">For</text>
-  <text x="100" y="370" font-family="${BRAND.fontSerif}" font-size="${name.fontSize}" font-weight="700" fill="${BRAND.ink}"${name.clampAttrs}>${escapeXml(name.text)}</text>
-
-  <!-- Order number -->
-  <text x="100" y="480" font-family="${BRAND.fontSans}" font-size="36" font-weight="500" fill="${BRAND.ink}" opacity="0.6">Order</text>
-  <text x="100" y="550" font-family="${BRAND.fontMono}" font-size="56" font-weight="500" fill="${BRAND.ink}">${escapeXml(data.orderNumber)}</text>
-
-  <!-- Items section -->
-  <line x1="100" y1="640" x2="${DYE_SUB_4X6_PX.width - 100}" y2="640" stroke="${BRAND.ink}" stroke-width="2" opacity="0.3"/>
-  <text x="100" y="710" font-family="${BRAND.fontSans}" font-size="36" font-weight="500" fill="${BRAND.ink}" opacity="0.6">Inside</text>
-  <text font-family="${BRAND.fontSans}" font-size="48" font-weight="500" fill="${BRAND.ink}">
-    ${itemLines.replace(/dy="60"/, 'y="780"').replace(/dy="60"/g, 'dy="70"')}
-  </text>
-
-  <!-- Footer strip -->
-  <rect x="0" y="${DYE_SUB_4X6_PX.height - 200}" width="${DYE_SUB_4X6_PX.width}" height="200" fill="${BRAND.ink}"/>
-  <text x="100" y="${DYE_SUB_4X6_PX.height - 130}" font-family="${BRAND.fontSans}" font-size="32" font-weight="400" fill="${BRAND.cream}" opacity="0.7">${escapeXml(data.fulfillmentMethod === 'delivery' ? 'For delivery' : 'For pickup')}</text>
-  <text x="100" y="${DYE_SUB_4X6_PX.height - 70}" font-family="${BRAND.fontMono}" font-size="36" font-weight="400" fill="${BRAND.cream}">${escapeXml(orderedDate)}</text>
-  <text x="${DYE_SUB_4X6_PX.width - 100}" y="${DYE_SUB_4X6_PX.height - 70}" text-anchor="end" font-family="${BRAND.fontMono}" font-size="36" font-weight="400" fill="${BRAND.cream}">${escapeXml(data.customerPhone)}</text>
-</svg>
-`;
-
-  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+  const png = await sharp(Buffer.from(buildOrderInfoSvg(data))).png().toBuffer();
   const key = `slips/order-info/${data.orderNumber}-${randomUUID()}.png`;
 
   await s3.send(
@@ -151,50 +177,49 @@ export async function renderOrderInfoSlip(
 }
 
 /**
- * Render the end separator slip (4×6 dye-sub) — pure brand moment.
- * "Hold the moment." with the FusionPrints logo and tagline.
- * Same layout for every order (no per-order data needed).
- * Returns the public URL of the rendered PNG.
+ * Build the end-separator card SVG (4×6, 300 DPI) — a faithful port of the
+ * approved mockup (docs/slip-templates "slips-svg-preview"). Lands at the bottom
+ * of the stack: corner crop-marks, centered logo mark, "Hold the moment.", the
+ * customer's first name, and the WhatsApp help line. The "WhatsApp us" number is
+ * the business WhatsApp line (single source of truth: env.BUSINESS_PHONE — the
+ * same value the upload page uses for its wa.me link).
  */
-export async function renderEndSeparatorSlip(orderNumber: string): Promise<string> {
-  // The "Any issues? WhatsApp us" number must be the business WhatsApp line the
-  // customer actually messages. Single source of truth: env.BUSINESS_PHONE (the
-  // same value the upload page uses for its wa.me link). Keep BUSINESS_PHONE set
-  // to the live WhatsApp-channel display number. Omitted from the card if unset.
-  const businessPhone = env.BUSINESS_PHONE?.trim() ?? '';
-  const h = DYE_SUB_4X6_PX.height;
-  const cx = DYE_SUB_4X6_PX.width / 2;
-  const whatsappBlock = businessPhone
-    ? `
-  <text x="${cx}" y="${h - 185}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="34" font-weight="400" fill="${BRAND.ink}" opacity="0.7">Any issues? WhatsApp us</text>
-  <text x="${cx}" y="${h - 135}" text-anchor="middle" font-family="${BRAND.fontMono}" font-size="38" font-weight="500" fill="${BRAND.ink}">${escapeXml(businessPhone)}</text>`
-    : '';
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${DYE_SUB_4X6_PX.width}" height="${DYE_SUB_4X6_PX.height}" viewBox="0 0 ${DYE_SUB_4X6_PX.width} ${DYE_SUB_4X6_PX.height}">
-  <rect width="100%" height="100%" fill="${BRAND.cream}"/>
-
-  <!-- Decorative photo-corner mark (top-left) -->
-  <path d="M 80 80 L 240 80 L 80 240 Z" fill="${BRAND.malachite}"/>
-
-  <!-- Decorative photo-corner mark (bottom-right) -->
-  <path d="M ${DYE_SUB_4X6_PX.width - 80} ${DYE_SUB_4X6_PX.height - 80} L ${DYE_SUB_4X6_PX.width - 240} ${DYE_SUB_4X6_PX.height - 80} L ${DYE_SUB_4X6_PX.width - 80} ${DYE_SUB_4X6_PX.height - 240} Z" fill="${BRAND.coral}"/>
-
-  <!-- Tagline (centered, the brand moment) -->
-  <text x="${DYE_SUB_4X6_PX.width / 2}" y="${DYE_SUB_4X6_PX.height / 2 - 80}" text-anchor="middle" font-family="${BRAND.fontSerif}" font-size="140" font-weight="700" fill="${BRAND.ink}" font-style="italic">Hold</text>
-  <text x="${DYE_SUB_4X6_PX.width / 2}" y="${DYE_SUB_4X6_PX.height / 2 + 60}" text-anchor="middle" font-family="${BRAND.fontSerif}" font-size="140" font-weight="700" fill="${BRAND.ink}" font-style="italic">the moment.</text>
-
-  <!-- Brand line -->
-  <text x="${DYE_SUB_4X6_PX.width / 2}" y="${DYE_SUB_4X6_PX.height / 2 + 200}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="40" font-weight="500" fill="${BRAND.ink}" opacity="0.7">— FusionPrints</text>
-
-  <!-- Thank-you and find-us at bottom -->
-  <text x="${cx}" y="${h - 320}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="36" font-weight="400" fill="${BRAND.ink}" opacity="0.7">Thank you for trusting us</text>
-  <text x="${cx}" y="${h - 272}" text-anchor="middle" font-family="${BRAND.fontSans}" font-size="36" font-weight="400" fill="${BRAND.ink}" opacity="0.7">with your memories.</text>
-${whatsappBlock}
-  <text x="${cx}" y="${h - 70}" text-anchor="middle" font-family="${BRAND.fontMono}" font-size="30" font-weight="500" fill="${BRAND.ink}" opacity="0.6">@fusionprints  ·  fusionprints.co.zw</text>
+export function buildEndSeparatorSvg(data: { orderNumber: string; customerFirstName: string }): string {
+  registerBrandFonts();
+  const W = DYE_SUB_4X6_PX.width;
+  const H = DYE_SUB_4X6_PX.height;
+  const whatsappNumber = env.BUSINESS_PHONE?.trim() ?? '';
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <rect width="${W}" height="${H}" fill="${BRAND.cream}"/>
+  <g stroke="${BRAND.ink}" stroke-width="6" fill="none" stroke-linecap="square">
+    <path d="M 80 80 L 80 160" />
+    <path d="M 80 80 L 160 80" />
+    <path d="M ${W - 80} ${H - 80} L ${W - 80} ${H - 160}" />
+    <path d="M ${W - 80} ${H - 80} L ${W - 160} ${H - 80}" />
+  </g>
+  <g transform="translate(${W / 2 - 90}, 460) scale(4.5)">
+    <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="${BRAND.ink}"/>
+    <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="${BRAND.malachite}"/>
+  </g>
+  <text x="${W / 2}" y="850" font-family="${BRAND.fontSerif}" font-size="120" font-weight="500" font-style="italic" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="-2.4">Hold</text>
+  <text x="${W / 2}" y="970" font-family="${BRAND.fontSerif}" font-size="120" font-weight="500" font-style="italic" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="-2.4">the moment.</text>
+  <rect x="${W / 2 - 40}" y="1080" width="80" height="3" fill="${BRAND.ink}" opacity="0.30"/>
+  <text x="${W / 2}" y="1180" font-family="${BRAND.fontSans}" font-size="46" font-weight="500" fill="${BRAND.ink}" text-anchor="middle">Thank you,</text>
+  <text x="${W / 2}" y="1280" font-family="${BRAND.fontSerif}" font-size="80" font-weight="500" font-style="italic" fill="${BRAND.coral}" text-anchor="middle" letter-spacing="-1.6">${escapeXml(data.customerFirstName)}</text>
+  <text x="${W / 2}" y="1480" font-family="${BRAND.fontSans}" font-size="36" fill="${BRAND.inkSoft}" text-anchor="middle">Any issues? <tspan font-weight="600" fill="${BRAND.ink}">WhatsApp us</tspan></text>
+  <text x="${W / 2}" y="1540" font-family="${BRAND.fontMono}" font-size="34" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="2.0">${escapeXml(whatsappNumber)}</text>
+  <text x="${W / 2}" y="${H - 100}" font-family="${BRAND.fontMono}" font-size="22" fill="${BRAND.inkMute}" text-anchor="middle" letter-spacing="2.4">— ${escapeXml(data.orderNumber)} · END —</text>
 </svg>
 `;
+}
 
-  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+/**
+ * Render the end separator slip (4×6 dye-sub) — the brand moment that lands at
+ * the bottom of the stack. Returns the public URL of the rendered PNG.
+ */
+export async function renderEndSeparatorSlip(orderNumber: string, customerFirstName: string): Promise<string> {
+  const png = await sharp(Buffer.from(buildEndSeparatorSvg({ orderNumber, customerFirstName }))).png().toBuffer();
   const key = `slips/end-separator/${orderNumber}-${randomUUID()}.png`;
 
   await s3.send(
@@ -307,49 +332,6 @@ export function generateEnvelopeLabelZpl(data: EnvelopeLabelData): string {
 
 // ===== Helpers =====
 
-// Approximate average glyph width as a fraction of font size for bold serif
-// uppercase (the rasteriser falls back to a system serif, ~0.78em average).
-// Deliberately generous so we err on the side of shrinking, and any residual
-// overflow is caught by the textLength clamp below.
-const SVG_AVG_CHAR_WIDTH = 0.78;
-
-/**
- * Fit a single line of SVG text into maxWidth: shrink the font size down to
- * minSize, then truncate with an ellipsis if it still doesn't fit.
- *
- * Whenever the text had to be adjusted, `clampAttrs` carries a
- * textLength/lengthAdjust pair that makes the SVG rasteriser squeeze the
- * glyphs into exactly maxWidth — a hard guarantee that the char-width
- * estimate can't be wrong in the overflow direction. Untouched (short)
- * text gets no clamp so normal names keep their natural letter spacing.
- */
-function fitSvgText(
-  text: string,
-  opts: { baseSize: number; minSize: number; maxWidth: number },
-): { text: string; fontSize: number; clampAttrs: string } {
-  const widthAt = (size: number): number => text.length * size * SVG_AVG_CHAR_WIDTH;
-
-  let fontSize = opts.baseSize;
-  if (widthAt(fontSize) > opts.maxWidth) {
-    fontSize = Math.max(
-      opts.minSize,
-      Math.floor(opts.maxWidth / (text.length * SVG_AVG_CHAR_WIDTH)),
-    );
-  }
-
-  if (widthAt(fontSize) > opts.maxWidth) {
-    const maxChars = Math.floor(opts.maxWidth / (fontSize * SVG_AVG_CHAR_WIDTH)) - 1;
-    text = `${text.slice(0, Math.max(1, maxChars))}…`;
-  }
-
-  const clampAttrs =
-    fontSize === opts.baseSize
-      ? ''
-      : ` textLength="${opts.maxWidth}" lengthAdjust="spacingAndGlyphs"`;
-
-  return { text, fontSize, clampAttrs };
-}
-
 /**
  * Fit a single line of ZPL ^A0 text into maxDots: shrink the char width
  * (keeping the base aspect ratio) down to minWidth, then truncate if needed.
@@ -379,6 +361,28 @@ function extractLastName(fullName: string): string {
   }
   const parts = fullName.trim().split(/\s+/);
   return parts.length > 1 ? parts[parts.length - 1] : parts[0];
+}
+
+/** First name for the separator's "Thank you, {name}". Handles "Last;First" too. */
+export function extractFirstName(fullName: string): string {
+  const name = fullName.trim();
+  if (!name) return 'Friend';
+  if (name.includes(';')) {
+    // "Lastname;Firstname"
+    return name.split(';')[1]?.trim() || name.split(';')[0].trim() || 'Friend';
+  }
+  return name.split(/\s+/)[0];
+}
+
+/** Split a date into the card's "02 May 2026" + "14:32" parts. */
+function formatDateParts(d: Date): { dateStr: string; timeStr: string } {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  const hour = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return { dateStr: `${day} ${month} ${year}`, timeStr: `${hour}:${min}` };
 }
 
 function formatDate(d: Date): string {

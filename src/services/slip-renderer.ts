@@ -81,8 +81,25 @@ export async function renderOrderInfoSlip(
 ): Promise<string> {
   const lastName = extractLastName(data.customerName);
   const orderedDate = formatDate(data.orderedAt);
-  const itemLines = data.items
-    .map((it) => `<tspan x="100" dy="60">${escapeXml(`${it.quantity} × ${it.sizeLabel}`)}</tspan>`)
+
+  // Customer name must stay inside the card: shrink to fit the printable
+  // width, then truncate with an ellipsis if it's still too long (emails
+  // used as display names easily exceed the 4×6 width at 96px).
+  const name = fitSvgText(lastName.toUpperCase(), {
+    baseSize: 96,
+    minSize: 52,
+    maxWidth: DYE_SUB_4X6_PX.width - 200,
+  });
+
+  // Items area has room for 11 lines before the footer strip; summarise the rest.
+  const MAX_ITEM_LINES = 10;
+  const visibleItems = data.items.slice(0, MAX_ITEM_LINES);
+  const itemTexts = visibleItems.map((it) => `${it.quantity} × ${it.sizeLabel}`);
+  if (data.items.length > MAX_ITEM_LINES) {
+    itemTexts.push(`+ ${data.items.length - MAX_ITEM_LINES} more`);
+  }
+  const itemLines = itemTexts
+    .map((text) => `<tspan x="100" dy="60">${escapeXml(text)}</tspan>`)
     .join('\n');
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
@@ -95,7 +112,7 @@ export async function renderOrderInfoSlip(
 
   <!-- Customer name -->
   <text x="100" y="280" font-family="${BRAND.fontSans}" font-size="36" font-weight="500" fill="${BRAND.ink}" opacity="0.6">For</text>
-  <text x="100" y="370" font-family="${BRAND.fontSerif}" font-size="96" font-weight="700" fill="${BRAND.ink}">${escapeXml(lastName.toUpperCase())}</text>
+  <text x="100" y="370" font-family="${BRAND.fontSerif}" font-size="${name.fontSize}" font-weight="700" fill="${BRAND.ink}"${name.clampAttrs}>${escapeXml(name.text)}</text>
 
   <!-- Order number -->
   <text x="100" y="480" font-family="${BRAND.fontSans}" font-size="36" font-weight="500" fill="${BRAND.ink}" opacity="0.6">Order</text>
@@ -211,11 +228,27 @@ export function generateEnvelopeLabelZpl(data: EnvelopeLabelData): string {
   lines.push('^LL812');               // Label length 4 in (812 dots)
   lines.push('^LH0,0');               // Label home
 
+  // Printable width is 417 dots (457 minus the 20-dot margins). Long names
+  // (or emails used as names) must shrink to fit, then truncate as a last resort.
+  const LABEL_TEXT_DOTS = 417;
+
   // Big LASTNAME (top)
-  lines.push(`^FO20,30^A0N,80,60^FD${zplEscape(lastName)}^FS`);
+  const bigName = fitZplText(lastName, {
+    baseWidth: 60,
+    baseHeight: 80,
+    minWidth: 26,
+    maxDots: LABEL_TEXT_DOTS,
+  });
+  lines.push(`^FO20,30^A0N,${bigName.height},${bigName.width}^FD${zplEscape(bigName.text)}^FS`);
 
   // Full customer name
-  lines.push(`^FO20,120^A0N,30,18^FD${zplEscape(data.customerName)}^FS`);
+  const fullName = fitZplText(data.customerName, {
+    baseWidth: 18,
+    baseHeight: 30,
+    minWidth: 12,
+    maxDots: LABEL_TEXT_DOTS,
+  });
+  lines.push(`^FO20,120^A0N,${fullName.height},${fullName.width}^FD${zplEscape(fullName.text)}^FS`);
 
   // Order number
   lines.push(`^FO20,160^A0N,28,16^FD${zplEscape(data.orderNumber)}^FS`);
@@ -230,14 +263,19 @@ export function generateEnvelopeLabelZpl(data: EnvelopeLabelData): string {
   lines.push('^FO20,280^GB417,38,38,B,0^FS');                          // Black bar
   lines.push(`^FO20,288^A0N,28,16^FR^FDOrder Information^FS`);          // Reverse text
 
-  // Items list — Up to 10 lines fit in remaining space
+  // Items list — Up to 10 lines fit in remaining space; summarise overflow
   const itemList: string[] = [];
   itemList.push(data.fulfillmentMethod === 'delivery' ? 'Delivery' : 'Walk-in pickup');
   for (const item of data.items) {
     itemList.push(`${item.quantity} - ${item.sizeLabel}`);
   }
+  const MAX_LABEL_LINES = 10;
+  const visibleLines = itemList.slice(0, MAX_LABEL_LINES);
+  if (itemList.length > MAX_LABEL_LINES) {
+    visibleLines[MAX_LABEL_LINES - 1] = `+ ${itemList.length - MAX_LABEL_LINES + 1} more`;
+  }
   let itemY = 340;
-  for (const line of itemList.slice(0, 10)) {
+  for (const line of visibleLines) {
     lines.push(`^FO20,${itemY}^A0N,28,16^FD${zplEscape(line)}^FS`);
     itemY += 32;
   }
@@ -256,6 +294,71 @@ export function generateEnvelopeLabelZpl(data: EnvelopeLabelData): string {
 }
 
 // ===== Helpers =====
+
+// Approximate average glyph width as a fraction of font size for bold serif
+// uppercase (the rasteriser falls back to a system serif, ~0.78em average).
+// Deliberately generous so we err on the side of shrinking, and any residual
+// overflow is caught by the textLength clamp below.
+const SVG_AVG_CHAR_WIDTH = 0.78;
+
+/**
+ * Fit a single line of SVG text into maxWidth: shrink the font size down to
+ * minSize, then truncate with an ellipsis if it still doesn't fit.
+ *
+ * Whenever the text had to be adjusted, `clampAttrs` carries a
+ * textLength/lengthAdjust pair that makes the SVG rasteriser squeeze the
+ * glyphs into exactly maxWidth — a hard guarantee that the char-width
+ * estimate can't be wrong in the overflow direction. Untouched (short)
+ * text gets no clamp so normal names keep their natural letter spacing.
+ */
+function fitSvgText(
+  text: string,
+  opts: { baseSize: number; minSize: number; maxWidth: number },
+): { text: string; fontSize: number; clampAttrs: string } {
+  const widthAt = (size: number): number => text.length * size * SVG_AVG_CHAR_WIDTH;
+
+  let fontSize = opts.baseSize;
+  if (widthAt(fontSize) > opts.maxWidth) {
+    fontSize = Math.max(
+      opts.minSize,
+      Math.floor(opts.maxWidth / (text.length * SVG_AVG_CHAR_WIDTH)),
+    );
+  }
+
+  if (widthAt(fontSize) > opts.maxWidth) {
+    const maxChars = Math.floor(opts.maxWidth / (fontSize * SVG_AVG_CHAR_WIDTH)) - 1;
+    text = `${text.slice(0, Math.max(1, maxChars))}…`;
+  }
+
+  const clampAttrs =
+    fontSize === opts.baseSize
+      ? ''
+      : ` textLength="${opts.maxWidth}" lengthAdjust="spacingAndGlyphs"`;
+
+  return { text, fontSize, clampAttrs };
+}
+
+/**
+ * Fit a single line of ZPL ^A0 text into maxDots: shrink the char width
+ * (keeping the base aspect ratio) down to minWidth, then truncate if needed.
+ * ^A0 is proportional, so char-count × width is a conservative estimate.
+ */
+function fitZplText(
+  text: string,
+  opts: { baseWidth: number; baseHeight: number; minWidth: number; maxDots: number },
+): { text: string; width: number; height: number } {
+  let width = opts.baseWidth;
+  if (text.length * width > opts.maxDots) {
+    width = Math.max(opts.minWidth, Math.floor(opts.maxDots / text.length));
+  }
+
+  if (text.length * width > opts.maxDots) {
+    text = text.slice(0, Math.max(1, Math.floor(opts.maxDots / width) - 1));
+  }
+
+  const height = Math.round(width * (opts.baseHeight / opts.baseWidth));
+  return { text, width, height };
+}
 
 function extractLastName(fullName: string): string {
   // Names come in as "Firstname Lastname" or "Lastname;Firstname" or just "Firstname"

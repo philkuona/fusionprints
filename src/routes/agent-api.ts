@@ -87,14 +87,19 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         };
       }
 
-      // For dye_sub printers, check both slip_jobs (priority) and print_jobs.
-      // Slips with sequence_position 0 (end_separator) print first.
-      // Customer prints in the middle.
-      // Slips with sequence_position 100 (order_info) print last.
-      // For now, simple priority: pending slips before pending customer prints.
+      // For dye_sub printers, check both slip_jobs and print_jobs, one order
+      // at a time so each order's stack comes out in physical sequence:
+      //   sequence 0   = end_separator slip (bottom of stack, prints first)
+      //   sequence 50  = customer prints (implicit, ordered by queuedAt)
+      //   sequence 100 = order_info slip (top of stack, prints last —
+      //                  only once the order has no queued prints left)
+      // The active order is the one with the oldest queued work, so one
+      // order's stack completes before the next order starts.
+      let job: { id: string; orderItemId: string; printerId: string | null } | null = null;
+
       if (filterType === 'dye_sub_4x6' || filterType === 'dye_sub_5x7') {
-        const [slip] = await db
-          .select()
+        const [oldestSlip] = await db
+          .select({ orderId: slipJobs.orderId, queuedAt: slipJobs.queuedAt })
           .from(slipJobs)
           .where(
             and(
@@ -102,10 +107,67 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
               eq(slipJobs.targetPrinterType, filterType),
             ),
           )
+          .orderBy(slipJobs.queuedAt)
+          .limit(1);
+
+        const [oldestPrint] = await db
+          .select({ orderId: orderItems.orderId, queuedAt: printJobs.queuedAt })
+          .from(printJobs)
+          .innerJoin(orderItems, eq(printJobs.orderItemId, orderItems.id))
+          .where(
+            and(
+              eq(printJobs.status, 'queued'),
+              eq(printJobs.targetPrinterType, filterType),
+            ),
+          )
+          .orderBy(printJobs.queuedAt)
+          .limit(1);
+
+        if (!oldestSlip && !oldestPrint) {
+          reply.status(404).send({ message: 'No jobs queued' });
+          return;
+        }
+
+        const activeOrderId =
+          oldestSlip && oldestPrint
+            ? (oldestSlip.queuedAt <= oldestPrint.queuedAt ? oldestSlip.orderId : oldestPrint.orderId)
+            : (oldestSlip ?? oldestPrint)!.orderId;
+
+        const [slip] = await db
+          .select()
+          .from(slipJobs)
+          .where(
+            and(
+              eq(slipJobs.status, 'queued'),
+              eq(slipJobs.targetPrinterType, filterType),
+              eq(slipJobs.orderId, activeOrderId),
+            ),
+          )
           .orderBy(slipJobs.sequencePosition, slipJobs.queuedAt)
           .limit(1);
 
-        if (slip) {
+        const [orderPrint] = await db
+          .select({
+            id: printJobs.id,
+            orderItemId: printJobs.orderItemId,
+            printerId: printJobs.printerId,
+          })
+          .from(printJobs)
+          .innerJoin(orderItems, eq(printJobs.orderItemId, orderItems.id))
+          .where(
+            and(
+              eq(printJobs.status, 'queued'),
+              eq(printJobs.targetPrinterType, filterType),
+              eq(orderItems.orderId, activeOrderId),
+            ),
+          )
+          .orderBy(printJobs.queuedAt)
+          .limit(1);
+
+        // Customer prints sit at implicit sequence 50: slips below that print
+        // before them, slips at or above only once the order's prints are done.
+        const PRINT_SEQUENCE = 50;
+        if (slip && (!orderPrint || slip.sequencePosition < PRINT_SEQUENCE)) {
           return {
             id: slip.id,
             jobKind: 'slip' as const,
@@ -115,24 +177,28 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
             sequencePosition: slip.sequencePosition,
           };
         }
+
+        job = orderPrint ?? null;
       }
 
-      // Find the oldest queued print_job, optionally filtered by target_printer_type
-      const whereClauses = filterType
-        ? and(eq(printJobs.status, 'queued'), eq(printJobs.targetPrinterType, filterType as 'dye_sub_4x6' | 'dye_sub_5x7' | 'inkjet'))
-        : eq(printJobs.status, 'queued');
+      // Inkjet / unfiltered: oldest queued print_job, optionally filtered by type
+      if (!job) {
+        const whereClauses = filterType
+          ? and(eq(printJobs.status, 'queued'), eq(printJobs.targetPrinterType, filterType as 'dye_sub_4x6' | 'dye_sub_5x7' | 'inkjet'))
+          : eq(printJobs.status, 'queued');
 
-      const [job] = await db
-        .select({
-          id: printJobs.id,
-          orderItemId: printJobs.orderItemId,
-          printerId: printJobs.printerId,
-          status: printJobs.status,
-        })
-        .from(printJobs)
-        .where(whereClauses)
-        .orderBy(printJobs.queuedAt)
-        .limit(1);
+        const [oldest] = await db
+          .select({
+            id: printJobs.id,
+            orderItemId: printJobs.orderItemId,
+            printerId: printJobs.printerId,
+          })
+          .from(printJobs)
+          .where(whereClauses)
+          .orderBy(printJobs.queuedAt)
+          .limit(1);
+        job = oldest ?? null;
+      }
 
       if (!job) {
         reply.status(404).send({ message: 'No jobs queued' });

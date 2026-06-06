@@ -60,6 +60,8 @@ const envSchema = z.object({
 
   // Print agent
   PRINT_AGENT_API_KEY: z.string().default(''),
+  // Fallback OS printer name when a job's printer has no osPrinterName set.
+  DNP_PRINTER_NAME: z.string().default(''),
 
   // Admin
   ADMIN_SESSION_SECRET: z.string().default(''),

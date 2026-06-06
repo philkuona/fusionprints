@@ -86,6 +86,19 @@ async function main(): Promise<void> {
   // Evict expired session rows daily (cheap; indexed on expire).
   setInterval(() => void sweepExpiredSessions(), 1000 * 60 * 60 * 24).unref();
 
+  // Admin HTML must always be served fresh and as UTF-8 — never let a browser
+  // or proxy serve a stale/partial cached copy (a cause of blank admin pages).
+  // Leaves the font assets (font/ttf, long-cached) and JSON APIs untouched.
+  app.addHook('onSend', async (request, reply, payload) => {
+    const url = request.url || '';
+    const ct = reply.getHeader('content-type');
+    if (url.startsWith('/admin') && typeof ct === 'string' && ct.startsWith('text/html')) {
+      reply.header('Cache-Control', 'no-store');
+      if (!ct.includes('charset')) reply.header('Content-Type', 'text/html; charset=utf-8');
+    }
+    return payload;
+  });
+
   // ===== Routes =====
 
   app.get('/', async () => {

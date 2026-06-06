@@ -125,11 +125,13 @@ function qboPageHtml(status: ReturnType<typeof getStatus>): string {
     <span class="admin-tag">admin</span>
   </div>
   <nav>
-    <a href="/admin/jobs"    class="nav-tab">Print Queue</a>
-    <a href="/admin"         class="nav-tab">Completed Orders</a>
+    <a href="/admin/jobs"     class="nav-tab">Order Management</a>
+    <a href="/admin"          class="nav-tab">Dashboard</a>
     <a href="/admin/printers" class="nav-tab">Printers</a>
-    <a href="/admin/metrics" class="nav-tab">Key Metrics</a>
-    <a href="/admin/qbo"     class="nav-tab active">QuickBooks</a>
+    <a href="/admin/metrics"  class="nav-tab">Key Metrics</a>
+    <a href="/admin/promos"   class="nav-tab">Promos</a>
+    <a href="/admin/pricing"  class="nav-tab">Pricing</a>
+    <a href="/admin/qbo"      class="nav-tab active">QuickBooks</a>
   </nav>
 </header>
 <main>

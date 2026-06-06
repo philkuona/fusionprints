@@ -9,7 +9,6 @@
  *   GET  /admin/api/stats    — live stats (orders, revenue, alerts)
  *   GET  /admin/api/orders   — paginated order list
  *   POST /admin/api/orders/:id/approve   — approve a poster for printing
- *   POST /admin/api/orders/:id/ready     — mark ready for collection
  *   POST /admin/api/orders/:id/fulfil    — mark as collected/fulfilled
  *   POST /admin/api/orders/:id/cancel    — cancel an order
  *
@@ -896,9 +895,6 @@ function dashboardHtml(role: AdminRole = 'full'): string {
     if (order.status === 'printed') {
       btns.push(\`<button class="action-btn approve" onclick="doAction('\${order.id}', 'release-for-pickup', event)">📦 Release</button>\`);
     }
-    if (['paid', 'awaiting_approval', 'queued_for_print', 'printing'].includes(order.status)) {
-      btns.push(\`<button class="action-btn ready" onclick="doAction('\${order.id}', 'ready', event)">Ready</button>\`);
-    }
     if (order.status === 'ready_for_collection' || order.status === 'ready_for_pickup') {
       btns.push(\`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil', event)">Collected</button>\`);
     }
@@ -1100,7 +1096,6 @@ function dashboardHtml(role: AdminRole = 'full'): string {
       <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
         \${order.status === 'awaiting_approval' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'approve'); closeModal()">✓ Approve for printing</button>\` : ''}
         \${order.status === 'printed' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'release-for-pickup'); closeModal()">📦 Release for pickup</button>\` : ''}
-        \${['paid','awaiting_approval','queued_for_print','printing'].includes(order.status) ? \`<button class="action-btn ready" onclick="doAction('\${order.id}', 'ready'); closeModal()">Mark ready for collection</button>\` : ''}
         \${order.status === 'ready_for_collection' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn ready" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">📦 Mark shipped</button>\` : ''}
         \${(order.status === 'ready_for_collection' || order.status === 'ready_for_pickup' || order.status === 'shipped') ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">✓ Mark fulfilled</button>\` : ''}
         \${jobs.some(j => j.status === 'failed') ? \`<button class="action-btn approve" onclick="reprintOrder('\${order.id}')">↻ Reprint failed jobs</button>\` : ''}
@@ -1374,22 +1369,6 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
     } catch (err) {
       logger.error({ err }, 'Failed to approve order');
       reply.status(500).send({ error: 'Failed to approve' });
-    }
-  });
-
-  // Mark ready for collection
-  app.post('/admin/api/orders/:id/ready', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
-    try {
-      const { id } = request.params as { id: string };
-      await db.update(orders)
-        .set({ status: 'ready_for_collection', readyAt: new Date() })
-        .where(eq(orders.id, id));
-      logger.info({ orderId: id }, 'Order marked ready for collection');
-      return { ok: true };
-    } catch (err) {
-      logger.error({ err }, 'Failed to mark order ready');
-      reply.status(500).send({ error: 'Failed to update' });
     }
   });
 

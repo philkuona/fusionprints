@@ -629,46 +629,49 @@ export async function releaseOrderForPickup(orderNumber: string): Promise<void> 
 async function sendReadyForPickupNotification(orderNumber: string): Promise<void> {
   const order = await getOrderByNumber(orderNumber);
   if (!order) return;
-  // Web orders aren't notified over WhatsApp (handled via email / in-app in W5).
-  if (!order.customerId) return;
 
-  const customer = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.id, order.customerId))
-    .limit(1)
-    .then((rows) => rows[0]);
+  // Resolve name + WhatsApp number from whichever channel the order came in on.
+  //   WhatsApp orders → the customer record.
+  //   Web orders      → the checkout contact phone (required, E.164), falling
+  //                     back to the profile WhatsApp number; name from profile.
+  let name = 'Customer';
+  let phone = '';
+  if (order.customerId) {
+    const customer = await db
+      .select()
+      .from(customers)
+      .where(eq(customers.id, order.customerId))
+      .limit(1)
+      .then((rows) => rows[0]);
+    if (!customer) return;
+    name = customer.name ?? 'Customer';
+    phone = customer.phoneNumber;
+  } else if (order.webUserId) {
+    const webUser = await db
+      .select()
+      .from(webUsers)
+      .where(eq(webUsers.id, order.webUserId))
+      .limit(1)
+      .then((rows) => rows[0]);
+    name = webUser?.displayName ?? webUser?.email ?? 'Customer';
+    phone = order.contactPhone ?? webUser?.whatsappNumber ?? '';
+  }
 
-  if (!customer) return;
+  if (!phone) {
+    logger.warn({ orderNumber }, 'No phone on order — skipping ready-for-pickup notification');
+    return;
+  }
 
   // Lazy-import to avoid pulling whatsapp into modules that don't need it
   const { sendWhatsAppMessage } = await import('@/services/whatsapp.js');
   const { env } = await import('@/config/env.js');
 
-  const lastName = customer.name?.split(/\s+/).pop() ?? customer.name ?? 'Customer';
+  const lastName = name.split(/\s+/).pop() ?? name;
 
   const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *FusionPrints HRE* during business hours (${env.BUSINESS_HOURS}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${env.BUSINESS_ADDRESS}`;
 
-  await sendWhatsAppMessage(customer.phoneNumber, message);
-  logger.info({ orderNumber, phone: customer.phoneNumber }, 'Sent ready-for-pickup notification');
-}
-
-/**
- * Legacy: Mark an order as ready for collection.
- * Pre-Phase D status flow used 'ready_for_collection' directly.
- * New code should use releaseOrderForPickup() instead.
- * Kept for backward compat with existing admin dashboard code.
- */
-export async function markOrderReady(orderNumber: string): Promise<void> {
-  await db
-    .update(orders)
-    .set({
-      status: 'ready_for_collection',
-      readyAt: new Date(),
-    })
-    .where(eq(orders.orderNumber, orderNumber));
-
-  logger.info({ orderNumber }, 'Order marked ready (legacy)');
+  await sendWhatsAppMessage(phone, message);
+  logger.info({ orderNumber, phone }, 'Sent ready-for-pickup notification');
 }
 
 /**

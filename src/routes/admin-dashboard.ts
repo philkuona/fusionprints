@@ -24,7 +24,7 @@ import { desc } from 'drizzle-orm';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
-import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages } from '@/db/schema.js';
+import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
 
@@ -205,7 +205,44 @@ async function getOrderDetails(orderId: string) {
       )`,
     );
 
-  return { order, customer, items, jobs };
+  // Slip cards — the branded/operational 4×6 prints that print with every order
+  // (end_separator, order_info, promo). Each is a pre-rendered PNG on B2; sign a
+  // thumbnail so the operator can eyeball exactly what printed. The thermal
+  // envelope label (envelope_label) is ZPL with no image, so it's excluded here.
+  const rawSlips = await db
+    .select({
+      id: slipJobs.id,
+      slipType: slipJobs.slipType,
+      status: slipJobs.status,
+      sequencePosition: slipJobs.sequencePosition,
+      printReadyFileUrl: slipJobs.printReadyFileUrl,
+    })
+    .from(slipJobs)
+    .where(
+      and(
+        eq(slipJobs.orderId, orderId),
+        sql`${slipJobs.slipType} <> 'envelope_label'`,
+      ),
+    )
+    .orderBy(slipJobs.sequencePosition);
+
+  const slips = await Promise.all(
+    rawSlips.map(async (s) => {
+      let previewUrl: string | null = null;
+      try {
+        if (s.printReadyFileUrl) {
+          // Slip URLs are full B2 URLs; the storage key is the path component.
+          const key = new URL(s.printReadyFileUrl).pathname.replace(/^\/+/, '');
+          if (key) previewUrl = await getSignedImageUrl(key);
+        }
+      } catch {
+        previewUrl = null; // never let a missing slip image break the detail view
+      }
+      return { ...s, previewUrl };
+    }),
+  );
+
+  return { order, customer, items, jobs, slips };
 }
 
 // ===== Dashboard HTML =====
@@ -972,8 +1009,21 @@ function dashboardHtml(role: AdminRole = 'full'): string {
       return;
     }
 
-    const { order, customer, items, jobs } = data;
+    const { order, customer, items, jobs, slips } = data;
     document.getElementById('modal-title').textContent = order.orderNumber;
+
+    const slipLabels = { end_separator: 'Separator', order_info: 'Order info', promo: 'Promo card' };
+    const slipsHtml = (slips || []).map(s => \`
+      <div class="item-row">
+        <span style="display:flex;align-items:center;gap:10px;">
+          \${s.previewUrl
+            ? \`<a href="\${s.previewUrl}" target="_blank" rel="noopener"><img src="\${s.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\`
+            : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🪪</span>'}
+          <span>\${slipLabels[s.slipType] || s.slipType}</span>
+        </span>
+        <span class="badge badge-\${s.status}">\${s.status}</span>
+      </div>
+    \`).join('');
 
     const itemsHtml = items.map(item => \`
       <div class="item-row">
@@ -1039,6 +1089,12 @@ function dashboardHtml(role: AdminRole = 'full'): string {
             </span>
           </div>
         \`).join('')}
+      </div>\` : ''}
+
+      \${(slips && slips.length > 0) ? \`
+      <div class="items-list" style="margin-top:16px">
+        <div class="items-title">Slip cards (\${slips.length})</div>
+        \${slipsHtml}
       </div>\` : ''}
 
       <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">

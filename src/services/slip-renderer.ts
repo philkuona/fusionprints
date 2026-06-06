@@ -85,67 +85,84 @@ export interface EnvelopeLabelData {
 
 /**
  * Build the order-info card SVG (4×6, 300 DPI) — a faithful port of the approved
- * mockup (docs/slip-templates "slips-svg-preview"). Lands on top of the stack:
- * logo lockup + date, order number, customer name + phone, an items panel, the
- * Paid/method pills, and the "— ORDER START —" footer bar.
+ * CSS mockup (docs/slip-templates "slips-preview", slip 1) scaled ×3 to print
+ * resolution. Compact logo lockup + date, order number, name + phone, an items
+ * panel, Paid/method pills, and a small centered "— ORDER START —" line.
  */
 export function buildOrderInfoSvg(data: OrderInfoSlipData): string {
   registerBrandFonts();
   const W = DYE_SUB_4X6_PX.width;
   const H = DYE_SUB_4X6_PX.height;
+  const PAD = 72; // 24px × 3
+  const RIGHT = W - PAD;
   const { dateStr, timeStr } = formatDateParts(data.orderedAt);
 
-  // Items sit INSIDE the warm panel (matching the designed CSS mockup; the SVG
-  // mockup had a coordinate bug that dropped them below an empty box).
+  // Items inside the warm panel. Row = label (Fraunces) left + ×qty (mono) right.
   const visibleItems = data.items.slice(0, 4);
   const remainingItems = data.items.length - visibleItems.length;
-  const ITEM_ROW_Y = 858; // first row baseline
-  const ITEM_ROW_STEP = 66;
+  const boxTop = 560;
+  const boxPadX = 48; // 16px × 3
+  const itemX = PAD + boxPadX; // 120
+  const titleY = boxTop + 66;
+  const firstItemY = boxTop + 150;
+  const rowStep = 62;
   const itemRows = visibleItems
     .map((item, i) => {
-      const y = ITEM_ROW_Y + i * ITEM_ROW_STEP;
-      const label = item.sizeLabel;
+      const y = firstItemY + i * rowStep;
       return `
-  <text x="120" y="${y}" font-family="${BRAND.fontSans}" font-size="36" font-weight="500" fill="${BRAND.ink}">${escapeXml(label)}</text>
-  <text x="1080" y="${y}" font-family="${BRAND.fontMono}" font-size="32" font-weight="500" fill="${BRAND.inkSoft}" text-anchor="end">×${item.quantity}</text>`;
+  <text x="${itemX}" y="${y}" font-family="${BRAND.fontSerif}" font-size="39" font-weight="500" fill="${BRAND.ink}">${escapeXml(item.sizeLabel)}</text>
+  <text x="${RIGHT - boxPadX}" y="${y}" font-family="${BRAND.fontMono}" font-size="36" fill="${BRAND.inkSoft}" text-anchor="end">×${item.quantity}</text>`;
     })
     .join('');
   const remainingNote =
     remainingItems > 0
-      ? `<text x="120" y="${ITEM_ROW_Y + visibleItems.length * ITEM_ROW_STEP}" font-family="${BRAND.fontMono}" font-size="26" fill="${BRAND.inkMute}">+ ${remainingItems} more item${remainingItems === 1 ? '' : 's'}</text>`
+      ? `<text x="${itemX}" y="${firstItemY + visibleItems.length * rowStep}" font-family="${BRAND.fontMono}" font-size="30" fill="${BRAND.inkMute}">+ ${remainingItems} more item${remainingItems === 1 ? '' : 's'}</text>`
       : '';
   const rowCount = visibleItems.length + (remainingItems > 0 ? 1 : 0);
-  // Panel encloses header + rows: top 700, last row at ITEM_ROW_Y+(rowCount-1)*STEP, +40 pad.
-  const itemsBoxH = data.items.length > 0 ? ITEM_ROW_Y + (rowCount - 1) * ITEM_ROW_STEP + 40 - 700 : 100;
-  const methodW = Math.max(160, data.paymentMethod.length * 22 + 60);
+  const boxH = data.items.length > 0 ? firstItemY + (rowCount - 1) * rowStep + 54 - boxTop : 150;
+
+  // Paid + payment-method pills, bottom-left.
+  const pillY = 1604;
+  const pillH = 60;
+  const paidW = 188;
+  const gap = 24;
+  const methodX = PAD + paidW + gap;
+  const methodW = Math.max(170, data.paymentMethod.length * 26 + 64);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="${BRAND.cream}"/>
-  <g transform="translate(80, 100)">
-    <g transform="scale(2.4)">
+
+  <!-- Header: compact logo lockup + date -->
+  <g transform="translate(${PAD}, 72) scale(1.0714)">
+    <g transform="translate(0,6)">
       <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="${BRAND.ink}"/>
       <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="${BRAND.malachite}"/>
     </g>
-    <text x="160" y="96" font-family="${BRAND.fontSans}" font-size="84" font-weight="700" fill="${BRAND.ink}" letter-spacing="-1.7">fusionprints</text>
+    <text x="56" y="40" font-family="${BRAND.fontSans}" font-size="28" font-weight="700" fill="${BRAND.ink}" letter-spacing="-0.56">fusionprints</text>
   </g>
-  <text x="${W - 80}" y="160" font-family="${BRAND.fontMono}" font-size="28" fill="${BRAND.inkMute}" text-anchor="end" letter-spacing="1.2">${escapeXml(dateStr)} · ${escapeXml(timeStr)}</text>
-  <rect x="80" y="240" width="${W - 160}" height="2" fill="${BRAND.ink}" fill-opacity="0.10"/>
-  <text x="80" y="330" font-family="${BRAND.fontMono}" font-size="26" fill="${BRAND.inkMute}" letter-spacing="3.1">ORDER</text>
-  <text x="80" y="430" font-family="${BRAND.fontSerif}" font-size="84" font-weight="500" fill="${BRAND.ink}" letter-spacing="-1.5">${escapeXml(data.orderNumber)}</text>
-  <text x="80" y="540" font-family="${BRAND.fontSans}" font-size="52" font-weight="600" fill="${BRAND.ink}">${escapeXml(data.customerName)}</text>
-  <text x="80" y="600" font-family="${BRAND.fontMono}" font-size="34" fill="${BRAND.inkSoft}">${escapeXml(data.customerPhone)}</text>
-  <rect x="80" y="700" width="${W - 160}" height="${itemsBoxH}" rx="20" fill="${BRAND.bgWarm}"/>
-  <text x="120" y="770" font-family="${BRAND.fontMono}" font-size="26" fill="${BRAND.inkMute}" letter-spacing="3.1">ITEMS</text>${itemRows}
+  <text x="${RIGHT}" y="120" font-family="${BRAND.fontMono}" font-size="33" fill="${BRAND.inkMute}" text-anchor="end" letter-spacing="1.2">${escapeXml(dateStr)} · ${escapeXml(timeStr)}</text>
+  <rect x="${PAD}" y="186" width="${W - PAD * 2}" height="2" fill="${BRAND.ink}" fill-opacity="0.10"/>
+
+  <!-- Order, customer -->
+  <text x="${PAD}" y="270" font-family="${BRAND.fontMono}" font-size="27" fill="${BRAND.inkMute}" letter-spacing="3.2">ORDER</text>
+  <text x="${PAD}" y="345" font-family="${BRAND.fontSerif}" font-size="66" font-weight="500" fill="${BRAND.ink}">${escapeXml(data.orderNumber)}</text>
+  <text x="${PAD}" y="438" font-family="${BRAND.fontSans}" font-size="54" font-weight="600" fill="${BRAND.ink}">${escapeXml(data.customerName)}</text>
+  <text x="${PAD}" y="494" font-family="${BRAND.fontMono}" font-size="39" fill="${BRAND.inkSoft}">${escapeXml(data.customerPhone)}</text>
+
+  <!-- Items panel -->
+  <rect x="${PAD}" y="${boxTop}" width="${W - PAD * 2}" height="${boxH}" rx="24" fill="${BRAND.bgWarm}"/>
+  <text x="${itemX}" y="${titleY}" font-family="${BRAND.fontMono}" font-size="27" fill="${BRAND.inkMute}" letter-spacing="3.2">ITEMS</text>${itemRows}
   ${remainingNote}
-  <g transform="translate(80, ${H - 320})">
-    <rect x="0" y="0" width="200" height="64" rx="32" fill="${BRAND.malachite}"/>
-    <text x="100" y="42" font-family="${BRAND.fontMono}" font-size="26" font-weight="500" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="2.0">✓ PAID</text>
-    <rect x="220" y="0" width="${methodW}" height="64" rx="32" fill="${BRAND.ink}"/>
-    <text x="${220 + methodW / 2}" y="42" font-family="${BRAND.fontMono}" font-size="24" font-weight="500" fill="${BRAND.cream}" text-anchor="middle" letter-spacing="1.8">${escapeXml(data.paymentMethod.toUpperCase())}</text>
-  </g>
-  <rect x="0" y="${H - 100}" width="${W}" height="100" fill="${BRAND.ink}"/>
-  <text x="${W / 2}" y="${H - 50}" font-family="${BRAND.fontMono}" font-size="28" font-weight="500" fill="${BRAND.malachite}" text-anchor="middle" letter-spacing="3.0">— ORDER START —</text>
+
+  <!-- Status pills -->
+  <rect x="${PAD}" y="${pillY}" width="${paidW}" height="${pillH}" rx="${pillH / 2}" fill="${BRAND.malachite}"/>
+  <text x="${PAD + paidW / 2}" y="${pillY + 40}" font-family="${BRAND.fontMono}" font-size="28" font-weight="500" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="2.0">✓ PAID</text>
+  <rect x="${methodX}" y="${pillY}" width="${methodW}" height="${pillH}" rx="${pillH / 2}" fill="${BRAND.ink}"/>
+  <text x="${methodX + methodW / 2}" y="${pillY + 40}" font-family="${BRAND.fontMono}" font-size="26" font-weight="500" fill="${BRAND.cream}" text-anchor="middle" letter-spacing="1.8">${escapeXml(data.paymentMethod.toUpperCase())}</text>
+
+  <!-- Footer -->
+  <text x="${W / 2}" y="1720" font-family="${BRAND.fontMono}" font-size="27" fill="${BRAND.inkMute}" text-anchor="middle" letter-spacing="2.7">— ORDER START —</text>
 </svg>
 `;
 }
@@ -178,38 +195,51 @@ export async function renderOrderInfoSlip(
 
 /**
  * Build the end-separator card SVG (4×6, 300 DPI) — a faithful port of the
- * approved mockup (docs/slip-templates "slips-svg-preview"). Lands at the bottom
- * of the stack: corner crop-marks, centered logo mark, "Hold the moment.", the
- * customer's first name, and the WhatsApp help line. The "WhatsApp us" number is
- * the business WhatsApp line (single source of truth: env.BUSINESS_PHONE — the
- * same value the upload page uses for its wa.me link).
+ * approved CSS mockup (docs/slip-templates "slips-preview", slip 4) scaled ×3.
+ * Lands at the bottom of the stack: thin ink corner crop-marks, centered logo
+ * mark, "Hold the moment.", the customer's first name, and the WhatsApp help
+ * line. The "WhatsApp us" number is the business WhatsApp line (single source of
+ * truth: env.BUSINESS_PHONE — the same value the upload page uses).
  */
 export function buildEndSeparatorSvg(data: { orderNumber: string; customerFirstName: string }): string {
   registerBrandFonts();
   const W = DYE_SUB_4X6_PX.width;
   const H = DYE_SUB_4X6_PX.height;
+  const cx = W / 2;
   const whatsappNumber = env.BUSINESS_PHONE?.trim() ?? '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="${BRAND.cream}"/>
+
+  <!-- Corner crop-marks (top-left + bottom-right L brackets) -->
   <g stroke="${BRAND.ink}" stroke-width="6" fill="none" stroke-linecap="square">
-    <path d="M 80 80 L 80 160" />
-    <path d="M 80 80 L 160 80" />
-    <path d="M ${W - 80} ${H - 80} L ${W - 80} ${H - 160}" />
-    <path d="M ${W - 80} ${H - 80} L ${W - 160} ${H - 80}" />
+    <path d="M 48 48 L 48 144" />
+    <path d="M 48 48 L 144 48" />
+    <path d="M ${W - 48} ${H - 48} L ${W - 48} ${H - 144}" />
+    <path d="M ${W - 48} ${H - 48} L ${W - 144} ${H - 48}" />
   </g>
-  <g transform="translate(${W / 2 - 90}, 460) scale(4.5)">
+
+  <!-- Centered logo mark -->
+  <g transform="translate(${cx - 68}, 415) scale(3.4)">
     <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="${BRAND.ink}"/>
     <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="${BRAND.malachite}"/>
   </g>
-  <text x="${W / 2}" y="850" font-family="${BRAND.fontSerif}" font-size="120" font-weight="500" font-style="italic" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="-2.4">Hold</text>
-  <text x="${W / 2}" y="970" font-family="${BRAND.fontSerif}" font-size="120" font-weight="500" font-style="italic" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="-2.4">the moment.</text>
-  <rect x="${W / 2 - 40}" y="1080" width="80" height="3" fill="${BRAND.ink}" opacity="0.30"/>
-  <text x="${W / 2}" y="1180" font-family="${BRAND.fontSans}" font-size="46" font-weight="500" fill="${BRAND.ink}" text-anchor="middle">Thank you,</text>
-  <text x="${W / 2}" y="1280" font-family="${BRAND.fontSerif}" font-size="80" font-weight="500" font-style="italic" fill="${BRAND.coral}" text-anchor="middle" letter-spacing="-1.6">${escapeXml(data.customerFirstName)}</text>
-  <text x="${W / 2}" y="1480" font-family="${BRAND.fontSans}" font-size="36" fill="${BRAND.inkSoft}" text-anchor="middle">Any issues? <tspan font-weight="600" fill="${BRAND.ink}">WhatsApp us</tspan></text>
-  <text x="${W / 2}" y="1540" font-family="${BRAND.fontMono}" font-size="34" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="2.0">${escapeXml(whatsappNumber)}</text>
-  <text x="${W / 2}" y="${H - 100}" font-family="${BRAND.fontMono}" font-size="22" fill="${BRAND.inkMute}" text-anchor="middle" letter-spacing="2.4">— ${escapeXml(data.orderNumber)} · END —</text>
+
+  <!-- The brand moment -->
+  <text x="${cx}" y="735" font-family="${BRAND.fontSerif}" font-size="114" font-weight="500" font-style="italic" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="-2.3">Hold</text>
+  <text x="${cx}" y="860" font-family="${BRAND.fontSerif}" font-size="114" font-weight="500" font-style="italic" fill="${BRAND.ink}" text-anchor="middle" letter-spacing="-2.3">the moment.</text>
+  <rect x="${cx - 48}" y="958" width="96" height="3" fill="${BRAND.ink}" opacity="0.30"/>
+
+  <!-- Thank-you + customer first name -->
+  <text x="${cx}" y="1098" font-family="${BRAND.fontSans}" font-size="48" font-weight="500" fill="${BRAND.ink}" text-anchor="middle">Thank you,</text>
+  <text x="${cx}" y="1190" font-family="${BRAND.fontSerif}" font-size="66" font-weight="500" font-style="italic" fill="${BRAND.coral}" text-anchor="middle">${escapeXml(data.customerFirstName)}</text>
+
+  <!-- Help line -->
+  <text x="${cx}" y="1318" font-family="${BRAND.fontSans}" font-size="36" fill="${BRAND.inkSoft}" text-anchor="middle">Any issues? <tspan font-weight="600" fill="${BRAND.ink}">WhatsApp us</tspan></text>
+  <text x="${cx}" y="1374" font-family="${BRAND.fontSans}" font-size="36" fill="${BRAND.inkSoft}" text-anchor="middle">${escapeXml(whatsappNumber)}</text>
+
+  <!-- Footer meta -->
+  <text x="${cx}" y="${H - 84}" font-family="${BRAND.fontMono}" font-size="27" fill="${BRAND.inkMute}" text-anchor="middle" letter-spacing="2.7">— ${escapeXml(data.orderNumber)} · END —</text>
 </svg>
 `;
 }

@@ -140,7 +140,7 @@ slip rows + sequence numbers are needed.
 | Slips queued per order (`order.ts`) | 3 (separator, order_info, label) | 5 (+ promo 1 @60, promo 2 @70) |
 | `slip_jobs` columns | no template/campaign ref | + `template_version`, + `campaign_id`/slot ref |
 | Promo cards (launch) | none | 2 **static** PNGs (referral + upsell) in B2 `campaigns/`, reused per order |
-| Campaign management | none | admin CRUD: active campaign + slot defs + images |
+| Campaign management | ✅ **done** | `/admin/promos` (full admin): create campaign + upload 2 card PNGs → B2 `campaigns/`, set-active, delete |
 | Referral system | none | **deferred post-launch** (launch referral is a static card, no live codes) |
 | `end_separator` WhatsApp number | ✅ **done** | "Any issues? WhatsApp us {number}" from `env.BUSINESS_PHONE` (single source; keep = 360dialog display number) (§2a) |
 | **Print agent slip consumption** | ✅ **built** (image slips); 🟡 thermal unverified | Agent now polls per printer type (dye_sub_4x6/5x7, inkjet, thermal_label) so the per-order slip sequencing runs; downloads image slips by B2 key and prints them as-is (no crop). Envelope-label ZPL path coded but **unverified (no hardware)** — only polled when `THERMAL_PRINTER_NAME` set. next-job exposes the derived key. **Physical print still needs the print PC + a paid order to confirm.** |
@@ -167,8 +167,9 @@ slip rows + sequence numbers are needed.
    failure never blocks customer prints. Idempotent with `markOrderPaid`.
 4. **Fix the `end_separator` number** — render the WhatsApp **channel** number
    from the single source of truth (§2a), not `customerPhone`.
-5. **Campaign layer** — `promo_campaigns` + a minimal admin screen to set the
-   active campaign + upload its images.
+5. **Campaign layer** — ✅ `/admin/promos` (full admin): list/create campaigns,
+   upload the two 4×6 card PNGs (→ B2 `campaigns/`), set-active (one at a time),
+   delete. Replaces the seed script.
 6. **Thermal** — already built; verify ZPL via a logical viewer (labelary.com)
    until hardware arrives.
 7. **Design pass** — regenerate/improve the card designs with Gemini/creative;

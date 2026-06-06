@@ -627,7 +627,6 @@ function pageHtml(
     </div>
     <nav class="nav-tabs">
       <a href="/admin/jobs" class="nav-tab ${active === 'jobs' ? 'active' : ''}">Order Management</a>
-      <a href="/admin" class="nav-tab ${active === 'orders' ? 'active' : ''}">Dashboard</a>
       <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers</a>
       ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
       ${isOperator ? '' : `<a href="/admin/promos" class="nav-tab">Promos</a>`}
@@ -638,7 +637,6 @@ function pageHtml(
   </header>
   <div class="mobile-nav" id="mobile-nav">
     <a href="/admin/jobs" class="${active === 'jobs' ? 'active' : ''}">Order Management</a>
-    <a href="/admin" class="${active === 'orders' ? 'active' : ''}">Dashboard</a>
     <a href="/admin/printers" class="${active === 'printers' ? 'active' : ''}">Printers</a>
     ${isOperator ? '' : `<a href="/admin/metrics" class="${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
     ${isOperator ? '' : '<a href="/admin/qbo">QuickBooks</a>'}
@@ -673,9 +671,36 @@ function metricsPageHtml(): string {
     </select></div>
   </div>
 
+  <style>
+    .ops-snapshot { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:24px; }
+    .ops-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px; }
+    .ops-card .l { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); margin-bottom:6px; }
+    .ops-card .v { font-size:26px; font-weight:600; }
+    .ops-card .v.red { color:var(--red); } .ops-card .v.green { color:var(--green); }
+    .ops-card .v.blue { color:#60a5fa; } .ops-card .v.yellow { color:var(--amber); } .ops-card .v.orange { color:var(--accent); }
+    @media (max-width:768px) { .ops-snapshot { grid-template-columns:repeat(2,1fr); } }
+  </style>
+  <div class="page-sub" style="margin:-8px 0 8px;">Live operations snapshot</div>
+  <div id="ops-snapshot" class="ops-snapshot"><div class="loading">Loading…</div></div>
+
   <div id="content"><div class="loading">Loading metrics...</div></div>
 
   <script>
+    async function loadSnapshot() {
+      try {
+        const r = await fetch('/admin/api/stats');
+        if (!r.ok) return;
+        const s = await r.json();
+        document.getElementById('ops-snapshot').innerHTML =
+          '<div class="ops-card"><div class="l">Today\\'s orders</div><div class="v orange">' + (s.todayOrders ?? 0) + '</div></div>'
+        + '<div class="ops-card"><div class="l">Today\\'s revenue</div><div class="v green">$' + (s.todayRevenue ?? 0) + '</div></div>'
+        + '<div class="ops-card"><div class="l">Needs approval</div><div class="v ' + (s.pendingApproval > 0 ? 'red' : '') + '">' + (s.pendingApproval ?? 0) + '</div></div>'
+        + '<div class="ops-card"><div class="l">Ready to collect</div><div class="v blue">' + (s.readyForCollection ?? 0) + '</div></div>'
+        + '<div class="ops-card"><div class="l">In print queue</div><div class="v yellow">' + (s.queuedForPrint ?? 0) + '</div></div>'
+        + '<div class="ops-card"><div class="l">Pending payment</div><div class="v">' + (s.pendingPayment ?? 0) + '</div></div>';
+      } catch (e) { /* leave placeholder */ }
+    }
+
     async function loadMetrics() {
       const days = document.getElementById('days-select').value;
       const r = await fetch('/admin/api/ops/metrics?days=' + days);
@@ -827,6 +852,7 @@ function metricsPageHtml(): string {
     }
 
     loadMetrics();
+    loadSnapshot();
   </script>`;
   return pageHtml('metrics', 'Key Metrics', body);
 }
@@ -1097,6 +1123,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
     <div class="om-tabs">
       <a href="/admin/jobs?tab=active" class="om-tab ${tab === 'active' ? 'active' : ''}">Active</a>
       <a href="/admin/jobs?tab=completed" class="om-tab ${tab === 'completed' ? 'active' : ''}">Completed</a>
+      ${tab === 'active' ? '<span class="om-live"><span class="dot"></span>Live</span>' : ''}
     </div>`;
 
   let table: string;
@@ -1116,7 +1143,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
         <td><span class="om-badge">${o.status.replace(/_/g, ' ')}</span></td>
         <td class="om-mono">$${parseFloat(o.totalUsd).toFixed(2)}</td>
         <td>${o.fulfillmentMethod === 'delivery' ? '🚚 Delivery' : '🏪 Collection'}</td>
-        <td><a class="om-link" href="/admin?order=${o.id}">View</a></td>
+        <td><a class="om-link" href="#" onclick="showOrder('${o.id}');return false;">View</a></td>
       </tr>`,
               )
               .join('')
@@ -1143,7 +1170,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
         <td>${
           o.failed > 0
             ? `<button class="om-btn" onclick="reprintOrder('${o.id}')">↻ ${o.failed} failed</button>`
-            : `<a class="om-link" href="/admin?order=${o.id}">View</a>`
+            : `<a class="om-link" href="#" onclick="showOrder('${o.id}');return false;">View</a>`
         }</td>
       </tr>`,
               )
@@ -1152,31 +1179,185 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
     </table>`;
   }
 
-  const refresh = tab === 'active' ? '<script>setTimeout(function(){location.reload();}, 5000);</script>' : '';
+  const autoRefresh = tab === 'active';
   const body = `
     <style>
-      .om-tabs { display:flex; gap:4px; margin-bottom:16px; }
+      :root { --blue:#3b82f6; --radius:8px; }
+      .om-tabs { display:flex; gap:4px; margin-bottom:16px; align-items:center; }
       .om-tab { padding:8px 18px; border-radius:8px 8px 0 0; font-weight:600; font-size:14px; color:var(--mute,#8a7b66); text-decoration:none; border-bottom:2px solid transparent; }
       .om-tab.active { color:var(--text,#1f1b16); border-bottom-color:#05D668; }
+      .om-live { margin-left:auto; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--mute,#8a7b66); }
+      .om-live .dot { width:7px; height:7px; border-radius:50%; background:#05D668; animation:ompulse 2s infinite; }
+      @keyframes ompulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
       table.om { width:100%; border-collapse:collapse; background:var(--surface,#fff); border-radius:10px; overflow:hidden; font-size:13px; }
       table.om th, table.om td { text-align:left; padding:10px 12px; border-bottom:1px solid #00000010; }
       table.om th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--mute,#8a7b66); }
       .om-mono { font-family:ui-monospace,monospace; }
       .om-badge { font-size:11px; text-transform:capitalize; background:#00000008; padding:2px 8px; border-radius:999px; }
-      .om-link { color:#04A551; font-weight:600; text-decoration:none; }
+      .om-link { color:#04A551; font-weight:600; text-decoration:none; cursor:pointer; }
       .om-btn { cursor:pointer; border:1px solid #ff7a5955; color:#ff7a59; background:transparent; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:600; }
       .om-empty { text-align:center; color:var(--mute,#8a7b66); padding:28px; }
+
+      /* Order detail modal (shared theme with the rest of admin) */
+      .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:200; align-items:center; justify-content:center; padding:24px; }
+      .modal-overlay.open { display:flex; }
+      .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; width:100%; max-width:560px; max-height:80vh; overflow-y:auto; }
+      .modal-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+      .modal-title { font-weight:600; font-family:'DM Mono',monospace; color:var(--accent); }
+      .modal-close { background:none; border:none; color:var(--text2); cursor:pointer; font-size:20px; padding:0 4px; }
+      .modal-body { padding:20px; }
+      .detail-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+      .detail-row:last-child { border-bottom:none; }
+      .detail-label { color:var(--text2); }
+      .detail-value { font-weight:500; text-align:right; }
+      .items-list { margin-top:16px; }
+      .items-title { font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text2); margin-bottom:8px; }
+      .item-row { background:var(--surface2); border-radius:6px; padding:10px 12px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; font-size:13px; }
+      .loading, .empty { text-align:center; padding:40px; color:var(--text2); font-size:13px; }
+      .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:500; white-space:nowrap; }
+      .badge-pending_payment { background:#1c1917; color:#a8a29e; border:1px solid #292524; }
+      .badge-paid { background:#052e16; color:#86efac; border:1px solid #14532d; }
+      .badge-awaiting_approval { background:#431407; color:#fdba74; border:1px solid #7c2d12; }
+      .badge-queued_for_print { background:#1e3a5f; color:#93c5fd; border:1px solid #1d4ed8; }
+      .badge-printing { background:#1e3a5f; color:#60a5fa; border:1px solid #2563eb; }
+      .badge-printed { background:#422006; color:#fbbf24; border:1px solid #92400e; }
+      .badge-ready_for_pickup, .badge-ready_for_collection { background:#052e16; color:#4ade80; border:1px solid #16a34a; }
+      .badge-fulfilled, .badge-cancelled { background:#141414; color:#6b7280; border:1px solid #374151; }
+      .badge-failed { background:#450a0a; color:#f87171; border:1px solid #991b1b; }
+      .action-btn { padding:5px 10px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--text); font-size:11px; cursor:pointer; margin-right:4px; }
+      .action-btn:hover { background:var(--surface2); }
+      .action-btn.approve { border-color:var(--green); color:var(--green); }
+      .action-btn.ready { border-color:var(--blue); color:var(--blue); }
+      .action-btn.fulfil { border-color:var(--text2); color:var(--text2); }
+      .action-btn.cancel { border-color:var(--red); color:var(--red); }
+      @media (max-width:768px) { .modal-overlay { padding:0; align-items:flex-end; } .modal { max-width:100%; max-height:92vh; border-radius:12px 12px 0 0; } }
     </style>
     ${tabBar}
-    ${table}
+    <div id="om-content">${table}</div>
+
+    <!-- Order detail modal -->
+    <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+      <div class="modal">
+        <div class="modal-header">
+          <span class="modal-title" id="modal-title">Order</span>
+          <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body" id="modal-body">Loading...</div>
+      </div>
+    </div>
+
     <script>
-      async function reprintOrder(id) {
-        if (!confirm('Reprint failed jobs for this order?')) return;
-        await fetch('/admin/api/ops/orders/' + id + '/reprint', { method: 'POST' });
-        location.reload();
+      const VIEWER_ROLE = ${JSON.stringify(role)};
+      const IS_OPERATOR = VIEWER_ROLE === 'operator';
+
+      // Silently refresh just the table in the background (no visible page reload).
+      let omRefreshing = false;
+      async function omRefresh() {
+        if (omRefreshing || document.hidden) return;
+        omRefreshing = true;
+        try {
+          const res = await fetch(location.pathname + location.search, { cache: 'no-store' });
+          if (res.ok) {
+            const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+            const fresh = doc.getElementById('om-content');
+            const cur = document.getElementById('om-content');
+            if (fresh && cur) cur.innerHTML = fresh.innerHTML;
+          }
+        } catch (e) { /* transient — try again next tick */ }
+        omRefreshing = false;
       }
-    </script>
-    ${refresh}`;
+
+      function statusLabel(status) {
+        const labels = { pending_payment:'Pending payment', paid:'Paid', awaiting_approval:'Needs approval', queued_for_print:'In queue', printing:'Printing', printed:'Printed (release?)', ready_for_pickup:'Ready for pickup', ready_for_collection:'Ready', fulfilled:'Fulfilled', cancelled:'Cancelled', failed:'Failed' };
+        return labels[status] || status;
+      }
+
+      async function showOrder(orderId) {
+        document.getElementById('modal-overlay').classList.add('open');
+        document.getElementById('modal-body').innerHTML = '<div class="loading">Loading...</div>';
+        const res = await fetch(\`/admin/api/orders/\${orderId}\`);
+        const data = await res.json();
+        if (!data) { document.getElementById('modal-body').innerHTML = '<div class="empty">Order not found.</div>'; return; }
+        const { order, customer, items, jobs, slips } = data;
+        document.getElementById('modal-title').textContent = order.orderNumber;
+        const slipLabels = { end_separator:'Separator', order_info:'Order info', promo:'Promo card' };
+        const slipsHtml = (slips || []).map(s => \`
+          <div class="item-row">
+            <span style="display:flex;align-items:center;gap:10px;">
+              \${s.previewUrl ? \`<a href="\${s.previewUrl}" target="_blank" rel="noopener"><img src="\${s.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\` : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🪪</span>'}
+              <span>\${slipLabels[s.slipType] || s.slipType}</span>
+            </span>
+            <span class="badge badge-\${s.status}">\${s.status}</span>
+          </div>\`).join('');
+        const itemsHtml = items.map(item => \`
+          <div class="item-row">
+            <span style="display:flex;align-items:center;gap:10px;">
+              \${item.previewUrl ? \`<a href="\${item.previewUrl}" target="_blank" rel="noopener"><img src="\${item.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\` : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🖼</span>'}
+              <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})</span>
+            </span>
+            \${IS_OPERATOR ? '' : \`<span>$\${parseFloat(item.lineTotalUsd).toFixed(2)}</span>\`}
+          </div>\`).join('');
+        document.getElementById('modal-body').innerHTML = \`
+          <div class="detail-row"><span class="detail-label">Customer</span><span class="detail-value">\${customer?.name || 'Unknown'}</span></div>
+          <div class="detail-row"><span class="detail-label">Phone</span><span class="detail-value">\${customer?.phoneNumber || '—'}</span></div>
+          <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value"><span class="badge badge-\${order.status}">\${statusLabel(order.status)}</span></span></div>
+          \${IS_OPERATOR ? '' : \`<div class="detail-row"><span class="detail-label">Total</span><span class="detail-value">$\${parseFloat(order.totalUsd).toFixed(2)}</span></div>\`}
+          <div class="detail-row"><span class="detail-label">Fulfillment</span><span class="detail-value">\${order.fulfillmentMethod === 'collection' ? '🏪 Collection' : '🚚 Delivery'}</span></div>
+          \${order.deliveryAddress ? \`<div class="detail-row"><span class="detail-label">Address</span><span class="detail-value">\${order.deliveryAddress}</span></div>\` : ''}
+          <div class="detail-row"><span class="detail-label">Ordered</span><span class="detail-value">\${new Date(order.createdAt).toLocaleString()}</span></div>
+          \${order.paidAt ? \`<div class="detail-row"><span class="detail-label">Paid</span><span class="detail-value">\${new Date(order.paidAt).toLocaleString()}</span></div>\` : ''}
+          <div class="items-list"><div class="items-title">Items (\${items.length})</div>\${itemsHtml}</div>
+          \${jobs.length > 0 ? \`<div class="items-list" style="margin-top:16px"><div class="items-title">Print jobs</div>\${jobs.map(j => \`<div class="item-row"><span>\${j.printerName || 'Unassigned'}</span><span style="display:flex;gap:8px;align-items:center;"><span class="badge badge-\${j.status}">\${j.status}</span>\${j.status === 'failed' ? \`<button class="action-btn approve" style="padding:3px 8px;font-size:11px" onclick="reprintJob('\${j.id}')">↻ Reprint</button>\` : ''}</span></div>\`).join('')}</div>\` : ''}
+          \${(slips && slips.length > 0) ? \`<div class="items-list" style="margin-top:16px"><div class="items-title">Slip cards (\${slips.length})</div>\${slipsHtml}</div>\` : ''}
+          <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
+            \${order.status === 'awaiting_approval' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'approve'); closeModal()">✓ Approve for printing</button>\` : ''}
+            \${order.status === 'printed' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'release-for-pickup'); closeModal()">📦 Release for pickup</button>\` : ''}
+            \${order.status === 'ready_for_collection' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn ready" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">📦 Mark shipped</button>\` : ''}
+            \${(order.status === 'ready_for_collection' || order.status === 'ready_for_pickup' || order.status === 'shipped') ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">✓ Mark fulfilled</button>\` : ''}
+            \${jobs.some(j => j.status === 'failed') ? \`<button class="action-btn approve" onclick="reprintOrder('\${order.id}')">↻ Reprint failed jobs</button>\` : ''}
+            <button class="action-btn ready" onclick="previewReceipt('\${order.id}')">📄 Receipt</button>
+            \${(!IS_OPERATOR && !['fulfilled','cancelled','failed'].includes(order.status)) ? \`<button class="action-btn cancel" onclick="doAction('\${order.id}', 'cancel'); closeModal()">Cancel order</button>\` : ''}
+          </div>\`;
+      }
+
+      async function doAction(orderId, action) {
+        if (action === 'cancel' && !confirm('Cancel this order?')) return;
+        await fetch(\`/admin/api/orders/\${orderId}/\${action}\`, { method: 'POST' });
+        omRefresh();
+      }
+      async function doOpsAction(orderId, action) {
+        try { const r = await fetch('/admin/api/ops/orders/' + orderId + '/' + action, { method: 'POST' }); if (!r.ok) throw new Error(); omRefresh(); } catch (e) { alert('Action failed'); }
+      }
+      async function reprintJob(jobId) {
+        if (!confirm('Requeue this print job?')) return;
+        try { const r = await fetch('/admin/api/ops/jobs/' + jobId + '/reprint', { method: 'POST' }); if (!r.ok) throw new Error(); alert('Job requeued. The agent will pick it up on next poll.'); closeModal(); omRefresh(); } catch (e) { alert('Reprint failed'); }
+      }
+      async function reprintOrder(orderId) {
+        if (!confirm('Requeue all failed jobs in this order?')) return;
+        try { const r = await fetch('/admin/api/ops/orders/' + orderId + '/reprint', { method: 'POST' }); const data = await r.json(); if (!r.ok) throw new Error(); alert('Requeued ' + data.count + ' job(s). The agent will pick them up.'); closeModal(); omRefresh(); } catch (e) { alert('Reprint failed'); }
+      }
+      async function previewReceipt(orderId) {
+        try {
+          const r = await fetch('/admin/api/ops/orders/' + orderId + '/receipt-preview');
+          const data = await r.json();
+          if (!r.ok) throw new Error();
+          const send = confirm('Receipt preview:\\n\\n' + data.text + '\\n\\n\\nSend this to the customer via WhatsApp?');
+          if (send) { const r2 = await fetch('/admin/api/ops/orders/' + orderId + '/send-receipt', { method: 'POST' }); const d2 = await r2.json(); alert(d2.ok ? 'Receipt sent ✓' : 'Failed to send receipt'); }
+        } catch (e) { alert('Failed to preview receipt'); }
+      }
+      function closeModal(event) {
+        if (event && event.target !== document.getElementById('modal-overlay')) return;
+        document.getElementById('modal-overlay').classList.remove('open');
+      }
+
+      ${autoRefresh ? 'setInterval(omRefresh, 5000);' : ''}
+
+      // Deep-link: ?order=ID opens that order's detail (e.g. from a bookmark or /admin redirect).
+      (function () {
+        const id = new URLSearchParams(location.search).get('order');
+        if (id) showOrder(id);
+      })();
+    </script>`;
   return pageHtml('jobs', 'Order Management', body, role);
 }
 

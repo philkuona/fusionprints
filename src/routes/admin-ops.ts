@@ -16,7 +16,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { eq, and, gte, lte, sql, isNotNull } from 'drizzle-orm';
+import { eq, and, gte, lte, sql, isNotNull, inArray, desc } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import {
   orders,
@@ -25,6 +25,7 @@ import {
   slipJobs,
   printers,
   customers,
+  webUsers,
   siteVisits,
   waitlist,
 } from '@/db/schema.js';
@@ -624,8 +625,8 @@ function pageHtml(
       <span class="admin-tag">${isOperator ? 'operator' : 'admin'}</span>
     </div>
     <nav class="nav-tabs">
-      <a href="/admin/jobs" class="nav-tab ${active === 'jobs' ? 'active' : ''}">Print Queue</a>
-      <a href="/admin" class="nav-tab ${active === 'orders' ? 'active' : ''}">Completed Orders</a>
+      <a href="/admin/jobs" class="nav-tab ${active === 'jobs' ? 'active' : ''}">Order Management</a>
+      <a href="/admin" class="nav-tab ${active === 'orders' ? 'active' : ''}">Dashboard</a>
       <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers</a>
       ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
       ${isOperator ? '' : `<a href="/admin/promos" class="nav-tab">Promos</a>`}
@@ -635,8 +636,8 @@ function pageHtml(
   <button class="hamburger" id="hamburger-btn" onclick="toggleMobileNav()">&#9776;</button>
   </header>
   <div class="mobile-nav" id="mobile-nav">
-    <a href="/admin/jobs" class="${active === 'jobs' ? 'active' : ''}">Print Queue</a>
-    <a href="/admin" class="${active === 'orders' ? 'active' : ''}">Completed Orders</a>
+    <a href="/admin/jobs" class="${active === 'jobs' ? 'active' : ''}">Order Management</a>
+    <a href="/admin" class="${active === 'orders' ? 'active' : ''}">Dashboard</a>
     <a href="/admin/printers" class="${active === 'printers' ? 'active' : ''}">Printers</a>
     ${isOperator ? '' : `<a href="/admin/metrics" class="${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
     ${isOperator ? '' : '<a href="/admin/qbo">QuickBooks</a>'}
@@ -925,479 +926,6 @@ function printersPageHtml(role: AdminRole = 'full'): string {
   return pageHtml('printers', 'Printers', body, role);
 }
 
-// Jobs page — orders grouped, expandable, selectable jobs
-function jobsPageHtml(role: AdminRole = 'full'): string {
-  const body = `
-  <div class="page-header">
-    <div class="page-title">🛠️ Print Queue</div>
-    <div class="page-sub">Print queue grouped by order. Expand an order to select individual prints to reprint.</div>
-  </div>
-
-  <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-    <button class="btn filter-btn active" data-filter="active" onclick="setFilter(this, 'active')">⚡ Active</button>
-    <button class="btn filter-btn" data-filter="needs_attention" onclick="setFilter(this, 'needs_attention')">⚠️ Needs attention</button>
-    <button class="btn filter-btn" data-filter="" onclick="setFilter(this, '')">All</button>
-    <button class="btn filter-btn" data-filter="completed" onclick="setFilter(this, 'completed')">Completed</button>
-    <div style="flex:1"></div>
-    <button class="btn" onclick="loadJobs()">↻ Refresh</button>
-  </div>
-
-  <div id="content"><div class="loading">Loading jobs...</div></div>
-
-  <!-- Floating action bar that appears when items are selected -->
-  <div id="action-bar" style="display:none;">
-    <div style="display:flex;align-items:center;gap:14px;">
-      <div><span id="selected-count">0</span> job<span id="plural">s</span> selected</div>
-      <button class="btn btn-primary" onclick="reprintSelected()">↻ Reprint selected</button>
-      <button class="btn" onclick="clearSelection()">Clear</button>
-    </div>
-  </div>
-
-  <script>
-    let currentFilter = 'active';
-    const expanded = new Set();
-    const selected = new Set();
-    let allOrders = [];
-
-    async function loadJobs() {
-      const r = await fetch('/admin/api/ops/jobs' + (currentFilter ? '?filter=' + currentFilter : ''));
-      const data = await r.json();
-      allOrders = data.orders;
-      render();
-    }
-
-    function setFilter(btn, s) {
-      currentFilter = s;
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      // Clear selection when changing filter
-      selected.clear();
-      updateActionBar();
-      loadJobs();
-    }
-
-    function fmtTime(t) {
-      if (!t) return '—';
-      const d = new Date(t);
-      const ago = (Date.now() - d.getTime()) / 1000;
-      if (ago < 60) return Math.floor(ago) + 's ago';
-      if (ago < 3600) return Math.floor(ago / 60) + 'm ago';
-      if (ago < 86400) return Math.floor(ago / 3600) + 'h ago';
-      return d.toLocaleDateString();
-    }
-
-    function statusPill(status, count) {
-      if (!count) return '';
-      const colors = { queued: 'var(--amber)', printing: 'var(--accent)', done: 'var(--green)', failed: 'var(--red)' };
-      return '<span class="status-pill" style="color:' + colors[status] + ';border-color:' + colors[status] + ';">' + count + ' ' + status + '</span>';
-    }
-
-    function indicatorColor(o) {
-      if (o.counts.failed > 0) return 'var(--red)';
-      if (o.counts.printing > 0) return 'var(--accent)';
-      if (o.counts.queued > 0) return 'var(--amber)';
-      return 'var(--green)';
-    }
-
-    function render() {
-      if (!allOrders.length) {
-        document.getElementById('content').innerHTML = '<div class="card"><div class="muted">No orders match this filter.</div></div>';
-        return;
-      }
-
-      const html = allOrders.map(o => {
-        const isOpen = expanded.has(o.orderId);
-        const failedCount = o.counts.failed;
-        const totalJobs = o.jobs.length;
-        const allSelected = o.jobs.every(j => selected.has(j.id));
-        const someSelected = o.jobs.some(j => selected.has(j.id));
-
-        const headerHtml = \`
-          <div class="order-row">
-            <div class="order-row-main" onclick="toggle('\${o.orderId}')">
-              <div class="indicator" style="background:\${indicatorColor(o)};"></div>
-              <input type="checkbox" class="order-checkbox"
-                \${allSelected ? 'checked' : ''}
-                \${someSelected && !allSelected ? 'data-indeterminate="true"' : ''}
-                onclick="event.stopPropagation(); toggleOrder('\${o.orderId}', this.checked)" />
-              <div class="order-info">
-                <div class="order-number-row">
-                  <span class="order-number">\${o.orderNumber}</span>
-                  <span class="order-customer">\${o.customerName || o.customerPhone || ''}</span>
-                </div>
-                <div class="order-pills">
-                  \${statusPill('queued', o.counts.queued)}
-                  \${statusPill('printing', o.counts.printing)}
-                  \${statusPill('done', o.counts.done)}
-                  \${statusPill('failed', o.counts.failed)}
-                  <span class="muted" style="font-size:11px;margin-left:8px;">\${totalJobs} total</span>
-                </div>
-              </div>
-              <div class="order-meta">
-                <div class="muted" style="font-size:11px;">created</div>
-                <div style="font-size:13px;">\${fmtTime(o.createdAt)}</div>
-              </div>
-              <div class="order-actions" onclick="event.stopPropagation();">
-                \${failedCount > 0 ? \`<button class="btn" onclick="reprintFailedInOrder('\${o.orderId}')" style="white-space:nowrap;">↻ Reprint \${failedCount} failed</button>\` : ''}
-              </div>
-              <div class="expand-arrow" style="transform:\${isOpen ? 'rotate(90deg)' : 'rotate(0)'};">▶</div>
-            </div>
-            \${isOpen ? renderJobs(o.jobs) : ''}
-          </div>
-        \`;
-        return headerHtml;
-      }).join('');
-
-      document.getElementById('content').innerHTML = html;
-      // Apply indeterminate state to checkboxes
-      document.querySelectorAll('input[data-indeterminate="true"]').forEach(cb => {
-        cb.indeterminate = true;
-      });
-    }
-
-    function renderJobs(jobs) {
-      const rows = jobs.map(j => {
-        const isSelected = selected.has(j.id);
-        return \`
-          <div class="job-row \${isSelected ? 'selected' : ''}">
-            <input type="checkbox" \${isSelected ? 'checked' : ''}
-              onclick="toggleJob('\${j.id}', this.checked)" />
-            <div class="job-id mono">\${j.id.slice(0, 8)}</div>
-            <div class="mono">\${j.sizeCode}</div>
-            <div><span class="badge badge-\${j.status}">\${j.status}</span></div>
-            <div class="muted" style="font-size:12px;">attempts: \${j.attempts}</div>
-            <div class="muted" style="font-size:12px;">\${j.errorMessage ? '⚠️ ' + j.errorMessage : ''}</div>
-            <div style="text-align:right;">
-              \${j.status === 'failed' ? \`<button class="btn" onclick="reprintSingle('\${j.id}')" style="padding:4px 10px;font-size:11px;">↻ Reprint</button>\` : ''}
-            </div>
-          </div>
-        \`;
-      }).join('');
-      return '<div class="jobs-detail">' + rows + '</div>';
-    }
-
-    function toggle(orderId) {
-      if (expanded.has(orderId)) expanded.delete(orderId);
-      else expanded.add(orderId);
-      render();
-    }
-
-    function toggleJob(jobId, isChecked) {
-      if (isChecked) selected.add(jobId);
-      else selected.delete(jobId);
-      updateActionBar();
-      // Re-render to update checkbox states (in case the parent order checkbox needs to change)
-      render();
-    }
-
-    function toggleOrder(orderId, isChecked) {
-      const order = allOrders.find(o => o.orderId === orderId);
-      if (!order) return;
-      if (isChecked) {
-        order.jobs.forEach(j => selected.add(j.id));
-      } else {
-        order.jobs.forEach(j => selected.delete(j.id));
-      }
-      updateActionBar();
-      render();
-    }
-
-    function clearSelection() {
-      selected.clear();
-      updateActionBar();
-      render();
-    }
-
-    function updateActionBar() {
-      const bar = document.getElementById('action-bar');
-      if (selected.size === 0) {
-        bar.style.display = 'none';
-      } else {
-        bar.style.display = 'block';
-        document.getElementById('selected-count').textContent = selected.size;
-        document.getElementById('plural').textContent = selected.size === 1 ? '' : 's';
-      }
-    }
-
-    async function reprintSingle(jobId) {
-      if (!confirm('Requeue this print job?')) return;
-      const r = await fetch('/admin/api/ops/jobs/' + jobId + '/reprint', { method: 'POST' });
-      if (r.ok) {
-        loadJobs();
-      } else {
-        alert('Failed');
-      }
-    }
-
-    async function reprintSelected() {
-      if (!selected.size) return;
-      if (!confirm('Reprint ' + selected.size + ' selected job(s)?')) return;
-
-      const r = await fetch('/admin/api/ops/jobs/reprint-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobIds: Array.from(selected) }),
-      });
-      if (r.ok) {
-        const data = await r.json();
-        alert('Requeued ' + data.count + ' job(s). Agent will pick them up on next poll.');
-        selected.clear();
-        updateActionBar();
-        loadJobs();
-      } else {
-        alert('Reprint failed');
-      }
-    }
-
-    async function reprintFailedInOrder(orderId) {
-      if (!confirm('Reprint all failed jobs in this order?')) return;
-      const r = await fetch('/admin/api/ops/orders/' + orderId + '/reprint', { method: 'POST' });
-      if (r.ok) {
-        const data = await r.json();
-        alert('Requeued ' + data.count + ' failed job(s).');
-        loadJobs();
-      } else {
-        alert('Reprint failed');
-      }
-    }
-
-    loadJobs();
-  </script>
-
-  <style>
-    .order-row {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      margin-bottom: 8px;
-      overflow: hidden;
-    }
-    .order-row-main {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 14px 18px;
-      cursor: pointer;
-      transition: background 0.1s;
-    }
-    .order-row-main:hover { background: var(--surface2); }
-    .indicator {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .order-checkbox {
-      width: 16px;
-      height: 16px;
-      cursor: pointer;
-      accent-color: var(--accent);
-    }
-    .order-info {
-      flex: 1;
-      min-width: 0;
-    }
-    .order-number-row {
-      display: flex;
-      align-items: baseline;
-      gap: 12px;
-      margin-bottom: 4px;
-    }
-    .order-number {
-      font-family: 'DM Mono', monospace;
-      font-weight: 600;
-      font-size: 14px;
-      color: var(--accent);
-    }
-    .order-customer {
-      color: var(--text2);
-      font-size: 12px;
-    }
-    .order-pills {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-    .status-pill {
-      display: inline-block;
-      padding: 2px 8px;
-      border: 1px solid;
-      border-radius: 12px;
-      font-size: 11px;
-      font-weight: 500;
-    }
-    .order-meta {
-      text-align: right;
-      flex-shrink: 0;
-    }
-    .order-actions {
-      flex-shrink: 0;
-    }
-    .expand-arrow {
-      color: var(--text2);
-      font-size: 11px;
-      transition: transform 0.15s;
-    }
-    .jobs-detail {
-      background: var(--bg);
-      border-top: 1px solid var(--border);
-    }
-    .job-row {
-      display: grid;
-      grid-template-columns: 30px 80px 60px 80px 100px 1fr 100px;
-      gap: 12px;
-      align-items: center;
-      padding: 10px 18px 10px 50px;
-      border-top: 1px solid var(--border);
-      transition: background 0.1s;
-    }
-    .job-row:first-child { border-top: none; }
-    .job-row.selected { background: rgba(249, 115, 22, 0.08); }
-    .job-row:hover { background: var(--surface); }
-    .job-row.selected:hover { background: rgba(249, 115, 22, 0.12); }
-    .job-row input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-      accent-color: var(--accent);
-    }
-    .job-id { color: var(--text2); font-size: 12px; }
-
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 500;
-      text-transform: uppercase;
-      background: var(--surface2);
-      color: var(--text2);
-    }
-    .badge-queued { color: var(--amber); }
-    .badge-printing { color: var(--accent); }
-    .badge-done { color: var(--green); }
-    .badge-failed { color: var(--red); }
-
-    #action-bar {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--surface);
-      border: 1px solid var(--accent);
-      border-radius: 999px;
-      padding: 10px 20px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-      z-index: 100;
-    }
-  </style>`;
-  return pageHtml('jobs', 'Print Queue', body, role);
-}
-
-/**
- * Get jobs grouped by order.
- *
- * Filters:
- *   'active'           — orders with at least one queued/printing job
- *   'needs_attention'  — orders with at least one failed job
- *   'completed'        — orders where all jobs are done
- *   ''                 — everything
- */
-async function getJobsGroupedByOrder(filter?: string) {
-  // First get all jobs with their parent order info
-  const rows = await db
-    .select({
-      jobId: printJobs.id,
-      jobStatus: printJobs.status,
-      jobAttempts: printJobs.attempts,
-      queuedAt: printJobs.queuedAt,
-      startedAt: printJobs.startedAt,
-      completedAt: printJobs.completedAt,
-      errorMessage: printJobs.errorMessage,
-      sizeCode: orderItems.sizeCode,
-      orderId: orders.id,
-      orderNumber: orders.orderNumber,
-      orderCreatedAt: orders.createdAt,
-      customerName: customers.name,
-      customerPhone: customers.phoneNumber,
-    })
-    .from(printJobs)
-    .innerJoin(orderItems, eq(orderItems.id, printJobs.orderItemId))
-    .innerJoin(orders, eq(orders.id, orderItems.orderId))
-    .innerJoin(customers, eq(customers.id, orders.customerId))
-    .orderBy(sql`${orders.createdAt} DESC`, sql`${printJobs.queuedAt} ASC`)
-    .limit(500);
-
-  // Group by order
-  const orderMap = new Map<string, {
-    orderId: string;
-    orderNumber: string;
-    createdAt: Date;
-    customerName: string | null;
-    customerPhone: string;
-    jobs: Array<{
-      id: string;
-      status: string;
-      attempts: number;
-      queuedAt: Date;
-      startedAt: Date | null;
-      completedAt: Date | null;
-      errorMessage: string | null;
-      sizeCode: string;
-    }>;
-    counts: {
-      queued: number;
-      printing: number;
-      done: number;
-      failed: number;
-    };
-  }>();
-
-  for (const row of rows) {
-    let order = orderMap.get(row.orderId);
-    if (!order) {
-      order = {
-        orderId: row.orderId,
-        orderNumber: row.orderNumber,
-        createdAt: row.orderCreatedAt,
-        customerName: row.customerName,
-        customerPhone: row.customerPhone,
-        jobs: [],
-        counts: { queued: 0, printing: 0, done: 0, failed: 0 },
-      };
-      orderMap.set(row.orderId, order);
-    }
-    order.jobs.push({
-      id: row.jobId,
-      status: row.jobStatus,
-      attempts: row.jobAttempts,
-      queuedAt: row.queuedAt,
-      startedAt: row.startedAt,
-      completedAt: row.completedAt,
-      errorMessage: row.errorMessage,
-      sizeCode: row.sizeCode,
-    });
-    if (row.jobStatus === 'queued') order.counts.queued++;
-    else if (row.jobStatus === 'printing') order.counts.printing++;
-    else if (row.jobStatus === 'done') order.counts.done++;
-    else if (row.jobStatus === 'failed') order.counts.failed++;
-  }
-
-  let ordersList = Array.from(orderMap.values());
-
-  // Apply filters
-  if (filter === 'active') {
-    ordersList = ordersList.filter((o) => o.counts.queued > 0 || o.counts.printing > 0);
-  } else if (filter === 'needs_attention') {
-    ordersList = ordersList.filter((o) => o.counts.failed > 0);
-  } else if (filter === 'completed') {
-    ordersList = ordersList.filter(
-      (o) => o.counts.queued === 0 && o.counts.printing === 0 && o.counts.failed === 0,
-    );
-  }
-
-  return ordersList;
-}
 
 /**
  * Reprint a batch of jobs by ID.
@@ -1433,6 +961,224 @@ async function reprintJobBatch(jobIds: string[]): Promise<number> {
   return count;
 }
 
+// ===== Order Management (Active + Completed tabs) =====
+
+// Active = in the print pipeline; Completed = printed onward.
+const ACTIVE_STATUSES = ['paid', 'awaiting_approval', 'queued_for_print', 'printing'] as const;
+const COMPLETED_STATUSES = ['printed', 'ready_for_pickup', 'ready_for_collection', 'shipped', 'fulfilled'] as const;
+
+// Name across channels: WhatsApp customer, else web user.
+const nameExpr = sql<string | null>`COALESCE(${customers.name}, ${webUsers.displayName}, ${webUsers.email})`;
+
+type Bucket = 'small' | 'fiveinch' | 'large' | 'poster';
+function bucketFor(productType: string, sizeCode: string): Bucket {
+  if (productType === 'poster') return 'poster';
+  if (sizeCode === '4x6') return 'small';
+  if (sizeCode === '5x7') return 'fiveinch';
+  return 'large'; // 6x6, 6x8, 8x10
+}
+
+interface Tally {
+  done: number;
+  total: number;
+}
+const emptyTally = (): Tally => ({ done: 0, total: 0 });
+
+interface ActiveOrderRow {
+  id: string;
+  orderNumber: string;
+  createdAt: Date;
+  status: string;
+  name: string | null;
+  small: Tally;
+  fiveinch: Tally;
+  large: Tally;
+  poster: Tally;
+  slips: Tally; // separator + order-info + promos (excludes envelope label)
+  failed: number;
+}
+
+async function getActiveOrders(): Promise<ActiveOrderRow[]> {
+  const ords = await db
+    .select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      createdAt: orders.createdAt,
+      status: orders.status,
+      name: nameExpr,
+    })
+    .from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .leftJoin(webUsers, eq(orders.webUserId, webUsers.id))
+    .where(inArray(orders.status, [...ACTIVE_STATUSES]))
+    .orderBy(orders.createdAt);
+  if (ords.length === 0) return [];
+  const ids = ords.map((o) => o.id);
+
+  const prints = await db
+    .select({
+      orderId: orderItems.orderId,
+      productType: orderItems.productType,
+      sizeCode: orderItems.sizeCode,
+      status: printJobs.status,
+    })
+    .from(printJobs)
+    .innerJoin(orderItems, eq(printJobs.orderItemId, orderItems.id))
+    .where(inArray(orderItems.orderId, ids));
+
+  const slips = await db
+    .select({ orderId: slipJobs.orderId, status: slipJobs.status, slipType: slipJobs.slipType })
+    .from(slipJobs)
+    .where(inArray(slipJobs.orderId, ids));
+
+  const map = new Map<string, ActiveOrderRow>();
+  for (const o of ords) {
+    map.set(o.id, {
+      ...o,
+      small: emptyTally(),
+      fiveinch: emptyTally(),
+      large: emptyTally(),
+      poster: emptyTally(),
+      slips: emptyTally(),
+      failed: 0,
+    });
+  }
+  for (const p of prints) {
+    const m = map.get(p.orderId);
+    if (!m) continue;
+    const t = m[bucketFor(p.productType, p.sizeCode)];
+    t.total++;
+    if (p.status === 'done') t.done++;
+    if (p.status === 'failed') m.failed++;
+  }
+  for (const s of slips) {
+    if (s.slipType === 'envelope_label') continue; // label excluded from the count
+    const m = map.get(s.orderId);
+    if (!m) continue;
+    m.slips.total++;
+    if (s.status === 'done') m.slips.done++;
+    if (s.status === 'failed') m.failed++;
+  }
+  return ords.map((o) => map.get(o.id)!);
+}
+
+async function getCompletedOrdersList() {
+  return db
+    .select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      createdAt: orders.createdAt,
+      status: orders.status,
+      totalUsd: orders.totalUsd,
+      fulfillmentMethod: orders.fulfillmentMethod,
+      name: nameExpr,
+    })
+    .from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .leftJoin(webUsers, eq(orders.webUserId, webUsers.id))
+    .where(inArray(orders.status, [...COMPLETED_STATUSES]))
+    .orderBy(desc(orders.createdAt))
+    .limit(100);
+}
+
+function omCell(t: Tally): string {
+  if (t.total === 0) return '<span style="color:var(--text-mute,#8a7b66)">—</span>';
+  const done = t.done === t.total;
+  return `<span style="${done ? 'color:#05D668;font-weight:600' : ''}">${t.done} / ${t.total}</span>`;
+}
+
+function omDate(d: Date): string {
+  return new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminRole): Promise<string> {
+  const tabBar = `
+    <div class="om-tabs">
+      <a href="/admin/jobs?tab=active" class="om-tab ${tab === 'active' ? 'active' : ''}">Active</a>
+      <a href="/admin/jobs?tab=completed" class="om-tab ${tab === 'completed' ? 'active' : ''}">Completed</a>
+    </div>`;
+
+  let table: string;
+  if (tab === 'completed') {
+    const rows = await getCompletedOrdersList();
+    table = `<table class="om">
+      <thead><tr><th>Date</th><th>Order #</th><th>Name</th><th>Status</th><th>Total</th><th>Fulfilment</th><th></th></tr></thead>
+      <tbody>${
+        rows.length === 0
+          ? '<tr><td colspan="7" class="om-empty">No completed orders.</td></tr>'
+          : rows
+              .map(
+                (o) => `<tr>
+        <td>${omDate(o.createdAt)}</td>
+        <td class="om-mono">${o.orderNumber}</td>
+        <td>${o.name ?? '<span style="color:#8a7b66">—</span>'}</td>
+        <td><span class="om-badge">${o.status.replace(/_/g, ' ')}</span></td>
+        <td class="om-mono">$${parseFloat(o.totalUsd).toFixed(2)}</td>
+        <td>${o.fulfillmentMethod === 'delivery' ? '🚚 Delivery' : '🏪 Collection'}</td>
+        <td><a class="om-link" href="/admin?order=${o.id}">View</a></td>
+      </tr>`,
+              )
+              .join('')
+      }</tbody>
+    </table>`;
+  } else {
+    const rows = await getActiveOrders();
+    table = `<table class="om">
+      <thead><tr><th>Date</th><th>Order #</th><th>Name</th><th>Small Print</th><th>5″ Prints</th><th>Large Prints</th><th>Poster</th><th>Slips</th><th></th></tr></thead>
+      <tbody>${
+        rows.length === 0
+          ? '<tr><td colspan="9" class="om-empty">No active orders. Paid orders appear here while they print.</td></tr>'
+          : rows
+              .map(
+                (o) => `<tr>
+        <td>${omDate(o.createdAt)}</td>
+        <td class="om-mono">${o.orderNumber}</td>
+        <td>${o.name ?? '<span style="color:#8a7b66">—</span>'}</td>
+        <td>${omCell(o.small)}</td>
+        <td>${omCell(o.fiveinch)}</td>
+        <td>${omCell(o.large)}</td>
+        <td>${omCell(o.poster)}</td>
+        <td>${omCell(o.slips)}</td>
+        <td>${
+          o.failed > 0
+            ? `<button class="om-btn" onclick="reprintOrder('${o.id}')">↻ ${o.failed} failed</button>`
+            : `<a class="om-link" href="/admin?order=${o.id}">View</a>`
+        }</td>
+      </tr>`,
+              )
+              .join('')
+      }</tbody>
+    </table>`;
+  }
+
+  const refresh = tab === 'active' ? '<script>setTimeout(function(){location.reload();}, 5000);</script>' : '';
+  const body = `
+    <style>
+      .om-tabs { display:flex; gap:4px; margin-bottom:16px; }
+      .om-tab { padding:8px 18px; border-radius:8px 8px 0 0; font-weight:600; font-size:14px; color:var(--mute,#8a7b66); text-decoration:none; border-bottom:2px solid transparent; }
+      .om-tab.active { color:var(--text,#1f1b16); border-bottom-color:#05D668; }
+      table.om { width:100%; border-collapse:collapse; background:var(--surface,#fff); border-radius:10px; overflow:hidden; font-size:13px; }
+      table.om th, table.om td { text-align:left; padding:10px 12px; border-bottom:1px solid #00000010; }
+      table.om th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--mute,#8a7b66); }
+      .om-mono { font-family:ui-monospace,monospace; }
+      .om-badge { font-size:11px; text-transform:capitalize; background:#00000008; padding:2px 8px; border-radius:999px; }
+      .om-link { color:#04A551; font-weight:600; text-decoration:none; }
+      .om-btn { cursor:pointer; border:1px solid #ff7a5955; color:#ff7a59; background:transparent; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:600; }
+      .om-empty { text-align:center; color:var(--mute,#8a7b66); padding:28px; }
+    </style>
+    ${tabBar}
+    ${table}
+    <script>
+      async function reprintOrder(id) {
+        if (!confirm('Reprint failed jobs for this order?')) return;
+        await fetch('/admin/api/ops/orders/' + id + '/reprint', { method: 'POST' });
+        location.reload();
+      }
+    </script>
+    ${refresh}`;
+  return pageHtml('jobs', 'Order Management', body, role);
+}
+
 // ===== Route registration =====
 
 export async function registerAdminOps(app: FastifyInstance): Promise<void> {
@@ -1456,10 +1202,12 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
 
   // Print Queue page — both roles. Operator has full access (their job
   // is to ensure jobs print successfully).
+  // Order Management — Active (in-pipeline, bucketed printed/total) + Completed tabs.
   app.get('/admin/jobs', async (request, reply) => {
     const role = authenticatePage(request, reply);
     if (role === null) return;
-    reply.type('text/html').send(jobsPageHtml(role));
+    const tab = (request.query as { tab?: string }).tab === 'completed' ? 'completed' : 'active';
+    reply.type('text/html').send(await orderManagementPageHtml(tab, role));
   });
 
   // ===== API =====
@@ -1557,18 +1305,6 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // List of print jobs grouped by order (for jobs page)
-  app.get('/admin/api/ops/jobs', async (request, reply) => {
-    if (!checkAuth(request, reply)) return;
-    try {
-      const { filter } = request.query as { filter?: string };
-      const orders = await getJobsGroupedByOrder(filter);
-      return { orders };
-    } catch (err) {
-      logger.error({ err }, 'Failed to list jobs');
-      reply.status(500).send({ error: 'Failed to list jobs' });
-    }
-  });
 
   // Reprint a batch of jobs — full admin only (potential cost impact)
   app.post('/admin/api/ops/jobs/reprint-batch', async (request, reply) => {

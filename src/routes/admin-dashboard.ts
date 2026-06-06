@@ -736,8 +736,8 @@ function dashboardHtml(role: AdminRole = 'full'): string {
     <span class="admin-tag">${isOperator ? 'operator' : 'admin'}</span>
   </div>
   <nav class="nav-tabs">
-    <a href="/admin/jobs" class="nav-tab">Print Queue</a>
-    <a href="/admin" class="nav-tab active">Completed Orders</a>
+    <a href="/admin/jobs" class="nav-tab">Order Management</a>
+    <a href="/admin" class="nav-tab active">Dashboard</a>
     <a href="/admin/printers" class="nav-tab">Printers</a>
     ${isOperator ? '' : '<a href="/admin/metrics" class="nav-tab">Key Metrics</a>'}
     ${isOperator ? '' : '<a href="/admin/promos" class="nav-tab">Promos</a>'}
@@ -754,8 +754,8 @@ function dashboardHtml(role: AdminRole = 'full'): string {
 <button class="hamburger" id="hamburger-btn" onclick="toggleMobileNav()">&#9776;</button>
 </header>
 <div class="mobile-nav" id="mobile-nav">
-  <a href="/admin/jobs">Print Queue</a>
-  <a href="/admin" class="active">Completed Orders</a>
+  <a href="/admin/jobs">Order Management</a>
+  <a href="/admin" class="active">Dashboard</a>
   <a href="/admin/printers">Printers</a>
   <a href="/admin/metrics">Key Metrics</a>
   <a href="/admin/promos">Promos</a>
@@ -1149,6 +1149,12 @@ function dashboardHtml(role: AdminRole = 'full'): string {
   // Auto-refresh every 30 seconds
   loadAll();
   refreshTimer = setInterval(loadAll, 30000);
+
+  // Deep-link: /admin?order=ID opens that order's detail (from Order Management).
+  (function () {
+    const id = new URLSearchParams(location.search).get('order');
+    if (id) showOrder(id);
+  })();
 </script>
 </body>
 </html>`;

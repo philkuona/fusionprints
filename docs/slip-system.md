@@ -41,7 +41,7 @@ DNP stack (different printer), so its timing doesn't affect stack order.
 | Type | Printer | Rotates? | Content |
 |------|---------|----------|---------|
 | `end_separator` | dye_sub_4x6 | design rotates over time | "Hold the moment." brand moment + thank-you + WhatsApp help line |
-| `order_info` | dye_sub_4x6 | design rotates over time | Order #, customer, items, paid/method, (QR to admin — see open Q) |
+| `order_info` | dye_sub_4x6 | design rotates over time | Order #, customer, items, paid/method (no QR — customer-facing, dropped 2026-06-05) |
 | `promo` (slot 1) | dye_sub_4x6 | **content is campaign-driven** | Launch: referral card. Later: a campaign upsell |
 | `promo` (slot 2) | dye_sub_4x6 | **content is campaign-driven** | Launch: upsell with product-image frames. Later: a second upsell |
 | `envelope_label` | thermal_label | rarely | LASTNAME, name, order #, paid/method, phone, items, FusionPrints HRE, timestamp |
@@ -138,11 +138,12 @@ slip rows + sequence numbers are needed.
 
 ---
 
-## 7. Open / minor decisions
-- **QR on `order_info`:** mockup shows a "scan to view in admin" QR; the
-  production SVG dropped it. Keep it or not?
-- **Campaign image storage:** confirm B2 folder + naming for Slip-2 product
-  images selected in admin.
+## 7. Resolved decisions (2026-06-05)
+- **No QR on `order_info`:** dropped — it's a customer-facing card, the
+  scan-to-admin QR isn't needed.
+- **Campaign images → B2 `campaigns/`:** admin-selected upsell product images
+  are stored under a `campaigns/` prefix in B2 and referenced by the active
+  campaign.
 
 ---
 

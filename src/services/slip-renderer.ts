@@ -121,6 +121,9 @@ export function buildOrderInfoSvg(data: OrderInfoSlipData): string {
   const rowCount = visibleItems.length + (remainingItems > 0 ? 1 : 0);
   const boxH = data.items.length > 0 ? firstItemY + (rowCount - 1) * rowStep + 54 - boxTop : 150;
 
+  // Keep a long name (or an email used as a name) inside the card.
+  const name = fitText(data.customerName, 54, 34, W - PAD * 2, 0.55);
+
   // Paid + payment-method pills, bottom-left.
   const pillY = 1604;
   const pillH = 60;
@@ -147,7 +150,7 @@ export function buildOrderInfoSvg(data: OrderInfoSlipData): string {
   <!-- Order, customer -->
   <text x="${PAD}" y="270" font-family="${BRAND.fontMono}" font-size="27" fill="${BRAND.inkMute}" letter-spacing="3.2">ORDER</text>
   <text x="${PAD}" y="345" font-family="${BRAND.fontSerif}" font-size="66" font-weight="500" fill="${BRAND.ink}">${escapeXml(data.orderNumber)}</text>
-  <text x="${PAD}" y="438" font-family="${BRAND.fontSans}" font-size="54" font-weight="600" fill="${BRAND.ink}">${escapeXml(data.customerName)}</text>
+  <text x="${PAD}" y="438" font-family="${BRAND.fontSans}" font-size="${name.fontSize}" font-weight="600" fill="${BRAND.ink}">${escapeXml(name.text)}</text>
   <text x="${PAD}" y="494" font-family="${BRAND.fontMono}" font-size="39" fill="${BRAND.inkSoft}">${escapeXml(data.customerPhone)}</text>
 
   <!-- Items panel -->
@@ -207,6 +210,8 @@ export function buildEndSeparatorSvg(data: { orderNumber: string; customerFirstN
   const H = DYE_SUB_4X6_PX.height;
   const cx = W / 2;
   const whatsappNumber = env.BUSINESS_PHONE?.trim() ?? '';
+  // Centered first name — shrink/clip so an unusually long one stays on the card.
+  const firstName = fitText(data.customerFirstName, 66, 44, W - 144, 0.52);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="${BRAND.cream}"/>
@@ -232,7 +237,7 @@ export function buildEndSeparatorSvg(data: { orderNumber: string; customerFirstN
 
   <!-- Thank-you + customer first name -->
   <text x="${cx}" y="1098" font-family="${BRAND.fontSans}" font-size="48" font-weight="500" fill="${BRAND.ink}" text-anchor="middle">Thank you,</text>
-  <text x="${cx}" y="1190" font-family="${BRAND.fontSerif}" font-size="66" font-weight="500" font-style="italic" fill="${BRAND.coral}" text-anchor="middle">${escapeXml(data.customerFirstName)}</text>
+  <text x="${cx}" y="1190" font-family="${BRAND.fontSerif}" font-size="${firstName.fontSize}" font-weight="500" font-style="italic" fill="${BRAND.coral}" text-anchor="middle">${escapeXml(firstName.text)}</text>
 
   <!-- Help line -->
   <text x="${cx}" y="1318" font-family="${BRAND.fontSans}" font-size="36" fill="${BRAND.inkSoft}" text-anchor="middle">Any issues? <tspan font-weight="600" fill="${BRAND.ink}">WhatsApp us</tspan></text>
@@ -401,7 +406,30 @@ export function extractFirstName(fullName: string): string {
     // "Lastname;Firstname"
     return name.split(';')[1]?.trim() || name.split(';')[0].trim() || 'Friend';
   }
-  return name.split(/\s+/)[0];
+  // If the "name" is actually an email (no display name set), use the local part.
+  const first = name.split(/\s+/)[0];
+  return first.includes('@') ? first.split('@')[0] : first;
+}
+
+/**
+ * Pick a font size that keeps `text` within `maxWidth`, shrinking from `baseSize`
+ * down to `minSize`, and (only if still too wide at minSize) truncate with an
+ * ellipsis. Keeps long names/emails from ever running off the card so every
+ * order's card lays out identically. `emRatio` ≈ average glyph width per em.
+ */
+function fitText(
+  text: string,
+  baseSize: number,
+  minSize: number,
+  maxWidth: number,
+  emRatio: number,
+): { text: string; fontSize: number } {
+  if (!text) return { text, fontSize: baseSize };
+  if (text.length * baseSize * emRatio <= maxWidth) return { text, fontSize: baseSize };
+  const fontSize = Math.max(minSize, Math.floor(maxWidth / (text.length * emRatio)));
+  const maxChars = Math.floor(maxWidth / (fontSize * emRatio));
+  const out = text.length > maxChars ? `${text.slice(0, Math.max(1, maxChars - 1))}…` : text;
+  return { text: out, fontSize };
 }
 
 /** Split a date into the card's "02 May 2026" + "14:32" parts. */

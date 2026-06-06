@@ -62,6 +62,13 @@ const envSchema = z.object({
   PRINT_AGENT_API_KEY: z.string().default(''),
   // Fallback OS printer name when a job's printer has no osPrinterName set.
   DNP_PRINTER_NAME: z.string().default(''),
+  // Virtual printers (service virtualisation): when true, the backend runs an
+  // in-process "virtual agent" that drives queued jobs through printing→done so
+  // the whole print flow is observable in admin with no hardware and no agent.
+  // Keep OFF in real production (it would race a real agent).
+  VIRTUAL_PRINTERS: z.string().default('false').transform((v) => v === 'true' || v === '1'),
+  VIRTUAL_PRINT_MS: z.coerce.number().int().positive().default(2500), // dwell per job
+  VIRTUAL_POLL_MS: z.coerce.number().int().positive().default(1500),  // poll interval
 
   // Admin
   ADMIN_SESSION_SECRET: z.string().default(''),

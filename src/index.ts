@@ -19,6 +19,7 @@ import { registerAdminOps } from '@/routes/admin-ops.js';
 import { registerAdminPromos } from '@/routes/admin-promos.js';
 import { registerAdminPricing } from '@/routes/admin-pricing.js';
 import { loadAndApplyPriceOverrides } from '@/services/price-overrides.js';
+import { startVirtualPrinters } from '@/services/virtual-printer.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
 import { registerAgentRoutes } from '@/routes/agent-api.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
@@ -160,6 +161,9 @@ async function main(): Promise<void> {
     // Start the daily image-expiry cleanup (Phase 2.1.6). Safe by default:
     // dry-run unless IMAGE_CLEANUP_DRY_RUN=false. Timers are unref-ed.
     startImageCleanupSchedule();
+
+    // Virtual printers (service virtualisation) — off unless VIRTUAL_PRINTERS=true.
+    startVirtualPrinters(`http://127.0.0.1:${env.PORT}`);
   } catch (err) {
     logger.fatal({ err }, 'Failed to start server');
     process.exit(1);

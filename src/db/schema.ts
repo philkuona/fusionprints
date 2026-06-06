@@ -102,6 +102,7 @@ export const slipTypeEnum = pgEnum('slip_type', [
   'order_info',      // 4×6 dye-sub card with order details (top of stack)
   'end_separator',   // 4×6 dye-sub card with brand moment (bottom of stack)
   'envelope_label',  // 2-1/4×4 thermal sticker for envelope exterior
+  'promo',           // 4×6 dye-sub campaign card (referral / upsell); kind on the campaign slot
 ]);
 
 // ===== Tables =====
@@ -351,6 +352,12 @@ export const slipJobs = pgTable(
     status: printJobStatusEnum('status').notNull().default('queued'),
     printReadyFileUrl: text('print_ready_file_url'),
     payloadJson: jsonb('payload_json'), // for ZPL string or rendered slip data
+    // Which design version rendered this slip — lets card designs rotate while
+    // historical rows still record what was actually printed.
+    templateVersion: integer('template_version').notNull().default(1),
+    // For promo slips: the campaign that produced this card. Null for the
+    // separator / order-info / label.
+    campaignId: uuid('campaign_id').references(() => promoCampaigns.id, { onDelete: 'set null' }),
     attempts: integer('attempts').notNull().default(0),
     errorMessage: text('error_message'),
     queuedAt: timestamp('queued_at', { withTimezone: true }).notNull().defaultNow(),
@@ -362,6 +369,40 @@ export const slipJobs = pgTable(
     orderIdx: index('slip_jobs_order_idx').on(table.orderId),
     targetPrinterIdx: index('slip_jobs_target_printer_idx').on(table.targetPrinterType),
     sequenceIdx: index('slip_jobs_sequence_idx').on(table.orderId, table.sequencePosition),
+  }),
+);
+
+/**
+ * Promo campaigns — the source for the two campaign promo cards printed with
+ * every order (see docs/slip-system.md). Exactly one row is `active` at a time.
+ *
+ * Each slot defines one promo card: its kind (referral or upsell), the editable
+ * copy + product-image keys, and `imageKey` = the B2 key of the rendered 4×6
+ * PNG that actually prints (static per campaign, so rendered once and reused).
+ * Launch: slot1 = referral, slot2 = upsell. Later: both upsells.
+ */
+export interface PromoSlot {
+  kind: 'referral' | 'upsell';
+  imageKey: string | null;        // B2 key of the rendered 4×6 card PNG (campaigns/...)
+  headline?: string;
+  body?: string;
+  cta?: string;
+  productImageKeys?: string[];     // B2 keys for upsell frame images
+}
+
+export const promoCampaigns = pgTable(
+  'promo_campaigns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    active: boolean('active').notNull().default(false),
+    slot1: jsonb('slot1').$type<PromoSlot>().notNull(),
+    slot2: jsonb('slot2').$type<PromoSlot>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    activeIdx: index('promo_campaigns_active_idx').on(table.active),
   }),
 );
 
@@ -387,6 +428,9 @@ export type NewPrintJob = typeof printJobs.$inferInsert;
 
 export type SlipJob = typeof slipJobs.$inferSelect;
 export type NewSlipJob = typeof slipJobs.$inferInsert;
+
+export type PromoCampaign = typeof promoCampaigns.$inferSelect;
+export type NewPromoCampaign = typeof promoCampaigns.$inferInsert;
 
 export type Printer = typeof printers.$inferSelect;
 export type NewPrinter = typeof printers.$inferInsert;

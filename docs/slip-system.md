@@ -34,16 +34,31 @@ thermal printer, hand-applied to the **outside** of the envelope. Big LASTNAME
 for sorting the pickup bin without opening anything. This is independent of the
 DNP stack (different printer), so its timing doesn't affect stack order.
 
+### 2a. The "WhatsApp us" number (single source of truth) — required 2026-06-05
+The `end_separator`'s help line ("Any issues? WhatsApp us …") must show the
+**actual WhatsApp channel number customers message** — i.e. the number behind
+the 360dialog account (`WHATSAPP_PHONE_NUMBER_ID`; its human-readable form
+arrives on inbound webhooks as `metadata.display_phone_number`). It must **not**
+be the customer's own phone, and must not drift from the live channel number.
+
+Implementation note / known bug: the current WIP `slip-renderer.ts` renders
+`data.customerPhone` on this line — that prints the *customer's* number. Fix:
+source it from one config value that is the WhatsApp business number (set
+`BUSINESS_PHONE` to exactly the 360dialog display number and use it for the slip,
+the upload-page WhatsApp link, and anywhere else the business number appears), or
+persist `display_phone_number` from the webhook and read that. One source, used
+everywhere.
+
 ---
 
 ## 2. The five card types
 
 | Type | Printer | Rotates? | Content |
 |------|---------|----------|---------|
-| `end_separator` | dye_sub_4x6 | design rotates over time | "Hold the moment." brand moment + thank-you + WhatsApp help line |
-| `order_info` | dye_sub_4x6 | design rotates over time | Order #, customer, items, paid/method (no QR — customer-facing, dropped 2026-06-05) |
-| `promo` (slot 1) | dye_sub_4x6 | **content is campaign-driven** | Launch: referral card. Later: a campaign upsell |
-| `promo` (slot 2) | dye_sub_4x6 | **content is campaign-driven** | Launch: upsell with product-image frames. Later: a second upsell |
+| `end_separator` | dye_sub_4x6 | design rotates; **always shows customer name** | "Hold the moment." + thank-you, {customer name}, + "WhatsApp us" help line = **the WhatsApp channel number** (see §2a) |
+| `order_info` | dye_sub_4x6 | design rotates; **always shows customer name** | Order #, {customer name}, items, paid/method (no QR — customer-facing, dropped 2026-06-05) |
+| `promo` (slot 1) | dye_sub_4x6 | campaign-driven | Launch: **static** referral card (not personalised). Later: a campaign upsell |
+| `promo` (slot 2) | dye_sub_4x6 | campaign-driven | Launch: upsell with product-image frames. Later: a second upsell |
 | `envelope_label` | thermal_label | rarely | LASTNAME, name, order #, paid/method, phone, items, FusionPrints HRE, timestamp |
 
 The mockups (`slips-preview.html`, `slips-svg-preview.html`,
@@ -66,12 +81,40 @@ Gemini / creative skills regenerate and refine the visual designs.
   (the two slot definitions + uploads/selects the product images). No code edit
   per change.
 
-### Referral (live system — decided 2026-06-05)
-Real per-customer codes, not static copy:
-- A unique referral code per customer (web user; WA customer where applicable).
-- Redemption tracking (who referred whom, reward state) so "you both get a free
-  5×7" can actually be honoured.
-- Code is rendered onto the referral card and echoed via WhatsApp.
+### Referral (corrected 2026-06-05 — STATIC for launch)
+At launch the referral card is **one-time / static** — a single shared design
+(e.g. one launch code or a generic "share with a friend" CTA), the **same for
+every order**. It is NOT personalised per customer at launch.
+
+> The earlier "live per-customer referral codes + redemption tracking" decision
+> is **deferred to post-launch**. It is no longer a launch deliverable, which
+> removes the referral subsystem (codes/redemption tables) from launch scope.
+
+Because it's static, the launch referral card is a **pre-rendered image reused
+across orders** (same path as the upsell — see §3a), not a per-order render.
+
+---
+
+## 3a. Rendering architecture (decided 2026-06-05)
+
+Design everything in **HTML** (with the ui-ux + Gemini skills); choose the
+render path per card by whether it's personalised:
+
+| Card | Personalised? | Render path |
+|------|---------------|-------------|
+| `order_info` | yes (name, items) | **per order**, SVG/Sharp (lean, no browser) |
+| `end_separator` | yes (name; business WA number) | **per order**, SVG/Sharp |
+| `promo` referral (launch) | no (static) | **once**, HTML→PNG, stored in B2 `campaigns/`, reused |
+| `promo` upsell | no (per campaign) | **once per campaign**, HTML→PNG, stored in B2 `campaigns/`, reused |
+| `envelope_label` | yes | ZPL string (no image) |
+
+Consequence: **no headless browser runs in the order pipeline.** HTML→PNG only
+happens at design/campaign time (can even be done by the skills offline and the
+PNG uploaded). Recommended pattern when a card needs both rich design *and*
+per-order data: HTML-designed **static background → PNG once → Sharp composites
+the dynamic text** (name, etc.) per order. This also fixes brand-font fidelity
+(today's SVG falls back to Georgia; bundled `@font-face` in HTML renders true
+Fraunces/Outfit).
 
 ---
 
@@ -98,32 +141,38 @@ slip rows + sequence numbers are needed.
 | `slip_type` enum | `order_info`, `end_separator`, `envelope_label` | + `promo` (or `promo_referral` / `promo_upsell`) |
 | Slips queued per order (`order.ts`) | 3 (separator, order_info, label) | 5 (+ promo 1 @60, promo 2 @70) |
 | `slip_jobs` columns | no template/campaign ref | + `template_version`, + `campaign_id`/slot ref |
-| Promo renderers | none | referral + upsell (upsell composites campaign images) |
+| Promo cards (launch) | none | 2 **static** PNGs (referral + upsell) in B2 `campaigns/`, reused per order |
 | Campaign management | none | admin CRUD: active campaign + slot defs + images |
-| Referral system | none | codes + redemption tracking + surfacing |
+| Referral system | none | **deferred post-launch** (launch referral is a static card, no live codes) |
+| `end_separator` WhatsApp number | renders `customerPhone` (WIP — wrong) | the WhatsApp channel number, single source of truth (§2a) |
 | Thermal label | ZPL generator built | unchanged; **hardware not yet** — verify ZPL logically |
 
 ---
 
-## 6. Implementation plan (phased, each independently shippable)
-
-1. **Schema migration** — add promo enum value(s), `template_version` (+ campaign
-   reference) on `slip_jobs`; new `promo_campaigns` table; referral tables
-   (`referral_codes`, `referral_redemptions`).
-2. **Queue promos** in `order.ts` at payment: promo 1 (seq 60) + promo 2 (seq 70)
-   from the active campaign, each in its own try/catch so a slip failure never
-   blocks customer prints. Idempotent with `markOrderPaid`.
-3. **Promo renderers** — `renderAndUploadPromoReferral`, `renderAndUploadPromoUpsell`
-   (SVG → PNG → B2, reusing the existing pipeline; upsell pulls campaign image
-   keys into the frames).
-4. **Campaign layer** — `promo_campaigns` + a minimal admin screen to set the
-   active campaign and its images; renderers read the active campaign.
-5. **Referral subsystem** — code generation per customer, redemption tracking,
-   surfacing on the card + WhatsApp.
+### Launch scope (minimum to ship the 4-card stack)
+1. **Schema migration** — add promo enum value(s), `template_version` + a campaign
+   reference on `slip_jobs`; `promo_campaigns` table. *(No referral tables at
+   launch — see deferred.)*
+2. **Static promo PNGs** — design the referral + upsell cards in HTML, render to
+   PNG (skills/offline or campaign-save), store under B2 `campaigns/`. No
+   per-order render for promos at launch.
+3. **Queue promos** in `order.ts` at payment: promo 1 (seq 60) + promo 2 (seq 70),
+   each pointing at the active campaign's PNG, each in its own try/catch so a slip
+   failure never blocks customer prints. Idempotent with `markOrderPaid`.
+4. **Fix the `end_separator` number** — render the WhatsApp **channel** number
+   from the single source of truth (§2a), not `customerPhone`.
+5. **Campaign layer** — `promo_campaigns` + a minimal admin screen to set the
+   active campaign + upload its images.
 6. **Thermal** — already built; verify ZPL via a logical viewer (labelary.com)
    until hardware arrives.
 7. **Design pass** — regenerate/improve the card designs with Gemini/creative;
    store campaign product images in B2.
+
+### Deferred (post-launch)
+- **Live referral subsystem** — per-customer code generation, redemption
+  tracking, surfacing on the card + WhatsApp, and personalised per-order
+  rendering of the referral card. Not required for launch (launch referral is a
+  single static card).
 
 ### Seamless-flow principles
 - **Slips are best-effort, never blocking.** A render/queue failure logs + retries

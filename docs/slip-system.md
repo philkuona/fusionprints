@@ -145,7 +145,7 @@ slip rows + sequence numbers are needed.
 | Campaign management | none | admin CRUD: active campaign + slot defs + images |
 | Referral system | none | **deferred post-launch** (launch referral is a static card, no live codes) |
 | `end_separator` WhatsApp number | renders `customerPhone` (WIP — wrong) | the WhatsApp channel number, single source of truth (§2a) |
-| **Print agent slip consumption** | **NONE — agent has zero slip handling** | agent must process `slip` / `envelope_label` jobs, downloading by **B2 key** (bucket is private; the stored direct URL 401s — prints already download by key with the agent's own creds). Slip jobs/agent-api must expose the storage key. Affects ALL slips, not just promos. |
+| **Print agent slip consumption** | ✅ **built** (image slips); 🟡 thermal unverified | Agent now polls per printer type (dye_sub_4x6/5x7, inkjet, thermal_label) so the per-order slip sequencing runs; downloads image slips by B2 key and prints them as-is (no crop). Envelope-label ZPL path coded but **unverified (no hardware)** — only polled when `THERMAL_PRINTER_NAME` set. next-job exposes the derived key. **Physical print still needs the print PC + a paid order to confirm.** |
 | Thermal label | ZPL generator built | unchanged; **hardware not yet** — verify ZPL logically |
 
 ---

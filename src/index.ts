@@ -30,6 +30,7 @@ import cookie from '@fastify/cookie';
 import session from '@fastify/session';
 import { PgSessionStore, sweepExpiredSessions } from '@/utils/session-store.js';
 import { registerAdminLogin } from '@/routes/admin-login.js';
+import { registerAdminFonts } from '@/routes/admin-fonts.js';
 import { registerWebAuthRoutes } from '@/routes/web/auth.js';
 import { registerWebGoogleAuthRoutes } from '@/routes/web/google-auth.js';
 import { registerWebProfileRoutes } from '@/routes/web/profile.js';
@@ -111,6 +112,7 @@ async function main(): Promise<void> {
   await registerWhatsAppWebhook(app);
 
   await registerAdminLogin(app);
+  await registerAdminFonts(app);
 
   // Register admin dashboard
   await registerAdminDashboard(app);

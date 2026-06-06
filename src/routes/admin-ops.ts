@@ -31,6 +31,7 @@ import {
 } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
+import { ADMIN_FONT_CSS } from '@/routes/admin-fonts.js';
 import { authenticate, authenticatePage, requireFullAdmin, requireFullAdminPage, type AdminRole } from '@/utils/auth.js';
 
 // Reuse the auth helper from admin-dashboard.ts
@@ -451,7 +452,7 @@ async function resetStuckJobs(maxAgeMinutes = 15): Promise<number> {
 // ===== HTML page rendering =====
 
 const SHARED_STYLES = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+${ADMIN_FONT_CSS}
 
 :root {
   --bg: #0a0a0a;

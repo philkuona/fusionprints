@@ -13,6 +13,7 @@
 import type { FastifyInstance } from 'fastify';
 import { requireFullAdminPage, requireFullAdmin } from '@/utils/auth.js';
 import { logger } from '@/utils/logger.js';
+import { ADMIN_FONT_CSS } from '@/routes/admin-fonts.js';
 import {
   getAuthorizationUrl,
   exchangeCodeForTokens,
@@ -42,8 +43,8 @@ function qboPageHtml(status: ReturnType<typeof getStatus>): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QuickBooks — FusionPrints Admin</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=DM+Sans:wght@400;500;600&family=Outfit:wght@700&display=swap" rel="stylesheet">
   <style>
+    ${ADMIN_FONT_CSS}
     :root {
       --bg: #0a0a0a; --surface: #141414; --surface2: #1e1e1e;
       --border: #2a2a2a; --text: #f0f0f0; --text2: #888;

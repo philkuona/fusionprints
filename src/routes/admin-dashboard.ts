@@ -25,6 +25,7 @@ import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
+import { ADMIN_FONT_CSS } from '@/routes/admin-fonts.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
 
 // ===== Auth middleware =====
@@ -255,7 +256,7 @@ function dashboardHtml(role: AdminRole = 'full'): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FusionPrints Admin</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap');
+    ${ADMIN_FONT_CSS}
 
     :root {
       --bg: #0a0a0a;

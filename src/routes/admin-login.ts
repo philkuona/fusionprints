@@ -13,6 +13,7 @@
 import type { FastifyInstance } from 'fastify';
 import { validateCredentials, validateAutologinToken } from '@/utils/auth.js';
 import { logger } from '@/utils/logger.js';
+import { ADMIN_FONT_CSS } from '@/routes/admin-fonts.js';
 
 function loginPageHtml(): string {
   return `<!DOCTYPE html>
@@ -21,9 +22,8 @@ function loginPageHtml(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign in — FusionPrints Admin</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    ${ADMIN_FONT_CSS}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: #FBF7F0;

@@ -86,6 +86,19 @@ async function main(): Promise<void> {
   // Evict expired session rows daily (cheap; indexed on expire).
   setInterval(() => void sweepExpiredSessions(), 1000 * 60 * 60 * 24).unref();
 
+  // Diagnostics: log any failing response (>=400) and any handler error.
+  // onResponse runs AFTER the response is sent, so it only reads — it can never
+  // touch already-sent headers (unlike the onSend hook that crash-looped).
+  app.addHook('onResponse', async (request, reply) => {
+    if (reply.statusCode >= 400) {
+      logger.warn({ method: request.method, url: request.url, status: reply.statusCode }, 'HTTP error response');
+    }
+  });
+  app.setErrorHandler((err, request, reply) => {
+    logger.error({ err, method: request.method, url: request.url }, 'Request handler error');
+    if (!reply.sent) reply.status(500).send({ error: 'Internal Server Error' });
+  });
+
   // ===== Routes =====
 
   app.get('/', async () => {

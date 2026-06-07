@@ -22,24 +22,40 @@ const BUSINESS_HOURS = process.env.BUSINESS_HOURS ?? 'Mon–Sat, 9am–6pm';
 export const MSG = {
   // ===== Greeting =====
 
-  greeting: (name?: string) =>
-    name
-      ? `👋 Welcome back, *${name}*!\n\nWhat would you like today?\n\n1️⃣ Photo prints\n2️⃣ Posters\n3️⃣ Check an existing order\n\nReply with a number.`
-      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nWe print photos and posters — collect in Harare or get them delivered.\n\nWhat would you like today?\n\n1️⃣ Photo prints\n2️⃣ Posters\n3️⃣ Check an existing order\n\nReply with a number.`,
+  greeting: (name?: string) => {
+    const menu = `What would you like today?\n\n1️⃣ Photo prints\n2️⃣ Wallet prints\n3️⃣ Passport photos\n4️⃣ Mini prints\n5️⃣ Posters / wall art\n6️⃣ Check an existing order\n\nReply with a number.`;
+    return name
+      ? `👋 Welcome back, *${name}*!\n\n${menu}`
+      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nBeautiful prints, ready fast.\n\n${menu}`;
+  },
 
-  /** Interactive version of greeting — uses 3 buttons. Customers tap instead of typing. */
+  /** Interactive version of greeting — a list so all products fit (buttons cap at 3). */
   greetingInteractive: (name?: string) => ({
     text: name
       ? `👋 Welcome back, *${name}*!\n\nWhat would you like today?`
-      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nWe print photos and posters — collect in Harare or get them delivered.\n\nWhat would you like today?`,
-    buttons: [
-      { id: '1', title: '📸 Photo prints' },
-      { id: '2', title: '🖼 Posters' },
-      { id: '3', title: 'Check order' },
-    ],
+      : `👋 Welcome to *${BUSINESS_NAME}*!\n\nBeautiful prints, ready fast.\n\nWhat would you like today?`,
+    list: {
+      buttonText: 'Browse',
+      sections: [
+        {
+          title: 'Prints',
+          rows: [
+            { id: 'PHOTOS', title: '📸 Photo prints', description: 'Classic single-photo prints' },
+            { id: 'WALLET', title: '🧾 Wallet prints', description: 'Four 2×3 keepsakes from one photo' },
+            { id: 'PASSPORT', title: '🪪 Passport photos', description: 'Six 2×2 ID photos, one sheet' },
+            { id: 'MINI', title: '🖼 Mini prints', description: 'Two mini prints, side by side' },
+            { id: 'POSTERS', title: '🎨 Posters / wall art', description: 'Statement wall pieces' },
+          ],
+        },
+        {
+          title: 'Account',
+          rows: [{ id: 'STATUS', title: '📦 Check an order', description: 'Track an existing order' }],
+        },
+      ],
+    },
   }),
 
-  invalidMenuChoice: () => `Please reply with *1*, *2*, or *3*.`,
+  invalidMenuChoice: () => `Please pick an option from the menu, or type *photos*, *wallet*, *passport*, *mini*, *posters*, or *status*.`,
 
   // ===== Product selection =====
 
@@ -178,6 +194,26 @@ export const MSG = {
     `✅ Got it — ${widthPx}×${heightPx}px, looking good.\n\nHow many copies?`,
 
   imageOkNoCheck: () => `✅ Got it.\n\nHow many copies?`,
+
+  // ===== Composite prints (wallet / passport / mini) =====
+
+  /** Single-photo composite prompt (wallet, passport). */
+  compositePhotoPrompt: (displayName: string, priceLabel: string) =>
+    `*${displayName}* — ${priceLabel}.\n\nSend me your photo as a *document/file* (not a regular photo — WhatsApp shrinks those and prints come out blurry).\n\n📎 Paperclip → *Document* → choose your image.\n\n_Reply CANCEL to start over._`,
+
+  /** Mini prints: first of two photos. */
+  miniPhoto1Prompt: (displayName: string, priceLabel: string) =>
+    `*${displayName}* — ${priceLabel}.\n\nMini prints come two to a sheet. Send your *first* photo as a *document/file*.\n\n📎 Paperclip → *Document* → choose your image.\n\n_Reply CANCEL to start over._`,
+
+  /** Mini prints: second photo. */
+  miniPhoto2Prompt: () =>
+    `Lovely — now send your *second* photo (as a *document/file*).\n\n📎 Paperclip → *Document* → choose your image.`,
+
+  compositeImageCompressed: () =>
+    `⚠️ That image came through compressed and won't print sharply. Please re-send it as a *document*:\n📎 Paperclip → *Document* → select the photo.`,
+
+  compositeImageTooLow: (widthPx: number, heightPx: number, minW: number, minH: number) =>
+    `⚠️ That image is ${widthPx}×${heightPx}px — below the ${minW}×${minH} minimum for a sharp print. Please send a higher-resolution photo as a *document*.`,
 
   // ===== Quantity =====
 

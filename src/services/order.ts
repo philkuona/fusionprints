@@ -137,15 +137,32 @@ export async function createOrder(
       const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
       const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
 
-      // Create order items and print jobs
-      for (const pricedItem of quote.items) {
-        // Find the matching cart item for the image ref
-        const cartItem = context.cart.find((c) => c.sizeCode === pricedItem.sizeCode);
+      // Create order items and print jobs. quote.items is index-aligned with
+      // context.cart (calculateQuote prices each cart item in order, no
+      // aggregation), so match by index — this is correct even when two items
+      // share a sizeCode (e.g. two different wallet sets) where find-by-sizeCode
+      // would collapse them onto the same photo.
+      for (let i = 0; i < quote.items.length; i++) {
+        const pricedItem = quote.items[i];
+        const cartItem = context.cart[i];
         const imageRef = cartItem?.imageRef;
 
         // The imageRef IS the image UUID from the database (set by image-storage.storeImage)
         // It looks like 'pending' only if we never received an image (shouldn't happen in real flow)
         const imageId = imageRef && imageRef !== 'pending' ? imageRef : null;
+
+        // Composite products: store which image fills which cell. transform/border
+        // are null for WhatsApp orders (defaults); the web editor sets them.
+        const layoutPayload = cartItem?.compositeCells
+          ? {
+              cells: cartItem.compositeCells.map((c) => ({
+                cellIndex: c.cellIndex,
+                imageId: c.imageRef && c.imageRef !== 'pending' ? c.imageRef : null,
+                transform: null,
+                border: null,
+              })),
+            }
+          : null;
 
         // Create the order item
         const [orderItem] = await tx
@@ -153,8 +170,9 @@ export async function createOrder(
           .values({
             orderId: order.id,
             imageId: imageId as unknown as string,
-            productType: pricedItem.productType as 'photo_print' | 'poster',
+            productType: pricedItem.productType as 'photo_print' | 'poster' | 'composite',
             sizeCode: pricedItem.sizeCode,
+            layoutPayload,
             quantity: pricedItem.quantity,
             unitPriceUsd: String(pricedItem.unitPriceUsd),
             lineTotalUsd: String(pricedItem.lineTotalUsd),

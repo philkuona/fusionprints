@@ -156,6 +156,16 @@ export function handleMessage(
     case 'awaiting_image':
       return handleAwaitingImage(text, message, context);
 
+    case 'choosing_wallet_photo':
+    case 'choosing_passport_photo':
+      return handleCompositeSinglePhoto(text, message, context);
+
+    case 'choosing_mini_photo_1':
+      return handleMiniPhoto1(text, message, context);
+
+    case 'choosing_mini_photo_2':
+      return handleMiniPhoto2(text, message, context);
+
     case 'collecting_image_batch':
       return handleCollectingImageBatch(text, message, context);
 
@@ -226,11 +236,15 @@ function handleBack(
       );
 
     case 'choosing_size':
-      // Back to product type selection
+    case 'choosing_wallet_photo':
+    case 'choosing_passport_photo':
+    case 'choosing_mini_photo_1':
+    case 'choosing_mini_photo_2':
+      // Back to the main product menu (composites have no size sub-step)
       return reply(
         MSG.greetingInteractive(customer?.name ?? undefined),
         'choosing_product',
-        { ...context, pendingProductType: undefined },
+        { ...context, pendingProductType: undefined, pendingSize: undefined, pendingCompositePhotos: undefined },
       );
 
     case 'choosing_upload_mode':
@@ -364,7 +378,7 @@ function handleChoosingProduct(
   context: BotContext,
   customer: { name: string | null } | null,
 ): BotResponse {
-  // Accept shortcuts typed naturally
+  // Accept the interactive list ids, typed numbers (1-6), or natural words.
   if (text === '1' || text === 'PHOTOS' || text === 'PHOTO' || text === 'PHOTO PRINTS') {
     return reply(MSG.photoSizeMenuInteractive(), 'choosing_size', {
       ...context,
@@ -372,14 +386,26 @@ function handleChoosingProduct(
     });
   }
 
-  if (text === '2' || text === 'POSTERS' || text === 'POSTER') {
+  if (text === '2' || text === 'WALLET' || text === 'WALLET PRINTS') {
+    return startCompositeFlow('wallet_4up', 'choosing_wallet_photo', context);
+  }
+
+  if (text === '3' || text === 'PASSPORT' || text === 'PASSPORT PHOTOS') {
+    return startCompositeFlow('passport_6up', 'choosing_passport_photo', context);
+  }
+
+  if (text === '4' || text === 'MINI' || text === 'MINI PRINTS') {
+    return startCompositeFlow('mini_pair', 'choosing_mini_photo_1', context);
+  }
+
+  if (text === '5' || text === 'POSTERS' || text === 'POSTER' || text === 'WALL ART') {
     return reply(MSG.posterSizeMenuInteractive(), 'choosing_size', {
       ...context,
       pendingProductType: 'poster',
     });
   }
 
-  if (text === '3' || text === 'STATUS' || text === 'ORDER') {
+  if (text === '6' || text === 'STATUS' || text === 'ORDER') {
     return {
       replies: [MSG.noRecentOrders()],
       nextStep: 'choosing_product',
@@ -390,6 +416,184 @@ function handleChoosingProduct(
 
   // They typed something else — re-show the greeting
   return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', context);
+}
+
+// ===== Composite product flows (wallet / passport / mini) =====
+
+/** Price label helper. */
+function priceOf(sizeCode: string): string {
+  const p = getProduct(sizeCode);
+  return p ? `$${p.unitPriceUsd.toFixed(2)}` : '';
+}
+
+/** Begin a composite flow: set the pending size and prompt for the first photo. */
+function startCompositeFlow(
+  sizeCode: string,
+  nextStep: BotStep,
+  context: BotContext,
+): BotResponse {
+  const product = getProduct(sizeCode);
+  if (!product) {
+    return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+  }
+  const name = product.displayName ?? product.displayLabel;
+  const price = priceOf(sizeCode);
+  const prompt =
+    nextStep === 'choosing_mini_photo_1'
+      ? MSG.miniPhoto1Prompt(name, price)
+      : MSG.compositePhotoPrompt(name, price);
+  return reply(prompt, nextStep, {
+    ...context,
+    pendingProductType: 'composite',
+    pendingSize: sizeCode,
+    pendingCompositePhotos: [],
+  });
+}
+
+/**
+ * Validate an incoming composite photo. Returns either an error response to
+ * send back (and stay on the same step) or the accepted image ref.
+ */
+function acceptCompositePhoto(
+  message: IncomingMessage,
+  product: NonNullable<ReturnType<typeof getProduct>>,
+  step: BotStep,
+  context: BotContext,
+  repromptText: string,
+): { error: BotResponse } | { ref: string } {
+  if (!message.image) {
+    return { error: reply(repromptText, step, context) };
+  }
+  const { widthPx, heightPx, wasCompressed, ref } = message.image;
+  if (wasCompressed) {
+    return { error: reply(MSG.compositeImageCompressed(), step, context) };
+  }
+  const validation = validateImage(widthPx, heightPx, product.sizeCode, false);
+  if (validation.quality === 'bad') {
+    return {
+      error: reply(
+        MSG.compositeImageTooLow(widthPx, heightPx, product.minResolution.width, product.minResolution.height),
+        step,
+        context,
+      ),
+    };
+  }
+  return { ref };
+}
+
+/** Build a composite cart item with one ref per layout cell. */
+function buildCompositeCartItem(
+  product: NonNullable<ReturnType<typeof getProduct>>,
+  refsByCell: string[],
+): CartItem {
+  const cells = (product.layout?.cells ?? []).map((cell, i) => ({
+    cellIndex: i,
+    // duplicate mapping → photoIndex 0 for every cell; unique mapping → per-cell photo
+    imageRef: refsByCell[cell.photoIndex] ?? refsByCell[0],
+  }));
+  return {
+    sizeCode: product.sizeCode,
+    displayLabel: product.displayName ?? product.displayLabel,
+    quantity: 1,
+    unitPriceUsd: product.unitPriceUsd,
+    lineTotalUsd: product.unitPriceUsd,
+    requiresManualReview: product.requiresManualReview,
+    imageRef: cells[0]?.imageRef ?? refsByCell[0],
+    compositeCells: cells,
+  };
+}
+
+/** Wallet / passport: one photo, duplicated across all cells. */
+function handleCompositeSinglePhoto(
+  _text: string,
+  message: IncomingMessage,
+  context: BotContext,
+): BotResponse {
+  const product = getProduct(context.pendingSize ?? '');
+  if (!product) return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+
+  const step: BotStep = product.sizeCode === 'passport_6up' ? 'choosing_passport_photo' : 'choosing_wallet_photo';
+  const name = product.displayName ?? product.displayLabel;
+  const result = acceptCompositePhoto(
+    message,
+    product,
+    step,
+    context,
+    MSG.compositePhotoPrompt(name, priceOf(product.sizeCode)),
+  );
+  if ('error' in result) return result.error;
+
+  const item = buildCompositeCartItem(product, [result.ref]);
+  const newCart = [...context.cart, item];
+  const cartTotal = newCart.reduce((s, i) => s + i.lineTotalUsd, 0);
+  const newContext: BotContext = {
+    ...context,
+    cart: newCart,
+    pendingProductType: undefined,
+    pendingSize: undefined,
+    pendingCompositePhotos: undefined,
+  };
+  return reply(MSG.itemAddedInteractive(item, `$${cartTotal.toFixed(2)}`), 'adding_more_or_checkout', newContext);
+}
+
+/** Mini prints: first of two photos. */
+function handleMiniPhoto1(
+  _text: string,
+  message: IncomingMessage,
+  context: BotContext,
+): BotResponse {
+  const product = getProduct(context.pendingSize ?? 'mini_pair');
+  if (!product) return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+  const name = product.displayName ?? product.displayLabel;
+  const result = acceptCompositePhoto(
+    message,
+    product,
+    'choosing_mini_photo_1',
+    context,
+    MSG.miniPhoto1Prompt(name, priceOf(product.sizeCode)),
+  );
+  if ('error' in result) return result.error;
+
+  return reply(MSG.miniPhoto2Prompt(), 'choosing_mini_photo_2', {
+    ...context,
+    pendingCompositePhotos: [result.ref],
+  });
+}
+
+/** Mini prints: second photo → add the pair to the cart. */
+function handleMiniPhoto2(
+  _text: string,
+  message: IncomingMessage,
+  context: BotContext,
+): BotResponse {
+  const product = getProduct(context.pendingSize ?? 'mini_pair');
+  if (!product) return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
+  const result = acceptCompositePhoto(
+    message,
+    product,
+    'choosing_mini_photo_2',
+    context,
+    MSG.miniPhoto2Prompt(),
+  );
+  if ('error' in result) return result.error;
+
+  const firstRef = context.pendingCompositePhotos?.[0];
+  if (!firstRef) {
+    // Lost the first photo somehow — restart the mini flow cleanly.
+    return startCompositeFlow('mini_pair', 'choosing_mini_photo_1', context);
+  }
+
+  const item = buildCompositeCartItem(product, [firstRef, result.ref]);
+  const newCart = [...context.cart, item];
+  const cartTotal = newCart.reduce((s, i) => s + i.lineTotalUsd, 0);
+  const newContext: BotContext = {
+    ...context,
+    cart: newCart,
+    pendingProductType: undefined,
+    pendingSize: undefined,
+    pendingCompositePhotos: undefined,
+  };
+  return reply(MSG.itemAddedInteractive(item, `$${cartTotal.toFixed(2)}`), 'adding_more_or_checkout', newContext);
 }
 
 function handleChoosingSize(text: string, context: BotContext): BotResponse {

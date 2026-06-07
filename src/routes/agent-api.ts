@@ -19,6 +19,7 @@ import { orders, orderItems, printJobs, printers, images, customers, conversatio
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
+import { getProduct, type PrintLayout } from '@/config/catalog.js';
 
 // ===== Auth =====
 
@@ -261,6 +262,36 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         .where(eq(orders.id, item.orderId))
         .limit(1);
 
+      // Composite products (wallet/passport/mini): hand the agent the layout +
+      // each cell's image (by B2 key, like prints) so it can render the sheet.
+      let composite:
+        | {
+            layout: PrintLayout | null;
+            cells: { cellIndex: number; imageStorageKey: string; imageUrl: string; transform: unknown; border: unknown }[];
+          }
+        | null = null;
+      if (item.productType === 'composite') {
+        const product = getProduct(item.sizeCode);
+        const payload = item.layoutPayload as {
+          cells?: { cellIndex: number; imageId: string | null; transform: unknown; border: unknown }[];
+        } | null;
+        const cells = await Promise.all(
+          (payload?.cells ?? []).map(async (c) => {
+            const [img] = c.imageId
+              ? await db.select().from(images).where(eq(images.id, c.imageId)).limit(1)
+              : [null];
+            return {
+              cellIndex: c.cellIndex,
+              imageStorageKey: img?.storageKey ?? '',
+              imageUrl: img?.storageKey ? await getSignedImageUrl(img.storageKey) : '',
+              transform: c.transform ?? null,
+              border: c.border ?? null,
+            };
+          }),
+        );
+        composite = { layout: product?.layout ?? null, cells };
+      }
+
       return {
         id: job.id,
         orderItemId: job.orderItemId,
@@ -272,6 +303,8 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         quantity: item.quantity,
         imageStorageKey: printStorageKey,
         imageUrl: printUrl,
+        // Present only for composite products; the agent composites the cells.
+        composite,
         orderNumber: order?.orderNumber ?? '',
         customerName: order?.customerName ?? null,
       };

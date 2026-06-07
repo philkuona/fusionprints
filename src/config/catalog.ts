@@ -9,8 +9,86 @@
  * but displayed to customers in both inches and centimetres.
  */
 
-export type ProductType = 'photo_print' | 'poster';
+// 'composite' = multi-cell products (wallet/passport/mini) the agent renders
+// onto one sheet. (The schema brief calls single prints 'standard'; we keep the
+// established 'photo_print' value to avoid churning the DB enum + bot.)
+export type ProductType = 'photo_print' | 'poster' | 'composite';
 export type FulfillmentMethod = 'collection' | 'delivery';
+
+// ===== Composite layout types (source of truth: FusionPrints_Composite_Schema.ts) =====
+
+/** How the DEFAULT (WhatsApp) flow maps uploaded photos onto cells. */
+export type PhotoMappingMode =
+  | 'duplicate'   // 1 photo duplicated across N cells
+  | 'unique'      // N photos, 1 per cell
+  | 'set_repeat'; // M photos in a set, repeated across cell groups
+
+export interface LayoutCell {
+  /** Position from top-left of the sheet, in inches. */
+  x: number;
+  y: number;
+  /** Cell size in inches. */
+  width: number;
+  height: number;
+  /** Which uploaded photo (0-based) fills this cell in the default flow. */
+  photoIndex: number;
+}
+
+export interface BorderOption {
+  id: string;
+  displayName: string;
+  widthInches: number;
+  color: string;
+  style: 'solid' | 'dashed';
+}
+
+export interface EditorConfig {
+  perCellUpload: boolean;
+  perCellTransform: boolean;
+  fillAllShortcut: boolean;
+  borderOptions: BorderOption[];
+  /** Border applied on load (usually 'none'). */
+  defaultBorder: string;
+}
+
+export interface PrintLayout {
+  /** Layout identifier the agent compositor switches on. */
+  type: string;
+  cellCount: number;
+  /** Unique photos the WhatsApp default flow collects. */
+  photosRequired: number;
+  photoMapping: PhotoMappingMode;
+  /** White space between cells, inches (cutting tolerance). */
+  gutter: number;
+  /** Composites always render baked-in cut lines. */
+  showCutLines: boolean;
+  /** Composed sheet size in inches (mini is composed landscape 6×4). */
+  sheetWidth: number;
+  sheetHeight: number;
+  /** Degrees the agent rotates the composed sheet before printing (mini = 90). */
+  printRotation: 0 | 90;
+  cells: LayoutCell[];
+  /** Web-editor behaviour (Phase 2). */
+  editor?: EditorConfig;
+}
+
+/** Standard border presets, reusable across composite products. */
+export const BORDER_PRESETS: BorderOption[] = [
+  { id: 'none', displayName: 'No border', widthInches: 0, color: 'transparent', style: 'solid' },
+  { id: 'white_thin', displayName: 'Thin white', widthInches: 0.05, color: '#FBF7F0', style: 'solid' },
+  { id: 'white_thick', displayName: 'Polaroid', widthInches: 0.2, color: '#FBF7F0', style: 'solid' },
+  { id: 'black_thin', displayName: 'Thin black', widthInches: 0.05, color: '#1F1B16', style: 'solid' },
+  { id: 'vintage', displayName: 'Vintage cream', widthInches: 0.12, color: '#E8DBC0', style: 'solid' },
+];
+
+/** Default editor config shared by all composite products. */
+export const DEFAULT_COMPOSITE_EDITOR: EditorConfig = {
+  perCellUpload: true,
+  perCellTransform: true,
+  fillAllShortcut: true,
+  borderOptions: BORDER_PRESETS,
+  defaultBorder: 'none',
+};
 
 export interface Product {
   /** Internal code used in the database and bot logic e.g. '4x6' */
@@ -22,6 +100,12 @@ export interface Product {
   labelCm: string;
   /** Full display label shown to customers e.g. "4×6 in (10×15 cm)" */
   displayLabel: string;
+  /**
+   * Customer-facing product name + blurb. Single sizes use displayLabel; the
+   * composite products carry a richer brand-voice name/description.
+   */
+  displayName?: string;
+  description?: string;
   /** Price per single unit in USD */
   unitPriceUsd: number;
   /** Which printer handles this product */
@@ -40,6 +124,8 @@ export interface Product {
   minResolution: { width: number; height: number };
   /** Recommended image resolution for best quality */
   recommendedResolution: { width: number; height: number };
+  /** Composite layout — present only for productType 'composite'. */
+  layout?: PrintLayout;
 }
 
 /**
@@ -177,6 +263,115 @@ export const PRODUCTS: Product[] = [
     minResolution: { width: 2400, height: 3000 },
     recommendedResolution: { width: 4800, height: 6000 },
   },
+
+  // ===== Composite Prints (DNP 4×6, server-side compositing) =====
+  // All print on the existing 4×6 DNP media; the agent renders multiple cells
+  // onto one sheet with baked-in cut lines. minResolution/recommendedResolution
+  // are per the photo that fills a single cell (the smallest unit a photo maps to).
+  {
+    sizeCode: 'wallet_4up',
+    productType: 'composite',
+    labelInches: '2×3 in × 4',
+    labelCm: '5×8 cm × 4',
+    displayLabel: 'Wallet Prints (Set of 4)',
+    displayName: 'Wallet Prints (Set of 4)',
+    description: 'Four classic 2×3 wallet-sized prints on a single 4×6 sheet. Cut along the guides for four keepsakes.',
+    unitPriceUsd: 2.50,
+    printer: 'dnp_ds620a_4x6',
+    finish: 'glossy',
+    requiresManualReview: false,
+    isOutsourced: false,
+    minResolution: { width: 400, height: 600 },
+    recommendedResolution: { width: 600, height: 900 },
+    layout: {
+      type: '4up_wallet',
+      cellCount: 4,
+      photosRequired: 1,
+      photoMapping: 'duplicate',
+      gutter: 0.05,
+      showCutLines: true,
+      sheetWidth: 4,
+      sheetHeight: 6,
+      printRotation: 0,
+      cells: [
+        { x: 0, y: 0, width: 2, height: 3, photoIndex: 0 },
+        { x: 2, y: 0, width: 2, height: 3, photoIndex: 0 },
+        { x: 0, y: 3, width: 2, height: 3, photoIndex: 0 },
+        { x: 2, y: 3, width: 2, height: 3, photoIndex: 0 },
+      ],
+      editor: DEFAULT_COMPOSITE_EDITOR,
+    },
+  },
+  {
+    sizeCode: 'passport_6up',
+    productType: 'composite',
+    labelInches: '2×2 in × 6',
+    labelCm: '5×5 cm × 6',
+    displayLabel: 'Passport Photos (Set of 6)',
+    displayName: 'Passport Photos (Set of 6)',
+    description: 'Six 2×2 inch passport-style photos on a single 4×6 sheet. Standard ID size, same photo.',
+    unitPriceUsd: 3.00,
+    printer: 'dnp_ds620a_4x6',
+    finish: 'glossy',
+    requiresManualReview: false,
+    isOutsourced: false,
+    minResolution: { width: 400, height: 400 },
+    recommendedResolution: { width: 600, height: 600 },
+    layout: {
+      type: '6up_passport',
+      cellCount: 6,
+      photosRequired: 1,
+      photoMapping: 'duplicate',
+      gutter: 0.05,
+      showCutLines: true,
+      sheetWidth: 4,
+      sheetHeight: 6,
+      printRotation: 0,
+      cells: [
+        { x: 0, y: 0, width: 2, height: 2, photoIndex: 0 },
+        { x: 2, y: 0, width: 2, height: 2, photoIndex: 0 },
+        { x: 0, y: 2, width: 2, height: 2, photoIndex: 0 },
+        { x: 2, y: 2, width: 2, height: 2, photoIndex: 0 },
+        { x: 0, y: 4, width: 2, height: 2, photoIndex: 0 },
+        { x: 2, y: 4, width: 2, height: 2, photoIndex: 0 },
+      ],
+      editor: DEFAULT_COMPOSITE_EDITOR,
+    },
+  },
+  {
+    sizeCode: 'mini_pair',
+    productType: 'composite',
+    labelInches: '3×4 in × 2',
+    labelCm: '8×10 cm × 2',
+    displayLabel: 'Mini Prints (Pair)',
+    displayName: 'Mini Prints (Pair)',
+    description: 'Two mini prints side by side on one 4×6 sheet, 3×4 each. Cut down the middle for two prints to keep or share.',
+    unitPriceUsd: 2.00,
+    printer: 'dnp_ds620a_4x6',
+    finish: 'glossy',
+    requiresManualReview: false,
+    isOutsourced: false,
+    minResolution: { width: 600, height: 800 },
+    recommendedResolution: { width: 900, height: 1200 },
+    layout: {
+      // Composed landscape (6 wide × 4 tall); the agent rotates 90° to print on
+      // portrait-fed 4×6 paper.
+      type: '2_landscape_side_by_side',
+      cellCount: 2,
+      photosRequired: 2,
+      photoMapping: 'unique',
+      gutter: 0.05,
+      showCutLines: true,
+      sheetWidth: 6,
+      sheetHeight: 4,
+      printRotation: 90,
+      cells: [
+        { x: 0, y: 0, width: 3, height: 4, photoIndex: 0 },
+        { x: 3, y: 0, width: 3, height: 4, photoIndex: 1 },
+      ],
+      editor: DEFAULT_COMPOSITE_EDITOR,
+    },
+  },
 ];
 
 /** Quick lookup: get a product by its sizeCode. Returns undefined if not found. */
@@ -189,6 +384,14 @@ export const PHOTO_PRODUCTS = PRODUCTS.filter((p) => p.productType === 'photo_pr
 
 /** All poster products */
 export const POSTER_PRODUCTS = PRODUCTS.filter((p) => p.productType === 'poster');
+
+/** All composite products (wallet / passport / mini). */
+export const COMPOSITE_PRODUCTS = PRODUCTS.filter((p) => p.productType === 'composite');
+
+/** Type guard: does this product render as a multi-cell composite? */
+export function isComposite(product: Product): boolean {
+  return product.productType === 'composite' && !!product.layout;
+}
 
 /** In-house products only (not outsourced) */
 export const IN_HOUSE_PRODUCTS = PRODUCTS.filter((p) => !p.isOutsourced);

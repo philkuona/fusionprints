@@ -17,6 +17,11 @@ export type BotStep =
   | 'awaiting_image'
   | 'collecting_image_batch'
   | 'awaiting_web_upload'
+  // Composite product flows (wallet/passport = 1 photo; mini = 2 photos)
+  | 'choosing_wallet_photo'
+  | 'choosing_passport_photo'
+  | 'choosing_mini_photo_1'
+  | 'choosing_mini_photo_2'
   | 'choosing_quantity'
   | 'adding_more_or_checkout'
   | 'collecting_name'
@@ -29,7 +34,7 @@ export type BotStep =
   | 'awaiting_payment'
   | 'order_complete';
 
-export type ProductType = 'photo_print' | 'poster';
+export type ProductType = 'photo_print' | 'poster' | 'composite';
 export type FulfillmentMethod = 'collection' | 'delivery';
 
 /** A single item the customer has added to their cart */
@@ -41,8 +46,15 @@ export interface CartItem {
   lineTotalUsd: number;
   requiresManualReview: boolean;
   /** Image reference — in real system this is the image UUID from the DB.
-   *  In the CLI simulator we use a placeholder string. */
+   *  In the CLI simulator we use a placeholder string.
+   *  For composites this is the first cell's image (kept for back-compat). */
   imageRef: string;
+  /**
+   * Composite products only: which image fills each cell. Used to build
+   * order_items.layout_payload. Duplicate-mapping products (wallet/passport)
+   * repeat one ref across all cells; mini carries two distinct refs.
+   */
+  compositeCells?: { cellIndex: number; imageRef: string }[];
 }
 
 /** A single image collected during multi-upload mode */
@@ -64,6 +76,8 @@ export interface BotContext {
   uploadMode?: 'single' | 'batch' | 'web';
   /** Images collected so far in the current batch (for multi-upload mode) */
   pendingBatch?: BatchedImage[];
+  /** Image refs collected so far for the current composite (e.g. mini photo 1). */
+  pendingCompositePhotos?: string[];
   /** Items confirmed and added to cart */
   cart: CartItem[];
   /** Customer's chosen fulfillment method */

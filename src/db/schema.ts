@@ -55,7 +55,7 @@ export const fulfillmentMethodEnum = pgEnum('fulfillment_method', [
 // and the WhatsApp flow are unaffected; web (self-serve) orders set 'web'.
 export const orderChannelEnum = pgEnum('order_channel', ['whatsapp', 'web']);
 
-export const productTypeEnum = pgEnum('product_type', ['photo_print', 'poster']);
+export const productTypeEnum = pgEnum('product_type', ['photo_print', 'poster', 'composite']);
 
 export const paymentStatusEnum = pgEnum('payment_status', [
   'pending',
@@ -242,6 +242,10 @@ export const orderItems = pgTable(
     productType: productTypeEnum('product_type').notNull(),
     sizeCode: text('size_code').notNull(), // '4x6', '5x7', '11x14', etc.
     paper: text('paper'), // finish chosen on web ('glossy' | 'satin'); null = product default
+    // Composite products (wallet/passport/mini): which photos go in which cells,
+    // plus per-cell transforms/borders. Shape: { cells: [{ cellIndex, imageId,
+    // transform, border }] }. Null for standard single-photo items.
+    layoutPayload: jsonb('layout_payload'),
     quantity: integer('quantity').notNull().default(1),
     unitPriceUsd: numeric('unit_price_usd', { precision: 10, scale: 2 }).notNull(),
     lineTotalUsd: numeric('line_total_usd', { precision: 10, scale: 2 }).notNull(),

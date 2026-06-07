@@ -1293,7 +1293,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
           <div class="item-row">
             <span style="display:flex;align-items:center;gap:10px;">
               \${item.previewUrl ? \`<a href="\${item.previewUrl}" target="_blank" rel="noopener"><img src="\${item.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\` : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🖼</span>'}
-              <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})</span>
+              <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})\${item.layoutPayload && item.layoutPayload.cells ? ' · <span style="color:var(--accent)">' + item.layoutPayload.cells.length + '-cell composite</span>' : ''}</span>
             </span>
             \${IS_OPERATOR ? '' : \`<span>$\${parseFloat(item.lineTotalUsd).toFixed(2)}</span>\`}
           </div>\`).join('');

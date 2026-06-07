@@ -137,15 +137,32 @@ export async function createOrder(
       const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
       const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
 
-      // Create order items and print jobs
-      for (const pricedItem of quote.items) {
-        // Find the matching cart item for the image ref
-        const cartItem = context.cart.find((c) => c.sizeCode === pricedItem.sizeCode);
+      // Create order items and print jobs. quote.items is index-aligned with
+      // context.cart (calculateQuote prices each cart item in order, no
+      // aggregation), so match by index — this is correct even when two items
+      // share a sizeCode (e.g. two different wallet sets) where find-by-sizeCode
+      // would collapse them onto the same photo.
+      for (let i = 0; i < quote.items.length; i++) {
+        const pricedItem = quote.items[i];
+        const cartItem = context.cart[i];
         const imageRef = cartItem?.imageRef;
 
         // The imageRef IS the image UUID from the database (set by image-storage.storeImage)
         // It looks like 'pending' only if we never received an image (shouldn't happen in real flow)
         const imageId = imageRef && imageRef !== 'pending' ? imageRef : null;
+
+        // Composite products: store which image fills which cell. transform/border
+        // are null for WhatsApp orders (defaults); the web editor sets them.
+        const layoutPayload = cartItem?.compositeCells
+          ? {
+              cells: cartItem.compositeCells.map((c) => ({
+                cellIndex: c.cellIndex,
+                imageId: c.imageRef && c.imageRef !== 'pending' ? c.imageRef : null,
+                transform: null,
+                border: null,
+              })),
+            }
+          : null;
 
         // Create the order item
         const [orderItem] = await tx
@@ -153,8 +170,9 @@ export async function createOrder(
           .values({
             orderId: order.id,
             imageId: imageId as unknown as string,
-            productType: pricedItem.productType as 'photo_print' | 'poster',
+            productType: pricedItem.productType as 'photo_print' | 'poster' | 'composite',
             sizeCode: pricedItem.sizeCode,
+            layoutPayload,
             quantity: pricedItem.quantity,
             unitPriceUsd: String(pricedItem.unitPriceUsd),
             lineTotalUsd: String(pricedItem.lineTotalUsd),
@@ -205,14 +223,18 @@ export async function createOrder(
 // ===== Web (self-serve) order creation =====
 
 export interface CreateWebOrderItem {
-  /** The print-ready render the editor produced + stored (processed_images.id). */
-  processedImageId: string;
+  /** Standard prints: the editor's print-ready render. Absent for composites. */
+  processedImageId?: string | null;
   /** The original source image, when known (order_items.imageId). */
   sourceImageId?: string | null;
   sizeCode: string;
   quantity: number;
   /** Finish chosen on web: 'glossy' | 'satin'. */
   paper?: string | null;
+  /** Composite products (wallet/passport/mini). */
+  productType?: 'composite';
+  /** Composite cell→image mapping (+ transforms/borders) → order_items.layout_payload. */
+  layoutPayload?: unknown;
 }
 
 export interface CreateWebOrderInput {
@@ -290,10 +312,11 @@ export async function createWebOrder(
         await tx.insert(orderItems).values({
           orderId: order.id,
           imageId: src.sourceImageId ?? null,
-          processedImageId: src.processedImageId,
-          productType: priced.productType as 'photo_print' | 'poster',
+          processedImageId: src.processedImageId ?? null,
+          productType: priced.productType as 'photo_print' | 'poster' | 'composite',
           sizeCode: priced.sizeCode,
           paper: src.paper ?? null,
+          layoutPayload: src.layoutPayload ?? null,
           quantity: priced.quantity,
           unitPriceUsd: String(priced.unitPriceUsd),
           lineTotalUsd: String(priced.lineTotalUsd),

@@ -223,14 +223,18 @@ export async function createOrder(
 // ===== Web (self-serve) order creation =====
 
 export interface CreateWebOrderItem {
-  /** The print-ready render the editor produced + stored (processed_images.id). */
-  processedImageId: string;
+  /** Standard prints: the editor's print-ready render. Absent for composites. */
+  processedImageId?: string | null;
   /** The original source image, when known (order_items.imageId). */
   sourceImageId?: string | null;
   sizeCode: string;
   quantity: number;
   /** Finish chosen on web: 'glossy' | 'satin'. */
   paper?: string | null;
+  /** Composite products (wallet/passport/mini). */
+  productType?: 'composite';
+  /** Composite cell→image mapping (+ transforms/borders) → order_items.layout_payload. */
+  layoutPayload?: unknown;
 }
 
 export interface CreateWebOrderInput {
@@ -308,10 +312,11 @@ export async function createWebOrder(
         await tx.insert(orderItems).values({
           orderId: order.id,
           imageId: src.sourceImageId ?? null,
-          processedImageId: src.processedImageId,
-          productType: priced.productType as 'photo_print' | 'poster',
+          processedImageId: src.processedImageId ?? null,
+          productType: priced.productType as 'photo_print' | 'poster' | 'composite',
           sizeCode: priced.sizeCode,
           paper: src.paper ?? null,
+          layoutPayload: src.layoutPayload ?? null,
           quantity: priced.quantity,
           unitPriceUsd: String(priced.unitPriceUsd),
           lineTotalUsd: String(priced.lineTotalUsd),

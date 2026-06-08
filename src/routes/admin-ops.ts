@@ -50,16 +50,13 @@ function checkAuth(
 // ===== Order status transitions =====
 
 /**
- * Mark an order as shipped (only valid for delivery orders).
- * This is a state transition that updates the timestamp and triggers a
- * customer notification.
+ * Mark an order as shipped/out for delivery (only valid for delivery orders).
+ * Delegates to the order service, which updates status + sends the customer a
+ * WhatsApp "on its way" notification (best effort).
  */
 async function markShipped(orderId: string): Promise<void> {
-  await db
-    .update(orders)
-    .set({ status: 'shipped', shippedAt: new Date() })
-    .where(eq(orders.id, orderId));
-  logger.info({ orderId }, 'Order marked shipped');
+  const { markOrderShipped } = await import('@/services/order.js');
+  await markOrderShipped(orderId);
 }
 
 // ===== Reprint logic =====
@@ -1311,8 +1308,9 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
           \${(slips && slips.length > 0) ? \`<div class="items-list" style="margin-top:16px"><div class="items-title">Slip cards (\${slips.length})</div>\${slipsHtml}</div>\` : ''}
           <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
             \${order.status === 'awaiting_approval' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'approve'); closeModal()">✓ Approve for printing</button>\` : ''}
-            \${order.status === 'printed' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'release-for-pickup'); closeModal()">📦 Release for pickup</button>\` : ''}
-            \${order.status === 'ready_for_collection' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn ready" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">📦 Mark shipped</button>\` : ''}
+            \${order.status === 'printed' && order.fulfillmentMethod !== 'delivery' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'release-for-pickup'); closeModal()">📦 Release for pickup</button>\` : ''}
+            \${order.status === 'printed' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn approve" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">🚚 Mark out for delivery</button>\` : ''}
+            \${order.status === 'ready_for_collection' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn ready" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">🚚 Mark out for delivery</button>\` : ''}
             \${(order.status === 'ready_for_collection' || order.status === 'ready_for_pickup' || order.status === 'shipped') ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">✓ Mark fulfilled</button>\` : ''}
             \${jobs.some(j => j.status === 'failed') ? \`<button class="action-btn approve" onclick="reprintOrder('\${order.id}')">↻ Reprint failed jobs</button>\` : ''}
             <button class="action-btn ready" onclick="previewReceipt('\${order.id}')">📄 Receipt</button>

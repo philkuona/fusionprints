@@ -14,6 +14,7 @@ import { db } from '@/db/client.js';
 import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
+import { normalizeZimMobile } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
 import {
@@ -649,16 +650,18 @@ export async function releaseOrderForPickup(orderNumber: string): Promise<void> 
 }
 
 /**
- * Send the customer a WhatsApp message that their order is ready for pickup.
+ * Resolve the customer's name + a WhatsApp-deliverable phone number for an order,
+ * regardless of channel:
+ *   WhatsApp orders → the customer record (already a valid msisdn).
+ *   Web orders      → the checkout contact phone (falling back to the profile
+ *                     WhatsApp number), NORMALISED to +263XXXXXXXXX — web
+ *                     customers type "0771…" / "771…" which 360dialog rejects
+ *                     raw, so without this the send silently fails.
+ * Returns null when no usable number is found (caller logs + skips).
  */
-async function sendReadyForPickupNotification(orderNumber: string): Promise<void> {
-  const order = await getOrderByNumber(orderNumber);
-  if (!order) return;
-
-  // Resolve name + WhatsApp number from whichever channel the order came in on.
-  //   WhatsApp orders → the customer record.
-  //   Web orders      → the checkout contact phone (required, E.164), falling
-  //                     back to the profile WhatsApp number; name from profile.
+async function resolveOrderContact(
+  order: Order,
+): Promise<{ name: string; phone: string } | null> {
   let name = 'Customer';
   let phone = '';
   if (order.customerId) {
@@ -668,7 +671,7 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
       .where(eq(customers.id, order.customerId))
       .limit(1)
       .then((rows) => rows[0]);
-    if (!customer) return;
+    if (!customer) return null;
     name = customer.name ?? 'Customer';
     phone = customer.phoneNumber;
   } else if (order.webUserId) {
@@ -679,24 +682,87 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
       .limit(1)
       .then((rows) => rows[0]);
     name = webUser?.displayName ?? webUser?.email ?? 'Customer';
-    phone = order.contactPhone ?? webUser?.whatsappNumber ?? '';
+    const raw = order.contactPhone ?? webUser?.whatsappNumber ?? '';
+    // Normalise web numbers; keep the raw value if it doesn't parse so we never
+    // regress a number that 360dialog might still accept.
+    phone = raw ? normalizeZimMobile(raw) ?? raw : '';
   }
 
   if (!phone) {
-    logger.warn({ orderNumber }, 'No phone on order — skipping ready-for-pickup notification');
-    return;
+    logger.warn({ orderNumber: order.orderNumber }, 'No usable phone on order — skipping notification');
+    return null;
   }
+  return { name, phone };
+}
+
+/**
+ * Send the customer a WhatsApp message that their order is ready for pickup.
+ */
+async function sendReadyForPickupNotification(orderNumber: string): Promise<void> {
+  const order = await getOrderByNumber(orderNumber);
+  if (!order) return;
+
+  const contact = await resolveOrderContact(order);
+  if (!contact) return;
 
   // Lazy-import to avoid pulling whatsapp into modules that don't need it
   const { sendWhatsAppMessage } = await import('@/services/whatsapp.js');
   const { env } = await import('@/config/env.js');
 
-  const lastName = name.split(/\s+/).pop() ?? name;
+  const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
 
   const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *FusionPrints HRE* during business hours (${env.BUSINESS_HOURS}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${env.BUSINESS_ADDRESS}`;
 
-  await sendWhatsAppMessage(phone, message);
-  logger.info({ orderNumber, phone }, 'Sent ready-for-pickup notification');
+  await sendWhatsAppMessage(contact.phone, message);
+  logger.info({ orderNumber, phone: contact.phone }, 'Sent ready-for-pickup notification');
+}
+
+/**
+ * Mark a delivery order as shipped/out for delivery and notify the customer.
+ * Used by the admin "Mark out for delivery" action. The status update always
+ * lands; the notification is best-effort (failure does not roll it back).
+ */
+export async function markOrderShipped(orderId: string): Promise<void> {
+  await db
+    .update(orders)
+    .set({ status: 'shipped', shippedAt: new Date() })
+    .where(eq(orders.id, orderId));
+
+  const order = await db
+    .select({ orderNumber: orders.orderNumber })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1)
+    .then((rows) => rows[0]);
+
+  logger.info({ orderId, orderNumber: order?.orderNumber }, 'Order marked shipped');
+
+  if (!order?.orderNumber) return;
+  try {
+    await sendOutForDeliveryNotification(order.orderNumber);
+  } catch (err) {
+    logger.error({ orderId, err }, 'Failed to send out-for-delivery notification');
+  }
+}
+
+/**
+ * Send the customer a WhatsApp message that their delivery order is on its way.
+ */
+async function sendOutForDeliveryNotification(orderNumber: string): Promise<void> {
+  const order = await getOrderByNumber(orderNumber);
+  if (!order) return;
+
+  const contact = await resolveOrderContact(order);
+  if (!contact) return;
+
+  const { sendWhatsAppMessage } = await import('@/services/whatsapp.js');
+
+  const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
+
+  const message = `🚚 Your order is on its way!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nYour prints have left *FusionPrints HRE* and are out for delivery. Our driver will be in touch shortly.\n\nQuestions? Just reply to this message.`;
+
+  await sendWhatsAppMessage(contact.phone, message);
+  logger.info({ orderNumber, phone: contact.phone }, 'Sent out-for-delivery notification');
 }
 
 /**

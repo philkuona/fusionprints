@@ -13,11 +13,52 @@
  * app keeps Fastify's default JSON parser.
  */
 import type { FastifyInstance } from 'fastify';
+import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { payments } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
+import { env } from '@/config/env.js';
 import { verifyWebhookSignature } from '@/services/payonify.js';
+
+/**
+ * TEMP diagnostic: try the likely signing variants and log which (if any)
+ * matches the received v1. Lets us pin Payonify's exact scheme in one retest.
+ * Logs only hashes (not the secret). Remove once the scheme is confirmed.
+ */
+function debugSignature(rawBody: string, header: string | undefined): void {
+  if (!header) return;
+  const parts = Object.fromEntries(
+    header.split(',').map((kv) => {
+      const i = kv.indexOf('=');
+      return [kv.slice(0, i).trim(), kv.slice(i + 1).trim()];
+    }),
+  ) as { t?: string; v1?: string };
+  const t = parts.t ?? '';
+  const v1 = parts.v1 ?? '';
+  const secret = env.PAYONIFY_WEBHOOK_SECRET;
+  const noPrefix = secret.replace(/^whsec_/, '');
+  const hmac = (key: string | Buffer, msg: string, enc: 'hex' | 'base64') =>
+    createHmac('sha256', key).update(msg).digest(enc);
+  const candidates: Record<string, string> = {
+    'secret|t.body|hex': hmac(secret, `${t}.${rawBody}`, 'hex'),
+    'secret|body|hex': hmac(secret, rawBody, 'hex'),
+    'noprefix|t.body|hex': hmac(noPrefix, `${t}.${rawBody}`, 'hex'),
+    'secret|t.body|b64': hmac(secret, `${t}.${rawBody}`, 'base64'),
+    'b64key|t.body|hex': hmac(Buffer.from(noPrefix, 'base64'), `${t}.${rawBody}`, 'hex'),
+  };
+  const match = Object.entries(candidates).find(([, sig]) => sig === v1)?.[0] ?? 'NONE';
+  const nowSec = Math.floor(Date.now() / 1000);
+  logger.warn(
+    {
+      tsDeltaSec: t ? nowSec - Number(t) : null,
+      v1Recv: v1.slice(0, 16),
+      match,
+      cand_secret_t_body_hex: candidates['secret|t.body|hex'].slice(0, 16),
+    },
+    'Payonify signature debug',
+  );
+}
 import { markOrderPaid, getOrderByNumber } from '@/services/order.js';
 import { sendWebOrderConfirmation } from '@/services/web-order-email.js';
 
@@ -77,6 +118,7 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
 
       if (!sigValid) {
         logger.warn('Payonify webhook: invalid or missing signature');
+        debugSignature(raw, sig); // TEMP — identify the correct signing scheme
         return reply.status(400).send({ error: 'invalid_signature' });
       }
 

@@ -103,9 +103,16 @@ export function verifyWebhookSignature(
 
   if (!parts.t || !parts.v1) return false;
 
-  // Reject stale signatures (replay protection).
-  const ts = Number(parts.t);
-  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > toleranceSeconds) return false;
+  // Reject stale signatures (replay protection). Payonify sends the timestamp
+  // in NANOSECONDS (19 digits); normalise to seconds before the window check.
+  // (The HMAC below signs the literal `t` string, so it's unaffected by units.)
+  const tsRaw = Number(parts.t);
+  if (!Number.isFinite(tsRaw)) return false;
+  let tsSec = tsRaw;
+  if (tsSec > 1e17) tsSec = tsSec / 1e9; // nanoseconds → seconds
+  else if (tsSec > 1e14) tsSec = tsSec / 1e6; // microseconds → seconds
+  else if (tsSec > 1e11) tsSec = tsSec / 1e3; // milliseconds → seconds
+  if (Math.abs(Date.now() / 1000 - tsSec) > toleranceSeconds) return false;
 
   const expected = createHmac('sha256', env.PAYONIFY_WEBHOOK_SECRET)
     .update(`${parts.t}.${rawBody}`)

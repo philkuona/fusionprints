@@ -300,6 +300,14 @@ export const MSG = {
 
   orderCancelled: () => `Order cancelled. Type anything to start a new order.`,
 
+  /** Shown when a greeting/menu word arrives mid-order, so we don't silently wipe it. */
+  resetGuard: (orderNumber: string | null, cartCount: number) => {
+    const what = orderNumber
+      ? `You have an order in progress (*${orderNumber}*).`
+      : `You have ${cartCount} item${cartCount === 1 ? '' : 's'} in your cart.`;
+    return `${what}\n\nJust send your next response to keep going, or reply *RESTART* to start over.`;
+  },
+
   // ===== Payment =====
 
   /** Show after order created — let customer choose payment method */

@@ -21,7 +21,7 @@ import { registerAdminPricing } from '@/routes/admin-pricing.js';
 import { loadAndApplyPriceOverrides } from '@/services/price-overrides.js';
 import { startVirtualPrinters } from '@/services/virtual-printer.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
-import { registerAgentRoutes } from '@/routes/agent-api.js';
+import { registerAgentRoutes, reclaimStaleAgentJobs } from '@/routes/agent-api.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
 import { registerQboRoutes } from '@/routes/qbo-auth.js';
 import { registerLandingRoutes } from '@/routes/landing.js';
@@ -92,6 +92,10 @@ async function main(): Promise<void> {
   });
   // Evict expired session rows daily (cheap; indexed on expire).
   setInterval(() => void sweepExpiredSessions(), 1000 * 60 * 60 * 24).unref();
+
+  // Re-queue print/slip jobs stuck in 'printing' (agent crashed mid-print) so
+  // claimed-but-abandoned jobs recover. Every 5 min; 15-min staleness cutoff.
+  setInterval(() => void reclaimStaleAgentJobs(), 1000 * 60 * 5).unref();
 
   // Diagnostics: log any failing response (>=400) and any handler error.
   // onResponse runs AFTER the response is sent, so it only reads — it can never

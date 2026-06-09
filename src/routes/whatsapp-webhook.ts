@@ -21,6 +21,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { handleIncomingMessage } from '@/bot/handler.js';
+import { withKeyLock } from '@/utils/key-lock.js';
 import { storeImage } from '@/services/image-storage.js';
 import type { IncomingMessage } from '@/bot/state-machine.js';
 
@@ -481,11 +482,15 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
                 continue;
               }
 
-              // Run through the bot handler
-              const result = await handleIncomingMessage({
-                phoneNumber,
-                message: botMessage,
-              });
+              // Run through the bot handler, serialised per phone number so two
+              // near-simultaneous messages from the same customer can't race on
+              // conversation state (lost cart / double effects). See key-lock.ts.
+              const result = await withKeyLock(`wa:${phoneNumber}`, () =>
+                handleIncomingMessage({
+                  phoneNumber,
+                  message: botMessage,
+                }),
+              );
 
               // Send all replies back to the customer
               for (const reply of result.replies) {

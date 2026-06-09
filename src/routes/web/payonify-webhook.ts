@@ -15,7 +15,7 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { payments } from '@/db/schema.js';
+import { payments, orders } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { verifyWebhookSignature } from '@/services/payonify.js';
 import { markOrderPaid, getOrderByNumber } from '@/services/order.js';
@@ -33,30 +33,47 @@ async function fulfilPaidOrder(orderNumber: string, reference: string, rawPayloa
     return;
   }
 
-  // Record success + keep the raw payload for debugging.
   let payload: unknown = null;
   try {
     payload = JSON.parse(rawPayload);
   } catch {
     /* keep null */
   }
-  await db
-    .update(payments)
-    .set({ status: 'success', completedAt: new Date(), webhookPayload: payload })
-    .where(eq(payments.orderId, order.id));
 
-  // Only advance fulfilment once (guard against duplicate webhook deliveries).
-  if (order.status === 'pending_payment') {
-    await markOrderPaid(orderNumber, reference);
-    // Confirm on the channel the order came from (web → email, WhatsApp → chat).
-    if (order.channel === 'web') {
-      await sendWebOrderConfirmation(orderNumber).catch(() => {});
-    } else {
-      const { notifyCustomerOfPayment } = await import('@/routes/payment-webhooks.js');
-      await notifyCustomerOfPayment(orderNumber).catch(() => {});
+  // Atomically record the payment success AND flip the order to paid, under a
+  // row lock. This closes two races: (a) two webhook deliveries arriving at once
+  // both seeing pending_payment, and (b) a crash between the payment write and
+  // the order write leaving them inconsistent. Only the holder that flips the
+  // order runs fulfilment, so retries can't double-fulfil or double-notify.
+  let shouldFulfil = false;
+  await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ status: orders.status })
+      .from(orders)
+      .where(eq(orders.id, order.id))
+      .for('update');
+    await tx
+      .update(payments)
+      .set({ status: 'success', completedAt: new Date(), webhookPayload: payload })
+      .where(eq(payments.orderId, order.id));
+    if (locked?.status === 'pending_payment') {
+      await tx.update(orders).set({ status: 'paid', paidAt: new Date() }).where(eq(orders.id, order.id));
+      shouldFulfil = true;
     }
-    logger.info({ orderNumber, reference, channel: order.channel }, 'Payonify webhook: order marked paid');
+  });
+
+  if (!shouldFulfil) return; // already paid by a prior delivery — nothing more to do
+
+  // Post-commit side effects (idempotent: enqueue checks for existing jobs).
+  // markOrderPaid re-sets status (harmless) and enqueues print jobs + slips.
+  await markOrderPaid(orderNumber, reference);
+  if (order.channel === 'web') {
+    await sendWebOrderConfirmation(orderNumber).catch(() => {});
+  } else {
+    const { notifyCustomerOfPayment } = await import('@/routes/payment-webhooks.js');
+    await notifyCustomerOfPayment(orderNumber).catch(() => {});
   }
+  logger.info({ orderNumber, reference, channel: order.channel }, 'Payonify webhook: order marked paid');
 }
 
 /** Mark the payment attempt failed (order stays pending so it can be retried). */

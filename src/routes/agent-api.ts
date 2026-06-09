@@ -13,7 +13,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, lt } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { orders, orderItems, printJobs, printers, images, customers, conversationState, slipJobs, processedImages } from '@/db/schema.js';
 import { env } from '@/config/env.js';
@@ -31,6 +31,58 @@ function checkAgentAuth(request: FastifyRequest, reply: FastifyReply): boolean {
     return false;
   }
   return true;
+}
+
+// ===== Atomic job claiming =====
+// next-job SELECTs the job to hand out, then claims it with a compare-and-swap
+// (UPDATE ... WHERE id=? AND status='queued'). Postgres row locking guarantees
+// only ONE poller's claim succeeds, so two agents (e.g. the real agent + the
+// virtual-printer simulator) can never both grab the same job. A failed claim
+// means someone else won the race → the caller returns 404 and polls again.
+
+async function claimPrintJob(id: string): Promise<boolean> {
+  const r = await db
+    .update(printJobs)
+    .set({ status: 'printing', startedAt: new Date() })
+    .where(and(eq(printJobs.id, id), eq(printJobs.status, 'queued')))
+    .returning({ id: printJobs.id });
+  return r.length > 0;
+}
+
+async function claimSlipJob(id: string): Promise<boolean> {
+  const r = await db
+    .update(slipJobs)
+    .set({ status: 'printing', startedAt: new Date() })
+    .where(and(eq(slipJobs.id, id), eq(slipJobs.status, 'queued')))
+    .returning({ id: slipJobs.id });
+  return r.length > 0;
+}
+
+/**
+ * Re-queue jobs stuck in 'printing' past maxAgeMs — recovers work an agent
+ * claimed then died mid-print (the previous SELECT-only flow self-healed because
+ * it never claimed; the compare-and-swap claim needs this to restore that).
+ * Cutoff is generous: photo/poster prints finish in well under a minute.
+ */
+export async function reclaimStaleAgentJobs(maxAgeMs = 15 * 60 * 1000): Promise<void> {
+  const cutoff = new Date(Date.now() - maxAgeMs);
+  try {
+    const p = await db
+      .update(printJobs)
+      .set({ status: 'queued', startedAt: null })
+      .where(and(eq(printJobs.status, 'printing'), lt(printJobs.startedAt, cutoff)))
+      .returning({ id: printJobs.id });
+    const s = await db
+      .update(slipJobs)
+      .set({ status: 'queued', startedAt: null })
+      .where(and(eq(slipJobs.status, 'printing'), lt(slipJobs.startedAt, cutoff)))
+      .returning({ id: slipJobs.id });
+    if (p.length || s.length) {
+      logger.warn({ printJobs: p.length, slipJobs: s.length }, 'Re-queued stale printing jobs (agent likely crashed mid-print)');
+    }
+  } catch (err) {
+    logger.error({ err }, 'reclaimStaleAgentJobs failed');
+  }
 }
 
 // ===== Route registration =====
@@ -74,6 +126,12 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
           .limit(1);
 
         if (!slip) {
+          reply.status(404).send({ message: 'No jobs queued' });
+          return;
+        }
+
+        // Atomically claim it — if another poller grabbed it first, back off.
+        if (!(await claimSlipJob(slip.id))) {
           reply.status(404).send({ message: 'No jobs queued' });
           return;
         }
@@ -170,6 +228,11 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         // before them, slips at or above only once the order's prints are done.
         const PRINT_SEQUENCE = 50;
         if (slip && (!orderPrint || slip.sequencePosition < PRINT_SEQUENCE)) {
+          // Atomically claim before handing out — lose the race → poll again.
+          if (!(await claimSlipJob(slip.id))) {
+            reply.status(404).send({ message: 'No jobs queued' });
+            return;
+          }
           // Slips are pre-rendered print-ready 4x6 PNGs. The agent downloads by
           // B2 key (the bucket is private; the stored direct URL 401s), so we
           // derive the key from the URL and hand it over like a print job —
@@ -216,6 +279,13 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
       }
 
       if (!job) {
+        reply.status(404).send({ message: 'No jobs queued' });
+        return;
+      }
+
+      // Atomically claim the print job — if another poller already took it,
+      // back off and let the agent poll again.
+      if (!(await claimPrintJob(job.id))) {
         reply.status(404).send({ message: 'No jobs queued' });
         return;
       }

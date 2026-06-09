@@ -100,9 +100,21 @@ export function handleMessage(
 ): BotResponse {
   const text = message.text.trim().toUpperCase();
 
-  // ===== Reset shortcut — greetings always restart the conversation =====
+  // ===== Reset shortcut — greetings restart the conversation =====
+  // BUT never silently discard a cart or an in-progress order: a confused
+  // customer typing "Hi" mid-payment would otherwise lose their order number
+  // (and an order that may already be charging is orphaned). For those, ask
+  // before discarding; only an explicit RESTART clears.
   const RESET_WORDS = ['HI', 'HELLO', 'HEY', 'START', 'MENU', 'RESTART', 'HIE', 'HOLA', 'YO'];
   if (RESET_WORDS.includes(text)) {
+    const midOrder = (context.cart?.length ?? 0) > 0 || !!context.orderNumber;
+    if (midOrder && text !== 'RESTART') {
+      return reply(
+        MSG.resetGuard(context.orderNumber ?? null, context.cart?.length ?? 0),
+        step,
+        context,
+      );
+    }
     return handleIdle(emptyContext(), customer);
   }
 

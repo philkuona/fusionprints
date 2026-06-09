@@ -152,6 +152,30 @@ export async function storeImage(
       return null;
     }
 
+    // Bake EXIF orientation into the pixels so the stored file is always upright,
+    // exactly like storeWebImage(). Without this, WhatsApp phone photos keep an
+    // orientation flag that every downstream consumer (composites, slip
+    // thumbnails, admin previews) must remember to honour — the agent does, but
+    // anything that forgets renders sideways. Only re-encode when there's an
+    // orientation to apply, to avoid needless recompression of the common case.
+    let uploadBuffer = buffer;
+    let outWidth = validation.widthPx;
+    let outHeight = validation.heightPx;
+    let outBytes = validation.fileSizeBytes;
+    try {
+      const meta = await sharp(buffer).metadata();
+      if (meta.orientation && meta.orientation !== 1) {
+        uploadBuffer = await sharp(buffer).rotate().toBuffer();
+        const rotated = await sharp(uploadBuffer).metadata();
+        outWidth = rotated.width ?? outWidth;
+        outHeight = rotated.height ?? outHeight;
+        outBytes = uploadBuffer.length;
+      }
+    } catch (err) {
+      logger.warn({ customerId, err }, 'EXIF normalisation failed — storing original bytes');
+      uploadBuffer = buffer;
+    }
+
     // Generate a unique storage key
     const imageUuid = randomUUID();
     const ext = mimeType.split('/')[1] ?? 'jpg';
@@ -162,9 +186,9 @@ export async function storeImage(
       new PutObjectCommand({
         Bucket: env.B2_BUCKET_NAME,
         Key: storageKey,
-        Body: buffer,
+        Body: uploadBuffer,
         ContentType: mimeType,
-        ContentLength: buffer.length,
+        ContentLength: uploadBuffer.length,
         // Store metadata for debugging
         Metadata: {
           customerId,
@@ -187,9 +211,9 @@ export async function storeImage(
         storageUrl,
         storageKey,
         originalFilename: originalFilename ?? null,
-        widthPx: validation.widthPx,
-        heightPx: validation.heightPx,
-        fileSizeBytes: validation.fileSizeBytes,
+        widthPx: outWidth,
+        heightPx: outHeight,
+        fileSizeBytes: outBytes,
         format: validation.format,
         wasCompressed,
         deleteAfter,
@@ -200,8 +224,8 @@ export async function storeImage(
       {
         imageId: imageRecord.id,
         customerId,
-        dimensions: `${validation.widthPx}x${validation.heightPx}`,
-        fileSizeBytes: validation.fileSizeBytes,
+        dimensions: `${outWidth}x${outHeight}`,
+        fileSizeBytes: outBytes,
       },
       'Image stored successfully',
     );
@@ -210,9 +234,9 @@ export async function storeImage(
       imageId: imageRecord.id,
       storageUrl,
       storageKey,
-      widthPx: validation.widthPx,
-      heightPx: validation.heightPx,
-      fileSizeBytes: validation.fileSizeBytes,
+      widthPx: outWidth,
+      heightPx: outHeight,
+      fileSizeBytes: outBytes,
       format: validation.format,
       wasCompressed,
     };

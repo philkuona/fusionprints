@@ -8,9 +8,9 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orderItems, processedImages } from '@/db/schema.js';
+import { orderItems, processedImages, payments } from '@/db/schema.js';
 import { authenticateWebUser } from '@/utils/web-auth.js';
 import { getWebUserOrders, getWebOrderByNumber } from '@/services/order.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
@@ -89,9 +89,19 @@ export async function registerWebOrderRoutes(app: FastifyInstance): Promise<void
       })),
     );
 
+    // Latest payment status — lets the checkout poll distinguish a failed
+    // payment from a still-pending one (so it can stop waiting and show "failed").
+    const [pay] = await db
+      .select({ status: payments.status })
+      .from(payments)
+      .where(eq(payments.orderId, order.id))
+      .orderBy(desc(payments.initiatedAt))
+      .limit(1);
+
     return reply.send({
       orderNumber: order.orderNumber,
       status: order.status,
+      paymentStatus: pay?.status ?? null,
       subtotalUsd: order.subtotalUsd,
       deliveryFeeUsd: order.deliveryFeeUsd,
       totalUsd: order.totalUsd,

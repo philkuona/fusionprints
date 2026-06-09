@@ -53,6 +53,29 @@ async function fulfilPaidOrder(orderNumber: string, reference: string, rawPayloa
   }
 }
 
+/** Mark the payment attempt failed (order stays pending so it can be retried). */
+async function markPaymentFailed(orderNumber: string, rawPayload: string): Promise<void> {
+  const order = await getOrderByNumber(orderNumber);
+  if (!order) {
+    logger.warn({ orderNumber }, 'Payonify webhook (failed): no matching order');
+    return;
+  }
+  let payload: unknown = null;
+  try {
+    payload = JSON.parse(rawPayload);
+  } catch {
+    /* keep null */
+  }
+  // Don't clobber an already-successful payment (out-of-order delivery).
+  if (order.status === 'pending_payment') {
+    await db
+      .update(payments)
+      .set({ status: 'failed', completedAt: new Date(), webhookPayload: payload })
+      .where(eq(payments.orderId, order.id));
+    logger.info({ orderNumber }, 'Payonify webhook: payment marked failed');
+  }
+}
+
 export async function registerPayonifyWebhook(app: FastifyInstance): Promise<void> {
   await app.register(async (webhookApp) => {
     // Keep the raw body (string) so the HMAC signature can be verified against
@@ -65,17 +88,7 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
       const raw = typeof request.body === 'string' ? request.body : '';
       const sig = request.headers['payonify-signature'] as string | undefined;
 
-      // Diagnostic: confirm reachability + signature result regardless of outcome.
-      const sigValid = verifyWebhookSignature(raw, sig);
-      let peekType = '';
-      try {
-        peekType = (JSON.parse(raw) as PayonifyEvent).type ?? '';
-      } catch {
-        /* not json */
-      }
-      logger.info({ hasSig: !!sig, sigValid, type: peekType, bytes: raw.length }, 'Payonify webhook hit');
-
-      if (!sigValid) {
+      if (!verifyWebhookSignature(raw, sig)) {
         logger.warn('Payonify webhook: invalid or missing signature');
         return reply.status(400).send({ error: 'invalid_signature' });
       }
@@ -99,9 +112,15 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
           logger.error({ orderNumber, err }, 'Payonify webhook: fulfilment failed');
           return reply.status(500).send({ error: 'processing_failed' });
         }
+      } else if (type.endsWith('.failed') && orderNumber) {
+        try {
+          await markPaymentFailed(orderNumber, raw);
+        } catch (err) {
+          logger.error({ orderNumber, err }, 'Payonify webhook: marking failed errored');
+        }
       }
 
-      // Acknowledge everything we don't act on (other event types, failures).
+      // Acknowledge everything we don't act on (other event types).
       return reply.status(200).send({ received: true });
     });
   });

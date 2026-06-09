@@ -102,6 +102,8 @@ export async function createEcocashCharge(params: {
   const body = {
     amount: amountCents,
     currency: 'usd',
+    // Required by the charges API; the docs' EcoCash example uses "pos".
+    source: 'pos',
     payment_method: { mobile_money: { ecocash: { mobile_number: mobileNumber } } },
     metadata: { order_number: params.orderNumber },
   };

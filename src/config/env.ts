@@ -41,6 +41,13 @@ const envSchema = z.object({
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().default(''),
   WHATSAPP_PHONE_NUMBER_ID: z.string().default(''),
   WHATSAPP_WABA_ID: z.string().default(''),
+  // Approved WhatsApp template names for business-initiated order updates
+  // (required to message customers outside the 24h service window — e.g. web
+  // orders). When a name is blank, that notification falls back to free-form
+  // text (only delivered if a service window is open). Roll out per template.
+  WHATSAPP_TEMPLATE_PICKUP: z.string().default(''),
+  WHATSAPP_TEMPLATE_DELIVERY: z.string().default(''),
+  WHATSAPP_TEMPLATE_LANG: z.string().default('en'),
 
   // Payments (optional until we wire them up)
   PAYNOW_INTEGRATION_ID: z.string().default(''),

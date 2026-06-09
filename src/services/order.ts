@@ -707,15 +707,27 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
   if (!contact) return;
 
   // Lazy-import to avoid pulling whatsapp into modules that don't need it
-  const { sendWhatsAppMessage } = await import('@/services/whatsapp.js');
+  const { sendWhatsAppMessage, sendWhatsAppTemplate } = await import('@/services/whatsapp.js');
   const { env } = await import('@/config/env.js');
 
+  const firstName = contact.name.split(/\s+/)[0] ?? contact.name;
   const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
 
-  const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *FusionPrints HRE* during business hours (${env.BUSINESS_HOURS}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${env.BUSINESS_ADDRESS}`;
-
-  await sendWhatsAppMessage(contact.phone, message);
-  logger.info({ orderNumber, phone: contact.phone }, 'Sent ready-for-pickup notification');
+  // Prefer the approved template (delivers outside the 24h window — e.g. web
+  // orders); fall back to free-form text when no template is configured.
+  if (env.WHATSAPP_TEMPLATE_PICKUP) {
+    // {{1}} name, {{2}} order, {{3}} hours, {{4}} address
+    await sendWhatsAppTemplate(contact.phone, env.WHATSAPP_TEMPLATE_PICKUP, [
+      firstName,
+      orderNumber,
+      env.BUSINESS_HOURS,
+      env.BUSINESS_ADDRESS,
+    ]);
+  } else {
+    const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *FusionPrints HRE* during business hours (${env.BUSINESS_HOURS}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${env.BUSINESS_ADDRESS}`;
+    await sendWhatsAppMessage(contact.phone, message);
+  }
+  logger.info({ orderNumber, phone: contact.phone, template: !!env.WHATSAPP_TEMPLATE_PICKUP }, 'Sent ready-for-pickup notification');
 }
 
 /**

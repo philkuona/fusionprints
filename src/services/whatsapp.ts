@@ -112,3 +112,52 @@ export async function sendWhatsAppMessage(to: string, message: BotReply): Promis
     throw new Error(`WhatsApp API error: ${response.status}`);
   }
 }
+
+/**
+ * Send a pre-approved WhatsApp template message via 360dialog.
+ *
+ * Templates are the ONLY messages WhatsApp lets a business send outside the
+ * 24-hour customer-service window — required to notify web-order customers who
+ * have never messaged us. `bodyParams` fill the template's {{1}}, {{2}}, …
+ * placeholders, in order.
+ */
+export async function sendWhatsAppTemplate(
+  to: string,
+  templateName: string,
+  bodyParams: string[],
+  languageCode: string = env.WHATSAPP_TEMPLATE_LANG,
+): Promise<void> {
+  const url = `${env.WHATSAPP_API_BASE}/messages`;
+
+  const body = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: languageCode },
+      components: [
+        {
+          type: 'body',
+          parameters: bodyParams.map((text) => ({ type: 'text', text })),
+        },
+      ],
+    },
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'D360-API-KEY': env.WHATSAPP_API_KEY,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    logger.error({ status: response.status, error: errBody, to, templateName }, 'WhatsApp template API error');
+    throw new Error(`WhatsApp template API error: ${response.status}`);
+  }
+}

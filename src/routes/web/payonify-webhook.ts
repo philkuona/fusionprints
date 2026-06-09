@@ -65,7 +65,17 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
       const raw = typeof request.body === 'string' ? request.body : '';
       const sig = request.headers['payonify-signature'] as string | undefined;
 
-      if (!verifyWebhookSignature(raw, sig)) {
+      // Diagnostic: confirm reachability + signature result regardless of outcome.
+      const sigValid = verifyWebhookSignature(raw, sig);
+      let peekType = '';
+      try {
+        peekType = (JSON.parse(raw) as PayonifyEvent).type ?? '';
+      } catch {
+        /* not json */
+      }
+      logger.info({ hasSig: !!sig, sigValid, type: peekType, bytes: raw.length }, 'Payonify webhook hit');
+
+      if (!sigValid) {
         logger.warn('Payonify webhook: invalid or missing signature');
         return reply.status(400).send({ error: 'invalid_signature' });
       }
@@ -79,6 +89,7 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
 
       const type = event.type ?? '';
       const orderNumber = event.data?.object?.metadata?.order_number;
+      logger.info({ type, orderNumber: orderNumber ?? null }, 'Payonify webhook event');
 
       if (type.endsWith('.succeeded') && orderNumber) {
         try {

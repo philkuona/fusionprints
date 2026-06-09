@@ -67,6 +67,7 @@ export const paymentStatusEnum = pgEnum('payment_status', [
 export const paymentProviderEnum = pgEnum('payment_provider', [
   'paynow',
   'flutterwave',
+  'payonify', // Zimbabwe gateway (EcoCash/OneMoney/ZimSwitch/cards) — web checkout
   'virtual', // service-virtualised provider (web checkout) until a real gateway is live
 ]);
 

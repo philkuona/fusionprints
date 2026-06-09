@@ -94,7 +94,13 @@ const envSchema = z.object({
   
 
   // Payment providers
-  PAYMENT_PROVIDER: z.enum(['stub', 'magetsi', 'stripe']).default('stub'),
+  PAYMENT_PROVIDER: z.enum(['stub', 'magetsi', 'stripe', 'payonify']).default('stub'),
+  // Payonify gateway (https://docs.payonify.com). Keys from the dashboard;
+  // pk_test_/sk_test_ for the test env, pk_live_/sk_live_ for live. The webhook
+  // secret (whsec_) comes from registering the webhook URL in the dashboard.
+  PAYONIFY_PUBLISHABLE_KEY: z.string().default(''),
+  PAYONIFY_SECRET_KEY: z.string().default(''),
+  PAYONIFY_WEBHOOK_SECRET: z.string().default(''),
   MAGETSI_API_BASE: z.string().default(''),
   MAGETSI_API_KEY: z.string().default(''),
   STRIPE_SECRET_KEY: z.string().default(''),

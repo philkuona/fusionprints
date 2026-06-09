@@ -39,6 +39,7 @@ import { registerWebCatalogRoutes } from '@/routes/web/catalog.js';
 import { registerWebPhotoRoutes } from '@/routes/web/photos.js';
 import { registerWebEditorRoutes } from '@/routes/web/editor.js';
 import { registerWebCheckoutRoutes } from '@/routes/web/checkout.js';
+import { registerPayonifyWebhook } from '@/routes/web/payonify-webhook.js';
 import { registerWebOrderRoutes } from '@/routes/web/orders.js';
 import { registerWebImportRoutes } from '@/routes/web/imports.js';
 import { startImageCleanupSchedule } from '@/services/image-cleanup.js';
@@ -162,6 +163,7 @@ async function main(): Promise<void> {
   await registerWebPhotoRoutes(app);
   await registerWebEditorRoutes(app);
   await registerWebCheckoutRoutes(app);
+  await registerPayonifyWebhook(app);
   await registerWebOrderRoutes(app);
   await registerWebImportRoutes(app);
 

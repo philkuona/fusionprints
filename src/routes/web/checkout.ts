@@ -231,15 +231,20 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
       providerReference: init.reference,
       amountUsd: res.order.totalUsd,
       status: 'pending',
-      paymentMethod: 'virtual',
+      // Real method (ecocash/card) is known only once Payonify reports it.
+      paymentMethod: init.provider === 'virtual' ? 'virtual' : null,
     });
 
-    logger.info({ orderNumber: res.orderNumber, userId }, 'Web checkout created order (pending payment)');
+    logger.info({ orderNumber: res.orderNumber, userId, provider: init.provider }, 'Web checkout created order (pending payment)');
     return reply.send({
       orderNumber: res.orderNumber,
       reference: init.reference,
       status: 'pending',
       totalUsd: res.order.totalUsd,
+      provider: init.provider,
+      // Present for embedded gateways (Payonify) — the browser mounts the
+      // Drop-In with this. Absent for the virtual/mock provider.
+      clientSecret: init.clientSecret ?? null,
     });
   });
 

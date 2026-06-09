@@ -37,7 +37,7 @@ interface MagetsiCallback {
   // signature check field — TBD with Magetsi spec
 }
 
-async function notifyCustomerOfPayment(orderNumber: string): Promise<void> {
+export async function notifyCustomerOfPayment(orderNumber: string): Promise<void> {
   // Look up the customer to send them a confirmation
   const order = await getOrderByNumber(orderNumber);
   if (!order) return;

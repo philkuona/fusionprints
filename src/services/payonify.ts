@@ -79,6 +79,50 @@ export async function createCheckoutSession(params: {
   return { id: json.id, clientSecret: json.client_secret, url: json.url ?? null, status: json.status };
 }
 
+export interface PayonifyCharge {
+  id: string;
+  status: string;
+}
+
+/**
+ * Create a direct EcoCash mobile-money charge (USSD/PIN push to the customer's
+ * phone) — used by the WhatsApp bot. Asynchronous: this returns once the push is
+ * accepted; the actual approval is confirmed later via the `charge.succeeded`
+ * webhook (which reconciles via metadata.order_number, same as web checkout).
+ */
+export async function createEcocashCharge(params: {
+  orderNumber: string;
+  amountUsd: number;
+  ecocashNumber: string;
+}): Promise<PayonifyCharge> {
+  const amountCents = Math.round(params.amountUsd * 100);
+  // Payonify's example uses the bare 9-digit MSISDN (e.g. "771234567").
+  const mobileNumber = params.ecocashNumber.replace(/\D/g, '').replace(/^263/, '').replace(/^0/, '');
+
+  const body = {
+    amount: amountCents,
+    currency: 'usd',
+    payment_method: { mobile_money: { ecocash: { mobile_number: mobileNumber } } },
+    metadata: { order_number: params.orderNumber },
+  };
+
+  const res = await fetch(`${API_BASE}/charges`, {
+    method: 'POST',
+    headers: { Authorization: authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    logger.error({ status: res.status, error: errText, orderNumber: params.orderNumber }, 'Payonify EcoCash charge failed');
+    throw new Error(`Payonify EcoCash charge failed: ${res.status}`);
+  }
+
+  const json = (await res.json()) as { id: string; status: string };
+  logger.info({ orderNumber: params.orderNumber, chargeId: json.id, status: json.status }, 'Payonify EcoCash charge created');
+  return { id: json.id, status: json.status };
+}
+
 /**
  * Verify a Payonify webhook signature.
  * Header: `Payonify-Signature: t=<unix>,v1=<hex hmac>`

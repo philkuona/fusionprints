@@ -48,8 +48,14 @@ async function fulfilPaidOrder(orderNumber: string, reference: string, rawPayloa
   // Only advance fulfilment once (guard against duplicate webhook deliveries).
   if (order.status === 'pending_payment') {
     await markOrderPaid(orderNumber, reference);
-    await sendWebOrderConfirmation(orderNumber).catch(() => {});
-    logger.info({ orderNumber, reference }, 'Payonify webhook: order marked paid');
+    // Confirm on the channel the order came from (web → email, WhatsApp → chat).
+    if (order.channel === 'web') {
+      await sendWebOrderConfirmation(orderNumber).catch(() => {});
+    } else {
+      const { notifyCustomerOfPayment } = await import('@/routes/payment-webhooks.js');
+      await notifyCustomerOfPayment(orderNumber).catch(() => {});
+    }
+    logger.info({ orderNumber, reference, channel: order.channel }, 'Payonify webhook: order marked paid');
   }
 }
 

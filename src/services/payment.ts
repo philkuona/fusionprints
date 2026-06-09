@@ -48,23 +48,30 @@ export async function initiateEcocashPayment(
     return true;
   }
 
-  // TODO: Magetsi integration
-  // const response = await fetch(`${env.MAGETSI_API_BASE}/payments/ecocash`, {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `Bearer ${env.MAGETSI_API_KEY}`,
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify({
-  //     msisdn: params.ecocashNumber,
-  //     amount_usd: ...,
-  //     reference: params.orderNumber,
-  //     callback_url: `${env.PUBLIC_URL}/webhook/payment/ecocash`,
-  //   }),
-  // });
-  // return response.ok;
+  // Payonify EcoCash USSD push (same gateway as web checkout). The push is
+  // confirmed later via the charge.succeeded webhook → markOrderPaid.
+  if (env.PAYMENT_PROVIDER === 'payonify') {
+    const { getOrderByNumber } = await import('@/services/order.js');
+    const { createEcocashCharge } = await import('@/services/payonify.js');
+    const order = await getOrderByNumber(params.orderNumber);
+    if (!order) {
+      logger.error({ orderNumber: params.orderNumber }, 'EcoCash charge: order not found');
+      return false;
+    }
+    try {
+      await createEcocashCharge({
+        orderNumber: params.orderNumber,
+        amountUsd: Number(order.totalUsd),
+        ecocashNumber: params.ecocashNumber,
+      });
+      return true; // USSD push sent; webhook confirms approval
+    } catch (err) {
+      logger.error({ orderNumber: params.orderNumber, err }, 'EcoCash charge failed');
+      return false;
+    }
+  }
 
-  logger.warn({ orderNumber: params.orderNumber }, 'Magetsi integration not yet implemented');
+  logger.warn({ orderNumber: params.orderNumber }, 'EcoCash provider not implemented');
   return false;
 }
 

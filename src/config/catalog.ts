@@ -443,7 +443,8 @@ export const DELIVERY_FEES: Record<string, number> = {
  * Example: 12 × 4x6 + 5 × 5x7 = 17 items total → 15% discount
  */
 export const BULK_DISCOUNT_TIERS = [
-  { minQuantity: 50, discountPercent: 25 },
-  { minQuantity: 10, discountPercent: 15 },
-  { minQuantity: 1, discountPercent: 0 },   // baseline — no discount
+  // Bulk discounts are OFF for now. To re-enable, restore the tiers below:
+  //   { minQuantity: 50, discountPercent: 25 },
+  //   { minQuantity: 10, discountPercent: 15 },
+  { minQuantity: 1, discountPercent: 0 }, // baseline — no discount
 ];

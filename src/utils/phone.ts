@@ -7,7 +7,33 @@
  * Telecel prefixes: 73 (some), 75 (legacy)
  */
 
+import { parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
+
 export type ZimNetwork = 'econet' | 'netone' | 'telecel' | 'unknown';
+
+/**
+ * Normalise ANY phone number to E.164 (+<country><number>), for contact /
+ * WhatsApp-notification use — FusionPrints serves diaspora/international
+ * customers, not only Zimbabwe.
+ *
+ * A bare local number (e.g. "077..." or "771...") is interpreted using
+ * `defaultCountry` (Zimbabwe by default, our main market). A number already in
+ * international form ("+1...", "+44...") keeps its own country.
+ *
+ * Returns null if it isn't a valid phone number for any country.
+ *
+ * NB: This is distinct from normalizeZimMobile / isEcocashCapable below, which
+ * stay Zimbabwe-only because EcoCash genuinely requires a Zim EcoNet number.
+ */
+export function normalizePhone(input: string, defaultCountry: CountryCode = 'ZW'): string | null {
+  if (!input || !input.trim()) return null;
+  try {
+    const parsed = parsePhoneNumberFromString(input.trim(), defaultCountry);
+    return parsed && parsed.isValid() ? parsed.number : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Normalize a Zim mobile number to E.164 format (+263XXXXXXXXX).

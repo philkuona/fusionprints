@@ -14,7 +14,7 @@ import { db } from '@/db/client.js';
 import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
-import { normalizeZimMobile } from '@/utils/phone.js';
+import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
 import {
@@ -683,9 +683,10 @@ async function resolveOrderContact(
       .then((rows) => rows[0]);
     name = webUser?.displayName ?? webUser?.email ?? 'Customer';
     const raw = order.contactPhone ?? webUser?.whatsappNumber ?? '';
-    // Normalise web numbers; keep the raw value if it doesn't parse so we never
-    // regress a number that 360dialog might still accept.
-    phone = raw ? normalizeZimMobile(raw) ?? raw : '';
+    // Normalise to E.164 for any country (default Zimbabwe for bare locals);
+    // keep the raw value if it somehow doesn't parse so we never regress a
+    // number 360dialog might still accept.
+    phone = raw ? normalizePhone(raw) ?? raw : '';
   }
 
   if (!phone) {

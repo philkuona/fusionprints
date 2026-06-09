@@ -15,6 +15,7 @@ import { db } from '@/db/client.js';
 import { processedImages, customerAddresses, payments, images } from '@/db/schema.js';
 import { getProduct } from '@/config/catalog.js';
 import { authenticateWebUser } from '@/utils/web-auth.js';
+import { normalizePhone } from '@/utils/phone.js';
 import {
   createWebOrder,
   getWebOrderByNumber,
@@ -104,6 +105,9 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
       });
     }
     const { items, fulfillmentMethod, addressId, phone } = parsed.data;
+    // Store the contact number in E.164 (any country, default Zimbabwe) so
+    // WhatsApp notifications work for local and international customers alike.
+    const contactPhone = normalizePhone(phone) ?? phone;
 
     const standardItems = items.filter((i) => i.productType !== 'composite');
     const compositeItems = items.filter((i) => i.productType === 'composite');
@@ -210,7 +214,7 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
       fulfillmentMethod,
       deliveryZone,
       deliveryAddress,
-      contactPhone: phone,
+      contactPhone,
     });
     if (!res.ok) {
       return reply.status(400).send({ error: 'order_failed', message: res.reason });

@@ -678,10 +678,17 @@ function handleChoosingUploadMode(text: string, context: BotContext): BotRespons
 
 /**
  * Handler for when the customer is uploading via the web link.
- * They type UPLOADED when they're done.
+ * They tap the "✅ I've uploaded" button (id WEB_UPLOAD_DONE) when done — or
+ * type any reasonable variant (uploaded/done/finished/…), so a typed reply
+ * still resumes the flow instead of becoming a dead end.
  */
 function handleAwaitingWebUpload(text: string, context: BotContext): BotResponse {
-  if (text !== 'UPLOADED' && text !== 'DONE') {
+  const t = text.trim().toLowerCase();
+  const isDone =
+    text === 'WEB_UPLOAD_DONE' || // interactive button payload
+    ['uploaded', 'done', 'finished', 'ready', 'complete', 'completed', '✅', "i've uploaded", 'ive uploaded'].includes(t);
+
+  if (!isDone) {
     return reply(
       MSG.webUploadStillWaiting(),
       'awaiting_web_upload',

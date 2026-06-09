@@ -637,20 +637,19 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
           document.getElementById('summary-title').textContent =
             \`\${uploadedFiles} photo\${uploadedFiles === 1 ? '' : 's'} uploaded\`;
           document.getElementById('summary-text').innerHTML =
-            'Tap below to return to WhatsApp and continue your order.';
+            'Switch back to your WhatsApp chat and tap <b>✅ I\\'ve uploaded</b> to continue your order.';
         } else {
           document.getElementById('summary-title').textContent =
             \`\${uploadedFiles} uploaded, \${failedFiles} failed\`;
           document.getElementById('summary-text').innerHTML =
-            'Some uploads didn\\'t go through. You can return to WhatsApp to continue with the ones that worked, or refresh to try the failed ones again.';
+            'Some uploads didn\\'t go through. Switch back to WhatsApp and tap <b>✅ I\\'ve uploaded</b> to continue with the ones that worked, or refresh to retry the failed ones.';
         }
 
-        if (BUSINESS_PHONE) {
-          const cleanPhone = BUSINESS_PHONE.replace(/[^\\d]/g, '');
-          whatsappCta.href = 'https://wa.me/' + cleanPhone + '?text=UPLOADED';
-        } else {
-          whatsappCta.href = 'whatsapp://send?text=UPLOADED';
-        }
+        // Deliberately NO wa.me/whatsapp:// deep link: re-opening the chat via a
+        // click-to-chat link makes subsequent bot replies surface as push
+        // notifications while the user is in the conversation. They return via
+        // the app switcher and tap the "✅ I've uploaded" button instead.
+        whatsappCta.style.display = 'none';
       }
     }
   </script>

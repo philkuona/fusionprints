@@ -144,11 +144,21 @@ export const MSG = {
 
   invalidUploadMode: () => `Please reply with *1*, *2*, or *3*.`,
 
-  awaitingWebUpload: (displayLabel: string, priceEach: string, uploadUrl: string) =>
-    `*${displayLabel}* — ${priceEach} each.\n\n📤 Tap this link to upload your photos:\n${uploadUrl}\n\nThe page works on any browser. You can upload as many photos as you want — fast.\n\nWhen you're done, return here and reply *UPLOADED*.\n\n_Link expires in 1 hour. Reply CANCEL to start over._`,
+  awaitingWebUpload: (displayLabel: string, priceEach: string, uploadUrl: string) => ({
+    text: `*${displayLabel}* — ${priceEach} each.\n\n📤 Tap to upload your photos:\n${uploadUrl}\n\nUpload as many as you like — fast, works on any browser. When you're done, come back here and tap *✅ I've uploaded* below.\n\n_Link expires in 1 hour._`,
+    buttons: [
+      { id: 'WEB_UPLOAD_DONE', title: "✅ I've uploaded" },
+      { id: 'CANCEL', title: 'Cancel' },
+    ],
+  }),
 
-  webUploadStillWaiting: () =>
-    `Still waiting for your upload to finish.\n\nWhen you've uploaded your photos via the link, reply *UPLOADED* here.\n\nReply *CANCEL* to start over.`,
+  webUploadStillWaiting: () => ({
+    text: `Once your photos have finished uploading via the link, tap *✅ I've uploaded* below.`,
+    buttons: [
+      { id: 'WEB_UPLOAD_DONE', title: "✅ I've uploaded" },
+      { id: 'CANCEL', title: 'Cancel' },
+    ],
+  }),
 
   webUploadEmpty: () =>
     `We couldn't find any uploaded photos for this order. Did the upload finish?\n\nIf the upload is still in progress, wait for it to complete then reply *UPLOADED* again.\n\nReply *CANCEL* to start over.`,

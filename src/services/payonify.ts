@@ -104,6 +104,9 @@ export async function createEcocashCharge(params: {
     currency: 'usd',
     // Required by the charges API; the docs' EcoCash example uses "pos".
     source: 'pos',
+    // Create + confirm in one call so the EcoCash USSD push is sent immediately
+    // (without this the charge sits at "requires_confirmation").
+    confirm: true,
     payment_method: { mobile_money: { ecocash: { mobile_number: mobileNumber } } },
     metadata: { order_number: params.orderNumber },
   };

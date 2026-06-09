@@ -27,6 +27,7 @@ import { db } from '@/db/client.js';
 import { customers, orders, orderItems } from '@/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { MSG } from '@/bot/messages.js';
+import { requireFullAdmin } from '@/utils/auth.js';
 
 interface MagetsiCallback {
   reference: string;       // Order number we sent
@@ -77,15 +78,21 @@ export async function registerPaymentWebhooks(app: FastifyInstance): Promise<voi
 
   // ===== EcoCash callback (Magetsi) =====
   app.post('/webhook/payment/ecocash', async (request, reply) => {
+    // SECURITY: this endpoint has NO signature verification (Magetsi spec pending).
+    // It is inert unless Magetsi is the configured, credentialed provider — so it
+    // cannot be used to mark arbitrary orders paid. Re-enable only WITH signature
+    // verification when integrating Magetsi.
+    if (env.PAYMENT_PROVIDER !== 'magetsi' || !env.MAGETSI_API_KEY) {
+      reply.status(404).send({ error: 'not_found' });
+      return;
+    }
+
     const body = request.body as MagetsiCallback;
 
     logger.info({ body }, 'EcoCash webhook received');
 
     // TODO: verify Magetsi signature here once we have the spec.
-    // For now we trust the request — fine in dev, NOT fine in production.
-    if (env.PAYMENT_PROVIDER === 'magetsi') {
-      logger.warn('Magetsi signature verification not implemented — DO NOT use in production yet');
-    }
+    logger.warn('Magetsi signature verification not implemented — DO NOT use in production yet');
 
     if (!body || !body.reference) {
       reply.status(400).send({ error: 'Missing reference' });
@@ -126,17 +133,9 @@ export async function registerPaymentWebhooks(app: FastifyInstance): Promise<voi
   // Used when payment confirmation didn't come through automatically — e.g.
   // customer paid but webhook failed. Admin can manually mark the order paid.
   app.post('/admin/api/ops/orders/:id/mark-paid', async (request, reply) => {
-    const auth = request.headers.authorization;
-    if (!auth || !auth.startsWith('Basic ')) {
-      reply.header('WWW-Authenticate', 'Basic realm="FusionPrints Admin"').status(401).send('Auth required');
-      return;
-    }
-    const decoded = Buffer.from(auth.slice(6), 'base64').toString('utf-8');
-    const [, password] = decoded.split(':');
-    if (password !== env.ADMIN_PASSWORD) {
-      reply.status(401).send('Wrong password');
-      return;
-    }
+    // Session-based admin auth, consistent with the rest of /admin/api/* (was
+    // inline Basic auth with a non-constant-time compare and no rate limit).
+    if (!requireFullAdmin(request, reply)) return;
 
     const { id } = request.params as { id: string };
     const [order] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);

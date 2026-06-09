@@ -307,7 +307,7 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
       const token = query['hub.verify_token'];
       const challenge = query['hub.challenge'];
 
-      logger.info({ mode, token }, 'Webhook verification request');
+      logger.info({ mode, tokenPresent: !!token }, 'Webhook verification request');
 
       if (mode === 'subscribe' && token === env.WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
         logger.info('Webhook verified successfully');
@@ -315,7 +315,8 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
         return;
       }
 
-      logger.warn({ mode, token }, 'Webhook verification failed — token mismatch');
+      // Never log the token value (it's a secret) — just that one was supplied.
+      logger.warn({ mode, tokenPresent: !!token }, 'Webhook verification failed — token mismatch');
       reply.status(403).send('Forbidden');
     },
   );

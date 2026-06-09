@@ -511,7 +511,6 @@ function uploadPageHtml(token: string, sizeCode: string, businessPhone: string):
 
     <div class="footer-note">
       <div class="footer-tagline">Hold the moment.</div>
-      A venture by <a href="https://gizmotechstore.co.zw" target="_blank">Innovative Fusions</a> · Harare, Zimbabwe
     </div>
   </div>
 

@@ -10,7 +10,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, desc } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { processedImages, customerAddresses, payments, images } from '@/db/schema.js';
 import { getProduct } from '@/config/catalog.js';
@@ -261,6 +261,19 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
 
     const order = await getWebOrderByNumber(userId, orderNumber);
     if (!order) return reply.status(404).send({ error: 'not_found' });
+
+    // SECURITY: this mock confirm is ONLY for the service-virtualised provider.
+    // Real-gateway orders (Payonify) are marked paid solely by the signed
+    // webhook — otherwise a customer could mark their own order paid for free.
+    const [pay] = await db
+      .select({ provider: payments.provider })
+      .from(payments)
+      .where(eq(payments.orderId, order.id))
+      .orderBy(desc(payments.initiatedAt))
+      .limit(1);
+    if (pay && pay.provider !== 'virtual') {
+      return reply.status(409).send({ error: 'not_applicable', message: 'This order is paid through the payment gateway.' });
+    }
 
     if (parsed.data.outcome === 'success') {
       // Idempotent: only act if not already paid.

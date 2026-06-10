@@ -16,8 +16,11 @@ import type { CartItem } from './types.js';
 
 const BUSINESS_NAME = process.env.BUSINESS_NAME ?? 'FusionPrints';
 const COLLECTION_ADDRESS =
-  process.env.BUSINESS_COLLECTION_ADDRESS ?? 'Collection address TBD, Harare';
+  process.env.BUSINESS_COLLECTION_ADDRESS ?? 'our shop';
 const BUSINESS_HOURS = process.env.BUSINESS_HOURS ?? 'Mon–Sat, 9am–6pm';
+// Delivery zone wording is configurable: prod sets BUSINESS_LOCATION_NAME (e.g.
+// "Harare"); unset → a neutral fallback so no location is hard-coded in copy.
+const DELIVERY_ZONE = process.env.BUSINESS_LOCATION_NAME || 'your area';
 
 export const MSG = {
   // ===== Greeting =====
@@ -62,7 +65,7 @@ export const MSG = {
   photoSizeMenu: () => {
     const lines = [`Which size?\n`];
     PHOTO_PRODUCTS.forEach((p, i) => {
-      lines.push(`${i + 1}️⃣ ${p.displayLabel} — *$${p.unitPriceUsd.toFixed(2)}*`);
+      lines.push(`${i + 1}️⃣ ${p.displayLabel}: *$${p.unitPriceUsd.toFixed(2)}*`);
     });
     lines.push(`\nReply with a number.`);
     return lines.join('\n');
@@ -94,7 +97,7 @@ export const MSG = {
     const lines = [`Which poster size?\n`];
     POSTER_PRODUCTS.forEach((p, i) => {
       const note = p.isOutsourced ? ' _(5–7 day turnaround)_' : '';
-      lines.push(`${i + 1}️⃣ ${p.displayLabel} — *$${p.unitPriceUsd.toFixed(2)}*${note}`);
+      lines.push(`${i + 1}️⃣ ${p.displayLabel}: *$${p.unitPriceUsd.toFixed(2)}*${note}`);
     });
     lines.push(`\nReply with a number.`);
     return lines.join('\n');
@@ -130,11 +133,11 @@ export const MSG = {
   // ===== Image upload =====
 
   chooseUploadMode: (displayLabel: string, priceEach: string) =>
-    `*${displayLabel}* — ${priceEach} each.\n\nHow would you like to send your photos?\n\n1️⃣ *One photo* — multiple copies of the same image\n2️⃣ *A few photos* — send as documents on WhatsApp\n3️⃣ *Many photos* — fast upload via web link _(recommended for 5+ photos)_\n\nReply with a number.`,
+    `*${displayLabel}* at ${priceEach} each.\n\nHow would you like to send your photos?\n\n1️⃣ *One photo*: multiple copies of the same image\n2️⃣ *A few photos*: send as documents on WhatsApp\n3️⃣ *Many photos*: fast upload via web link _(recommended for 5+ photos)_\n\nReply with a number.`,
 
   /** Interactive version: 3 buttons for upload mode. */
   chooseUploadModeInteractive: (displayLabel: string, priceEach: string) => ({
-    text: `*${displayLabel}* — ${priceEach} each.\n\nHow would you like to send your photos?`,
+    text: `*${displayLabel}* at ${priceEach} each.\n\nHow would you like to send your photos?`,
     buttons: [
       { id: '1', title: 'One photo' },
       { id: '2', title: 'A few photos' },
@@ -145,7 +148,7 @@ export const MSG = {
   invalidUploadMode: () => `Please reply with *1*, *2*, or *3*.`,
 
   awaitingWebUpload: (displayLabel: string, priceEach: string, uploadUrl: string) => ({
-    text: `*${displayLabel}* — ${priceEach} each.\n\n📤 Tap to upload your photos:\n${uploadUrl}\n\nUpload as many as you like — fast, works on any browser. When you're done, come back here and tap *✅ I've uploaded* below.\n\n_Link expires in 1 hour._`,
+    text: `*${displayLabel}* at ${priceEach} each.\n\n📤 Tap to upload your photos:\n${uploadUrl}\n\nUpload as many as you like. Fast, works on any browser. When you're done, come back here and tap *✅ I've uploaded* below.\n\n_Link expires in 1 hour._`,
     buttons: [
       { id: 'WEB_UPLOAD_DONE', title: "✅ I've uploaded" },
       { id: 'CANCEL', title: 'Cancel' },
@@ -164,14 +167,14 @@ export const MSG = {
     `We couldn't find any uploaded photos for this order. Did the upload finish?\n\nIf the upload is still in progress, wait for it to complete then reply *UPLOADED* again.\n\nReply *CANCEL* to start over.`,
 
   webUploadComplete: (count: number, displayLabel: string, lineTotal: string, cartTotal: string) =>
-    `✅ Got it — ${count} photo${count === 1 ? '' : 's'} added at ${displayLabel} for *${lineTotal}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
+    `✅ Got it. ${count} photo${count === 1 ? '' : 's'} added at ${displayLabel} for *${lineTotal}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
 
   awaitingBatchUpload: (displayLabel: string, priceEach: string) =>
-    `Send your photos for *${displayLabel}* — ${priceEach} each.\n\n📎 Send them as *documents* — you can select all of them at once from your gallery.\n\nWe'll confirm every few as they arrive. Reply *DONE* when you're finished.\n\n_Reply BACK to choose a different size, or CANCEL to start over._`,
+    `Send your photos for *${displayLabel}* at ${priceEach} each.\n\n📎 Send them as *documents*. You can select all of them at once from your gallery.\n\nWe'll confirm every few as they arrive. Reply *DONE* when you're finished.\n\n_Reply BACK to choose a different size, or CANCEL to start over._`,
 
   batchImageAdded: (count: number, widthPx: number, heightPx: number, hasWarning: boolean) =>
     hasWarning
-      ? `📷 Photo ${count} received — ${widthPx}×${heightPx}px _(slightly low res — acceptable but not the sharpest)_`
+      ? `📷 Photo ${count} received: ${widthPx}×${heightPx}px _(slightly low res, acceptable but not the sharpest)_`
       : `📷 Photo ${count} received ✅`,
 
   batchProgressUpdate: (count: number) =>
@@ -181,27 +184,27 @@ export const MSG = {
     `⚠️ That image came through compressed and won't print well. Please send it as a *document*:\n📎 Paperclip → *Document* → select the photo.\n\nThe other photos in this batch are still saved. Send the next photo or reply *DONE* when you're finished.`,
 
   batchImageRejectedTooLow: (widthPx: number, heightPx: number, minW: number, minH: number) =>
-    `⚠️ That image is ${widthPx}×${heightPx}px — below the ${minW}×${minH} minimum for a sharp print. Skipped.\n\nThe other photos in this batch are still saved. Send a different photo, or reply *DONE* when you're finished.`,
+    `⚠️ That image is ${widthPx}×${heightPx}px, below the ${minW}×${minH} minimum for a sharp print. Skipped.\n\nThe other photos in this batch are still saved. Send a different photo, or reply *DONE* when you're finished.`,
 
   batchEmptyOnDone: () =>
     `You haven't sent any photos yet. Upload at least one as a document, or reply *CANCEL* to start over.`,
 
   batchAdded: (imageCount: number, displayLabel: string, lineTotal: string, cartTotal: string) =>
-    `✅ Added: ${imageCount} × ${displayLabel} — *${lineTotal}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
+    `✅ Added: ${imageCount} × ${displayLabel} for *${lineTotal}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
 
   awaitingImage: (displayLabel: string, priceEach: string) =>
-    `*${displayLabel}* — ${priceEach} each.\n\nNow send me the photo.\n\n⚠️ *Important:* Send it as a *document/file*, not a regular photo — WhatsApp shrinks regular photos and prints come out blurry.\n\n📎 Tap the paperclip → *Document* → choose your image.`,
+    `*${displayLabel}* at ${priceEach} each.\n\nNow send me the photo.\n\n⚠️ *Important:* Send it as a *document/file*, not a regular photo. WhatsApp shrinks regular photos and prints come out blurry.\n\n📎 Tap the paperclip → *Document* → choose your image.`,
 
   imageWasCompressed: () => `⚠️ That image came through compressed. The print quality may not be good.\n\nPlease re-send as a *document*:\n📎 Paperclip → *Document* → select the photo.\n\nIf you only have it as a regular photo, reply *USE ANYWAY* and we'll print what you sent (quality may be lower).`,
 
   imageTooLow: (widthPx: number, heightPx: number, minW: number, minH: number) =>
-    `⚠️ This image is ${widthPx}×${heightPx} pixels — below the minimum ${minW}×${minH} for a sharp print.\n\n1️⃣ Send a different photo\n2️⃣ Print anyway _(may look soft)_`,
+    `⚠️ This image is ${widthPx}×${heightPx} pixels. That's below the minimum ${minW}×${minH} for a sharp print.\n\n1️⃣ Send a different photo\n2️⃣ Print anyway _(may look soft)_`,
 
   imageWarnLow: (widthPx: number, heightPx: number, recW: number, recH: number) =>
     `⚠️ Image is ${widthPx}×${heightPx} pixels. For best results we recommend ${recW}×${recH}.\n\n1️⃣ Send a different photo\n2️⃣ Continue anyway`,
 
   imageOk: (widthPx: number, heightPx: number) =>
-    `✅ Got it — ${widthPx}×${heightPx}px, looking good.\n\nHow many copies?`,
+    `✅ Got it. ${widthPx}×${heightPx}px, looking good.\n\nHow many copies?`,
 
   imageOkNoCheck: () => `✅ Got it.\n\nHow many copies?`,
 
@@ -209,21 +212,21 @@ export const MSG = {
 
   /** Single-photo composite prompt (wallet, passport). */
   compositePhotoPrompt: (displayName: string, priceLabel: string) =>
-    `*${displayName}* — ${priceLabel}.\n\nSend me your photo as a *document/file* (not a regular photo — WhatsApp shrinks those and prints come out blurry).\n\n📎 Paperclip → *Document* → choose your image.\n\n_Reply CANCEL to start over._`,
+    `*${displayName}* at ${priceLabel}.\n\nSend me your photo as a *document/file* (not a regular photo. WhatsApp shrinks those and prints come out blurry).\n\n📎 Paperclip → *Document* → choose your image.\n\n_Reply CANCEL to start over._`,
 
   /** Mini prints: first of two photos. */
   miniPhoto1Prompt: (displayName: string, priceLabel: string) =>
-    `*${displayName}* — ${priceLabel}.\n\nMini prints come two to a sheet. Send your *first* photo as a *document/file*.\n\n📎 Paperclip → *Document* → choose your image.\n\n_Reply CANCEL to start over._`,
+    `*${displayName}*, ${priceLabel}.\n\nMini prints come two to a sheet. Send your *first* photo as a *document/file*.\n\n📎 Paperclip → *Document* → choose your image.\n\n_Reply CANCEL to start over._`,
 
   /** Mini prints: second photo. */
   miniPhoto2Prompt: () =>
-    `Lovely — now send your *second* photo (as a *document/file*).\n\n📎 Paperclip → *Document* → choose your image.`,
+    `Lovely. Now send your *second* photo (as a *document/file*).\n\n📎 Paperclip → *Document* → choose your image.`,
 
   compositeImageCompressed: () =>
     `⚠️ That image came through compressed and won't print sharply. Please re-send it as a *document*:\n📎 Paperclip → *Document* → select the photo.`,
 
   compositeImageTooLow: (widthPx: number, heightPx: number, minW: number, minH: number) =>
-    `⚠️ That image is ${widthPx}×${heightPx}px — below the ${minW}×${minH} minimum for a sharp print. Please send a higher-resolution photo as a *document*.`,
+    `⚠️ That image is ${widthPx}×${heightPx}px. That's below the ${minW}×${minH} minimum for a sharp print. Please send a higher-resolution photo as a *document*.`,
 
   // ===== Quantity =====
 
@@ -232,11 +235,11 @@ export const MSG = {
   // ===== Cart =====
 
   itemAdded: (item: CartItem, cartTotal: string) =>
-    `✅ Added: ${item.quantity} × ${item.displayLabel} — *$${item.lineTotalUsd.toFixed(2)}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
+    `✅ Added: ${item.quantity} × ${item.displayLabel} for *$${item.lineTotalUsd.toFixed(2)}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?\n\n1️⃣ Add another item\n2️⃣ Continue to checkout`,
 
   /** Interactive variant: 3 buttons after adding to cart (with Back). */
   itemAddedInteractive: (item: CartItem, cartTotal: string) => ({
-    text: `✅ Added: ${item.quantity} × ${item.displayLabel} — *$${item.lineTotalUsd.toFixed(2)}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?`,
+    text: `✅ Added: ${item.quantity} × ${item.displayLabel} for *$${item.lineTotalUsd.toFixed(2)}*\n\nCart total so far: *${cartTotal}*\n\nWhat next?`,
     buttons: [
       { id: '1', title: 'Add another' },
       { id: '2', title: 'Checkout' },
@@ -258,28 +261,28 @@ export const MSG = {
 
   // ===== Name collection (first order only) =====
 
-  askName: () => `One quick thing — what's your name? _(just need it once)_`,
+  askName: () => `One quick thing, what's your name? _(just need it once)_`,
 
   invalidName: () => `Please reply with your name.`,
 
   // ===== Fulfillment =====
 
   chooseFulfillment: (name: string) =>
-    `Thanks *${name}*! How would you like to receive your prints?\n\n1️⃣ *Collect* — ${COLLECTION_ADDRESS} _(free)_\n2️⃣ *Deliver* in Harare — $3.00\n3️⃣ *Deliver* outside Harare — _(quote first)_`,
+    `Thanks *${name}*! How would you like to receive your prints?\n\n1️⃣ *Collect*: ${COLLECTION_ADDRESS} _(free)_\n2️⃣ *Deliver* in ${DELIVERY_ZONE}: $3.00\n3️⃣ *Deliver* outside ${DELIVERY_ZONE}: _(quote first)_`,
 
   /** Interactive variant: 3 buttons for fulfillment choice. */
   chooseFulfillmentInteractive: (name: string) => ({
-    text: `Thanks *${name}*! How would you like to receive your prints?\n\n• Collect — ${COLLECTION_ADDRESS} (free)\n• Deliver in Harare — $3.00\n• Outside Harare — quote first`,
+    text: `Thanks *${name}*! How would you like to receive your prints?\n\n• Collect: ${COLLECTION_ADDRESS} (free)\n• Deliver in ${DELIVERY_ZONE}: $3.00\n• Outside ${DELIVERY_ZONE}: quote first`,
     buttons: [
       { id: '1', title: '🏪 Collect' },
-      { id: '2', title: '🚚 Harare delivery' },
-      { id: '3', title: 'Outside Harare' },
+      { id: '2', title: '🚚 Local delivery' },
+      { id: '3', title: 'Outside zone' },
     ],
   }),
 
-  askDeliveryAddress: () => `Please send your delivery address in Harare.`,
+  askDeliveryAddress: () => `Please send your delivery address in ${DELIVERY_ZONE}.`,
 
-  outsideHarare: () => `For deliveries outside Harare, please send us your address and we'll quote you a delivery fee before confirming the order.`,
+  outsideHarare: () => `For deliveries outside ${DELIVERY_ZONE}, please send us your address and we'll quote you a delivery fee before confirming the order.`,
 
   invalidFulfillmentChoice: () => `Please reply with *1*, *2*, or *3*.`,
 
@@ -312,7 +315,7 @@ export const MSG = {
 
   /** Show after order created — let customer choose payment method */
   choosePaymentMethod: (orderNumber: string, totalUsd: string) =>
-    `*Order ${orderNumber}* created — total *$${totalUsd}*\n\nHow would you like to pay?`,
+    `*Order ${orderNumber}* created. Total: *$${totalUsd}*\n\nHow would you like to pay?`,
 
   /** Interactive button payload for payment method choice */
   choosePaymentMethodButtons: () => ({
@@ -325,11 +328,11 @@ export const MSG = {
 
   /** Asking for the EcoCash mobile number */
   askEcocashNumber: () =>
-    `Send your EcoCash number (must be EcoNet — 077 or 078).\n\nExample: \`0771234567\``,
+    `Send your EcoCash number. It must be EcoNet (077 or 078).\n\nExample: \`0771234567\``,
 
   /** Validation failure — wrong network */
   ecocashWrongNetwork: () =>
-    `That number isn't on EcoNet — EcoCash only works with EcoNet numbers (077 or 078).\n\nWant to:\n1. Try a different number\n2. Pay by card instead`,
+    `That number isn't on EcoNet. EcoCash only works with EcoNet numbers (077 or 078).\n\nWant to:\n1. Try a different number\n2. Pay by card instead`,
 
   /** Validation failure — invalid format */
   ecocashInvalidFormat: () =>
@@ -358,12 +361,12 @@ export const MSG = {
     `✅ *Payment received!*\n\nOrder *${orderNumber}* is now in the queue.\n\nWe'll message you when your prints are ready. Photo prints are usually done within *1 hour* during business hours.`,
 
   paymentConfirmedPoster: (orderNumber: string) =>
-    `✅ *Payment received!*\n\nOrder *${orderNumber}* — your poster will go through a quick quality check before printing _(within 2 hours, business hours)_. We'll message you once it's confirmed.`,
+    `✅ *Payment received!*\n\nOrder *${orderNumber}*: your poster will go through a quick quality check before printing _(within 2 hours, business hours)_. We'll message you once it's confirmed.`,
 
   // ===== Ready for collection / delivery =====
 
   orderReady: (orderNumber: string) =>
-    `🎉 *Your prints are ready!*\n\nOrder *${orderNumber}*\n📍 ${COLLECTION_ADDRESS}\n🕒 ${BUSINESS_HOURS}\n\nBring your phone — show this message when you collect.`,
+    `🎉 *Your prints are ready!*\n\nOrder *${orderNumber}*\n📍 ${COLLECTION_ADDRESS}\n🕒 ${BUSINESS_HOURS}\n\nBring your phone. Show this message when you collect.`,
 
   orderReadyDelivery: (orderNumber: string) =>
     `🎉 *Your prints are on their way!*\n\nOrder *${orderNumber}* has been handed to our courier. Expect delivery within 2–4 hours.`,
@@ -377,9 +380,9 @@ export const MSG = {
 
   // ===== Help / fallback =====
 
-  help: () => `Here's what we can help with:\n\n📷 *Print photos* — type *photos*\n🖼️ *Print posters* — type *posters*\n📦 *Check your order* — type *status*\n👤 *Talk to a person* — type *HELP*\n\nOr just reply with *1*, *2*, or *3* from the menu.`,
+  help: () => `Here's what we can help with:\n\n📷 *Print photos*: type *photos*\n🖼️ *Print posters*: type *posters*\n📦 *Check your order*: type *status*\n👤 *Talk to a person*: type *HELP*\n\nOr just reply with *1*, *2*, or *3* from the menu.`,
 
-humanHandoff: () => `This is FusionPrints' ordering chat — for help, please call us on ${process.env.BUSINESS_PHONE ?? '[business number]'} (${BUSINESS_HOURS}).\n\nIf you'd like to continue placing an order, just keep typing.`,
+humanHandoff: () => `This is FusionPrints' ordering chat. For help, please call us on ${process.env.BUSINESS_PHONE ?? '[business number]'} (${BUSINESS_HOURS}).\n\nIf you'd like to continue placing an order, just keep typing.`,
 
   somethingWentWrong: () => `Something went wrong on our end. Please try again, or type *HELP* to speak to a person.`,
 };

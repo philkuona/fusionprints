@@ -724,7 +724,7 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
       env.BUSINESS_ADDRESS,
     ]);
   } else {
-    const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *FusionPrints HRE* during business hours (${env.BUSINESS_HOURS}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${env.BUSINESS_ADDRESS}`;
+    const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${env.BUSINESS_NAME}* during business hours (${env.BUSINESS_HOURS}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${env.BUSINESS_ADDRESS}`;
     await sendWhatsAppMessage(contact.phone, message);
   }
   logger.info({ orderNumber, phone: contact.phone, template: !!env.WHATSAPP_TEMPLATE_PICKUP }, 'Sent ready-for-pickup notification');
@@ -772,7 +772,7 @@ async function sendOutForDeliveryNotification(orderNumber: string): Promise<void
 
   const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
 
-  const message = `🚚 Your order is on its way!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nYour prints have left *FusionPrints HRE* and are out for delivery. Our driver will be in touch shortly.\n\nQuestions? Just reply to this message.`;
+  const message = `🚚 Your order is on its way!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nYour prints have left *${env.BUSINESS_NAME}* and are out for delivery. Our driver will be in touch shortly.\n\nQuestions? Just reply to this message.`;
 
   await sendWhatsAppMessage(contact.phone, message);
   logger.info({ orderNumber, phone: contact.phone }, 'Sent out-for-delivery notification');

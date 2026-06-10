@@ -282,7 +282,7 @@ export async function renderEndSeparatorSlip(orderNumber: string, customerFirstN
  *   - Order number, payment status, phone
  *   - Inverted "Order Information" header
  *   - Items list (max 10 lines)
- *   - Inverted "FusionPrints HRE" footer
+ *   - Inverted business-name footer
  *   - Order timestamp
  */
 export function generateEnvelopeLabelZpl(data: EnvelopeLabelData): string {
@@ -352,10 +352,10 @@ export function generateEnvelopeLabelZpl(data: EnvelopeLabelData): string {
     itemY += 32;
   }
 
-  // Inverted footer "FusionPrints HRE"
+  // Inverted footer with the business name
   const footerY = 690;
   lines.push(`^FO20,${footerY}^GB417,38,38,B,0^FS`);
-  lines.push(`^FO20,${footerY + 8}^A0N,28,16^FR^FDFusionPrints HRE^FS`);
+  lines.push(`^FO20,${footerY + 8}^A0N,28,16^FR^FD${env.BUSINESS_NAME}^FS`);
 
   // Timestamp at very bottom
   lines.push(`^FO20,750^A0N,24,14^FDOrdered: ${zplEscape(orderedDate)}^FS`);

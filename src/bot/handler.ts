@@ -117,15 +117,15 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
             const statusMessages = recentOrders.map((o) => {
               const statusLabel: Record<string, string> = {
                 pending_payment: 'awaiting payment',
-                paid: 'paid — printing soon',
+                paid: 'paid, printing soon',
                 awaiting_approval: 'under quality review',
                 queued_for_print: 'in the print queue',
                 printing: 'printing now',
                 ready_for_collection: '✅ ready to collect!',
                 shipped: '🚚 on its way to you',
-                fulfilled: 'collected — complete',
+                fulfilled: 'collected, complete',
                 cancelled: 'cancelled',
-                failed: 'failed — please contact us',
+                failed: 'failed, please contact us',
               };
               const label = statusLabel[o.status] ?? o.status;
               return MSG.orderStatus(o.orderNumber, label);

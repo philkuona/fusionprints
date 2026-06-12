@@ -255,6 +255,9 @@ export const orderItems = pgTable(
   (table) => ({
     orderIdx: index('order_items_order_idx').on(table.orderId),
     processedImageIdx: index('order_items_processed_image_idx').on(table.processedImageId),
+    // Image cleanup's "is it referenced by an order?" check and the FK's
+    // SET NULL on image delete both scan this column.
+    imageIdx: index('order_items_image_idx').on(table.imageId),
   }),
 );
 
@@ -327,6 +330,8 @@ export const printJobs = pgTable(
     statusIdx: index('print_jobs_status_idx').on(table.status),
     orderItemIdx: index('print_jobs_order_item_idx').on(table.orderItemId),
     targetPrinterIdx: index('print_jobs_target_printer_idx').on(table.targetPrinterType),
+    // The agent's next-job poll filters on both columns together.
+    statusTargetIdx: index('print_jobs_status_target_idx').on(table.status, table.targetPrinterType),
   }),
 );
 
@@ -374,6 +379,8 @@ export const slipJobs = pgTable(
     orderIdx: index('slip_jobs_order_idx').on(table.orderId),
     targetPrinterIdx: index('slip_jobs_target_printer_idx').on(table.targetPrinterType),
     sequenceIdx: index('slip_jobs_sequence_idx').on(table.orderId, table.sequencePosition),
+    // The agent's next-job poll filters on both columns together.
+    statusTargetIdx: index('slip_jobs_status_target_idx').on(table.status, table.targetPrinterType),
   }),
 );
 

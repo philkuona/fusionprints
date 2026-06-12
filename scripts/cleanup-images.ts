@@ -10,7 +10,7 @@
  * Useful for ad-hoc cleanup or wiring to an OS-level cron.
  */
 
-import { cleanupExpiredWebImages } from '../src/services/image-cleanup.js';
+import { cleanupExpiredImages } from '../src/services/image-cleanup.js';
 import { closeDatabase } from '../src/db/client.js';
 import { logger } from '../src/utils/logger.js';
 
@@ -20,7 +20,7 @@ async function main(): Promise<void> {
 
   logger.info({ dryRun }, dryRun ? 'Image cleanup: DRY-RUN (pass --execute to delete)' : 'Image cleanup: EXECUTE');
 
-  const result = await cleanupExpiredWebImages({ dryRun });
+  const result = await cleanupExpiredImages({ dryRun });
 
   logger.info(
     result,

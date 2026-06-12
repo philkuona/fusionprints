@@ -1,13 +1,11 @@
 /**
  * Image expiry cleanup (Phase 2.1.6).
  *
- * Web uploads are kept for 90 days (see storeWebImage), tracked by the
- * `delete_after` timestamp on the images row. This job finds web-owned images
- * whose retention window has passed and removes them from B2 + the database.
+ * Every stored image carries a `delete_after` timestamp (30 days for WhatsApp
+ * uploads, 90 for web — see image-storage). This job finds images whose
+ * retention window has passed and removes them from B2 + the database.
  *
  * Safety rules:
- *   - Scoped to WEB uploads (web_user_id set). WhatsApp images have their own
- *     (currently un-automated) lifecycle and are left untouched here.
  *   - Images still referenced by an order_item are SKIPPED. That FK has no
  *     cascade, and an order must keep its source image regardless of age.
  *   - Dry-run mode logs the full deletion list and deletes nothing — the
@@ -36,11 +34,11 @@ function daysOverdue(deleteAfter: Date, now: Date): number {
 }
 
 /**
- * Find and remove expired web-owned images.
+ * Find and remove expired images (WhatsApp and web owned).
  *
  * @param dryRun - when true, log the deletion list but delete nothing.
  */
-export async function cleanupExpiredWebImages({
+export async function cleanupExpiredImages({
   dryRun,
 }: {
   dryRun: boolean;
@@ -50,7 +48,7 @@ export async function cleanupExpiredWebImages({
   // Image ids referenced by any order item — protected from deletion.
   const referenced = db.select({ id: orderItems.imageId }).from(orderItems);
 
-  const expired = await db
+  const candidates = await db
     .select({
       id: images.id,
       webUserId: images.webUserId,
@@ -60,12 +58,26 @@ export async function cleanupExpiredWebImages({
     .from(images)
     .where(
       and(
-        isNotNull(images.webUserId),
         isNotNull(images.deleteAfter),
         lt(images.deleteAfter, now),
         notInArray(images.id, referenced),
       ),
     );
+
+  // Composite items (wallet/passport/mini) reference their cell photos inside
+  // layout_payload JSON, not the image_id column — protect those too.
+  const layoutRows = await db
+    .select({ layoutPayload: orderItems.layoutPayload })
+    .from(orderItems)
+    .where(isNotNull(orderItems.layoutPayload));
+  const layoutImageIds = new Set<string>();
+  for (const row of layoutRows) {
+    const cells = (row.layoutPayload as { cells?: { imageId?: string | null }[] } | null)?.cells ?? [];
+    for (const cell of cells) {
+      if (cell.imageId) layoutImageIds.add(cell.imageId);
+    }
+  }
+  const expired = candidates.filter((img) => !layoutImageIds.has(img.id));
 
   const result: CleanupResult = {
     dryRun,
@@ -75,7 +87,7 @@ export async function cleanupExpiredWebImages({
   };
 
   if (expired.length === 0) {
-    logger.info({ dryRun }, 'Image cleanup: no expired web images');
+    logger.info({ dryRun }, 'Image cleanup: no expired images');
     return result;
   }
 
@@ -92,8 +104,8 @@ export async function cleanupExpiredWebImages({
       })),
     },
     dryRun
-      ? 'Image cleanup DRY-RUN — these expired web images WOULD be deleted'
-      : 'Image cleanup — deleting expired web images',
+      ? 'Image cleanup DRY-RUN — these expired images WOULD be deleted'
+      : 'Image cleanup — deleting expired images',
   );
 
   if (dryRun) return result;
@@ -136,7 +148,7 @@ export function startImageCleanupSchedule(): void {
   logger.info({ dryRun, intervalHours: 24 }, 'Image expiry cleanup scheduled');
 
   const run = (): void => {
-    void cleanupExpiredWebImages({ dryRun }).catch((err: unknown) =>
+    void cleanupExpiredImages({ dryRun }).catch((err: unknown) =>
       logger.error({ err }, 'Image cleanup run failed'),
     );
   };

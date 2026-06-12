@@ -42,6 +42,14 @@ const s3 = new S3Client({
   },
 });
 
+/**
+ * Decompression-bomb guard: max decoded pixels for any customer image. 80MP
+ * comfortably covers real phone/camera photos while stopping tiny files that
+ * decompress to gigantic bitmaps. Enforced as a friendly rejection in
+ * validateImageBuffer and as a hard sharp limit at every decode site.
+ */
+export const MAX_INPUT_PIXELS = 80_000_000;
+
 // ===== Types =====
 
 export interface StoredImage {
@@ -104,6 +112,17 @@ export async function validateImageBuffer(
         fileSizeBytes: buffer.length,
         format: metadata.format ?? 'unknown',
         reason: `Unsupported format: ${metadata.format}. Please send a JPEG or PNG.`,
+      };
+    }
+
+    if (metadata.width * metadata.height > MAX_INPUT_PIXELS) {
+      return {
+        valid: false,
+        widthPx: metadata.width,
+        heightPx: metadata.height,
+        fileSizeBytes: buffer.length,
+        format: metadata.format ?? 'unknown',
+        reason: 'This photo is too large to process. Please send a photo under 80 megapixels.',
       };
     }
 
@@ -181,7 +200,7 @@ export async function storeImage(
     try {
       const meta = await sharp(buffer).metadata();
       if (meta.orientation && meta.orientation !== 1) {
-        uploadBuffer = await sharp(buffer).rotate().toBuffer();
+        uploadBuffer = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS }).rotate().toBuffer();
         const rotated = await sharp(uploadBuffer).metadata();
         outWidth = rotated.width ?? outWidth;
         outHeight = rotated.height ?? outHeight;
@@ -290,7 +309,7 @@ export async function storeWebImage(
     let uploadBuffer: Buffer;
     let outputMime = mimeType;
     try {
-      const pipeline = sharp(buffer).rotate();
+      const pipeline = sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();
       // Re-encode in the original format where we can, so dims/orientation
       // are finalised. sharp picks the encoder from the input format.
       uploadBuffer = await pipeline.toBuffer();

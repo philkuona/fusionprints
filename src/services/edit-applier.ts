@@ -17,6 +17,7 @@ import sharp from 'sharp';
 import { createHash } from 'crypto';
 import type { EditPayload } from '@/schemas/edit-payload.js';
 import type { Product } from '@/config/catalog.js';
+import { MAX_INPUT_PIXELS } from '@/services/image-storage.js';
 
 export const REC709 = [0.2126, 0.7152, 0.0722] as const;
 
@@ -144,7 +145,7 @@ export async function applyEdit(
   let left = Math.max(0, Math.min(Math.round(crop.x * rotW), rotW - cw));
   let top = Math.max(0, Math.min(Math.round(crop.y * rotH), rotH - ch));
 
-  let img = sharp(buffer).rotate(rotate);
+  let img = sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS }).rotate(rotate);
   if (flipH) img = img.flop();
   if (flipV) img = img.flip();
   img = img.extract({ left, top, width: cw, height: ch });

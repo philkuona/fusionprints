@@ -482,6 +482,7 @@ export const uploadSessions = pgTable(
     sizeCode: text('size_code').notNull(), // e.g. '4x6'
     status: text('status').notNull().default('active'), // 'active' | 'completed' | 'expired'
     imageCount: integer('image_count').notNull().default(0),
+    uploadedBytes: bigint('uploaded_bytes', { mode: 'number' }).notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),

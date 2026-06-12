@@ -1,0 +1,1 @@
+ALTER TABLE "upload_sessions" ADD COLUMN "uploaded_bytes" bigint DEFAULT 0 NOT NULL;

@@ -21,7 +21,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import multipart from '@fastify/multipart';
-import { eq, and, gte } from 'drizzle-orm';
+import { eq, and, gte, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { db } from '@/db/client.js';
 import { uploadSessions } from '@/db/schema.js';
@@ -29,6 +29,11 @@ import { logger } from '@/utils/logger.js';
 import { storeImage } from '@/services/image-storage.js';
 import { BRAND_FONT_CSS } from '@/routes/admin-fonts.js';
 import { env } from '@/config/env.js';
+
+// Per-session upload caps. The multipart `files` limit only bounds one request,
+// and the page posts one file per request — these bound the whole session.
+const MAX_SESSION_FILES = 200;
+const MAX_SESSION_BYTES = 500 * 1024 * 1024; // 500MB
 
 // ===== Helpers =====
 
@@ -701,6 +706,15 @@ export async function registerUploadRoutes(app: FastifyInstance): Promise<void> 
       return;
     }
 
+    if (session.imageCount >= MAX_SESSION_FILES || session.uploadedBytes >= MAX_SESSION_BYTES) {
+      logger.warn(
+        { token, imageCount: session.imageCount, uploadedBytes: session.uploadedBytes },
+        'Upload session cap reached',
+      );
+      reply.status(413).send({ error: 'Upload limit reached for this session.' });
+      return;
+    }
+
     try {
       const data = await request.file();
       if (!data) {
@@ -724,10 +738,13 @@ export async function registerUploadRoutes(app: FastifyInstance): Promise<void> 
         return;
       }
 
-      // Increment image count on the session
+      // Atomic increments — the upload page can post several files in parallel.
       await db
         .update(uploadSessions)
-        .set({ imageCount: session.imageCount + 1 })
+        .set({
+          imageCount: sql`${uploadSessions.imageCount} + 1`,
+          uploadedBytes: sql`${uploadSessions.uploadedBytes} + ${stored.fileSizeBytes}`,
+        })
         .where(eq(uploadSessions.id, session.id));
 
       logger.info(

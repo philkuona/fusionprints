@@ -8,7 +8,7 @@
  * As we build out the system, we'll mount more routes here.
  */
 
-import Fastify from 'fastify';
+import Fastify, { type FastifyError } from 'fastify';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { db, closeDatabase } from '@/db/client.js';
@@ -156,7 +156,7 @@ async function main(): Promise<void> {
       logger.warn({ method: request.method, url: request.url, status: reply.statusCode }, 'HTTP error response');
     }
   });
-  app.setErrorHandler((err, request, reply) => {
+  app.setErrorHandler((err: FastifyError, request, reply) => {
     // Errors that carry their own client status (rate-limit 429s, body-parse
     // 4xx) must keep it — flattening them to 500 hides the real signal.
     const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;

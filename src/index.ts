@@ -69,6 +69,30 @@ async function main(): Promise<void> {
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true, // required for cookie-based auth from the web frontend
   });
+  // Cheap CSRF hardening (audit BUG-12): cookie sessions + sameSite=lax block
+  // most cross-site abuse already, but state-changing browser routes should
+  // also refuse a mismatched Origin. Browsers always attach Origin to
+  // cross-site POSTs, so this stops them even if sameSite weakens. Exemptions:
+  // the Payonify webhook (server-to-server, signature-verified, no Origin) and
+  // requests with neither Origin nor Referer (curl, non-browser clients) —
+  // those carry no ambient cookie risk or keep sameSite as the backstop.
+  const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  app.addHook('onRequest', async (request, reply) => {
+    if (!MUTATING_METHODS.has(request.method)) return;
+    if (!request.url.startsWith('/web/api/')) return;
+    if (request.url.startsWith('/web/api/payments/payonify/webhook')) return;
+    const source = request.headers.origin ?? request.headers.referer;
+    if (!source) return;
+    const ok = allowedOrigins.some((o) => source === o || source.startsWith(`${o}/`));
+    if (!ok) {
+      logger.warn(
+        { method: request.method, url: request.url, origin: source },
+        'Blocked state-changing request from disallowed origin',
+      );
+      return reply.status(403).send({ error: 'forbidden_origin' });
+    }
+  });
+
   // Basic abuse guard (audit BUG-13): per-IP, in-memory, 300 req/min default;
   // auth endpoints carry a tighter per-route limit (see routes/web/auth.ts).
   // The agent API is exempt — its long-poll is high-frequency by design and

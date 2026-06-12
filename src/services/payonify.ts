@@ -66,7 +66,7 @@ export async function createCheckoutSession(params: {
 
   if (!res.ok) {
     const errText = await res.text();
-    logger.error({ status: res.status, error: errText, orderNumber: params.orderNumber }, 'Payonify session create failed');
+    logger.error({ status: res.status, error: errText, orderNumber: params.orderNumber, amountUsd: params.amountUsd }, 'Payonify session create failed');
     throw new Error(`Payonify session create failed: ${res.status}`);
   }
 
@@ -119,12 +119,12 @@ export async function createEcocashCharge(params: {
 
   if (!res.ok) {
     const errText = await res.text();
-    logger.error({ status: res.status, error: errText, orderNumber: params.orderNumber }, 'Payonify EcoCash charge failed');
+    logger.error({ status: res.status, error: errText, orderNumber: params.orderNumber, amountUsd: params.amountUsd }, 'Payonify EcoCash charge failed');
     throw new Error(`Payonify EcoCash charge failed: ${res.status}`);
   }
 
   const json = (await res.json()) as { id: string; status: string };
-  logger.info({ orderNumber: params.orderNumber, chargeId: json.id, status: json.status }, 'Payonify EcoCash charge created');
+  logger.info({ orderNumber: params.orderNumber, chargeId: json.id, status: json.status, amountUsd: params.amountUsd }, 'Payonify EcoCash charge created');
   return { id: json.id, status: json.status };
 }
 

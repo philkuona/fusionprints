@@ -68,10 +68,14 @@ async function fulfilPaidOrder(orderNumber: string, reference: string, rawPayloa
   // markOrderPaid re-sets status (harmless) and enqueues print jobs + slips.
   await markOrderPaid(orderNumber, reference);
   if (order.channel === 'web') {
-    await sendWebOrderConfirmation(orderNumber).catch(() => {});
+    await sendWebOrderConfirmation(orderNumber).catch((err: unknown) => {
+      logger.error({ err, orderNumber }, 'Order confirmation email failed');
+    });
   } else {
     const { notifyCustomerOfPayment } = await import('@/routes/payment-webhooks.js');
-    await notifyCustomerOfPayment(orderNumber).catch(() => {});
+    await notifyCustomerOfPayment(orderNumber).catch((err: unknown) => {
+      logger.error({ err, orderNumber }, 'WhatsApp payment notification failed');
+    });
   }
   logger.info({ orderNumber, reference, channel: order.channel }, 'Payonify webhook: order marked paid');
 }

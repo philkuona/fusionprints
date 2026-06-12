@@ -150,9 +150,13 @@ async function main(): Promise<void> {
   // Diagnostics: log any failing response (>=400) and any handler error.
   // onResponse runs AFTER the response is sent, so it only reads — it can never
   // touch already-sent headers (unlike the onSend hook that crash-looped).
+  // Bot scanners probing for leaked configs / admin panels flood the 404 log
+  // (audit IMP-10) — drop their noise, keep every other failing response.
+  const SCANNER_PATHS = /\.(php\d?|env[^/]*|ya?ml|asp[x]?|cgi|sql|bak|ini)(\?|$)|\/(wp-|wordpress|owa|autodiscover|phpmyadmin|cgi-bin|\.git|docker-compose|actuator|telescope|solr|HNAP1)/i;
   app.addHook('onResponse', async (request, reply) => {
     // Skip the agent long-poll's expected "no job right now" 404s (high volume).
     if (reply.statusCode >= 400 && !request.url.includes('/agent/jobs/next')) {
+      if (reply.statusCode === 404 && SCANNER_PATHS.test(request.url)) return;
       logger.warn({ method: request.method, url: request.url, status: reply.statusCode }, 'HTTP error response');
     }
   });
@@ -278,6 +282,17 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
 }
+
+// Last-resort crash handlers (audit IMP-7): a stray rejection or throw must
+// not leave the process half-dead. Log fatal and exit — systemd restarts us.
+process.on('unhandledRejection', (reason) => {
+  logger.fatal({ err: reason }, 'Unhandled promise rejection — exiting');
+  process.exit(1);
+});
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'Uncaught exception — exiting');
+  process.exit(1);
+});
 
 main().catch((err: unknown) => {
   logger.fatal({ err }, 'Unhandled error in main()');

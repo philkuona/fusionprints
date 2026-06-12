@@ -19,6 +19,7 @@
  */
 
 import { env } from '@/config/env.js';
+import { logger } from '@/utils/logger.js';
 
 const GOOGLE_AUTH_BASE = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -136,5 +137,8 @@ export async function deletePickerSession(accessToken: string, sessionId: string
   await fetch(`${PICKER_BASE}/sessions/${sessionId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+    // Best-effort: Google expires picker sessions on its own; just don't lose the trace.
+    logger.warn({ err, sessionId }, 'Failed to delete Google picker session');
+  });
 }

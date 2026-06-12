@@ -284,7 +284,9 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
           .where(eq(payments.orderId, order.id));
         await markOrderPaid(order.orderNumber, `VIRT-${order.orderNumber}`);
         // Confirmation email — best effort, never blocks the response.
-        await sendWebOrderConfirmation(order.orderNumber).catch(() => {});
+        await sendWebOrderConfirmation(order.orderNumber).catch((err: unknown) => {
+          logger.error({ err, orderNumber: order.orderNumber }, 'Order confirmation email failed');
+        });
       }
       return reply.send({ status: 'paid', orderNumber });
     }

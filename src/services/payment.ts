@@ -66,7 +66,10 @@ export async function initiateEcocashPayment(
       });
       return true; // USSD push sent; webhook confirms approval
     } catch (err) {
-      logger.error({ orderNumber: params.orderNumber, err }, 'EcoCash charge failed');
+      logger.error(
+        { orderNumber: params.orderNumber, amountUsd: Number(order.totalUsd), err },
+        'EcoCash charge failed',
+      );
       return false;
     }
   }

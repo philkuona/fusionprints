@@ -107,6 +107,22 @@ export async function validateImageBuffer(
       };
     }
 
+    // Multi-frame inputs (animated WebP, multi-page TIFF) would silently print
+    // only their first frame — reject up front so the customer isn't surprised.
+    // HEIF is exempt: iPhone HEICs can report auxiliary frames (thumbnails,
+    // gain maps) while still being a single photo, and sharp processes the
+    // primary image regardless.
+    if (metadata.pages && metadata.pages > 1 && metadata.format !== 'heif') {
+      return {
+        valid: false,
+        widthPx: metadata.width,
+        heightPx: metadata.height,
+        fileSizeBytes: buffer.length,
+        format: metadata.format,
+        reason: 'Animated or multi-page files are not supported. Please send a still photo.',
+      };
+    }
+
     return {
       valid: true,
       widthPx: metadata.width,

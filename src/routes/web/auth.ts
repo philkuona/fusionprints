@@ -48,8 +48,12 @@ const loginSchema = z.object({
 // ── Route registration ─────────────────────────────────────────────────────
 
 export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void> {
+  // Credential endpoints get a much tighter per-IP limit than the global one —
+  // they are the brute-force targets (audit BUG-13).
+  const tightRateLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
+
   // POST /web/api/auth/signup
-  app.post('/web/api/auth/signup', async (request, reply) => {
+  app.post('/web/api/auth/signup', tightRateLimit, async (request, reply) => {
     const result = signupSchema.safeParse(request.body);
     if (!result.success) {
       return reply.status(400).send({
@@ -128,7 +132,7 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
   });
 
   // GET /web/api/auth/verify?token=...
-  app.get('/web/api/auth/verify', async (request, reply) => {
+  app.get('/web/api/auth/verify', tightRateLimit, async (request, reply) => {
     const { token } = request.query as { token?: string };
     if (!token || token.length !== 64) {
       return reply.status(400).send({ error: 'invalid_token', message: 'Invalid verification link.' });
@@ -169,7 +173,7 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
   });
 
   // POST /web/api/auth/login
-  app.post('/web/api/auth/login', async (request, reply) => {
+  app.post('/web/api/auth/login', tightRateLimit, async (request, reply) => {
     const result = loginSchema.safeParse(request.body);
     if (!result.success) {
       return reply.status(400).send({ error: 'validation_error', message: 'Invalid credentials.' });

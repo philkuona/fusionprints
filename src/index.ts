@@ -27,6 +27,7 @@ import { registerUploadRoutes } from '@/routes/upload.js';
 import { registerQboRoutes } from '@/routes/qbo-auth.js';
 import { registerLandingRoutes } from '@/routes/landing.js';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import cookie from '@fastify/cookie';
 import session from '@fastify/session';
 import { PgSessionStore, sweepExpiredSessions } from '@/utils/session-store.js';
@@ -67,6 +68,15 @@ async function main(): Promise<void> {
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true, // required for cookie-based auth from the web frontend
+  });
+  // Basic abuse guard (audit BUG-13): per-IP, in-memory, 300 req/min default;
+  // auth endpoints carry a tighter per-route limit (see routes/web/auth.ts).
+  // The agent API is exempt — its long-poll is high-frequency by design and
+  // already API-key-authenticated.
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: '1 minute',
+    allowList: (request) => request.url.startsWith('/api/agent/'),
   });
   await app.register(cookie);
   await app.register(session, {
@@ -113,8 +123,17 @@ async function main(): Promise<void> {
     }
   });
   app.setErrorHandler((err, request, reply) => {
-    logger.error({ err, method: request.method, url: request.url }, 'Request handler error');
-    if (!reply.sent) reply.status(500).send({ error: 'Internal Server Error' });
+    // Errors that carry their own client status (rate-limit 429s, body-parse
+    // 4xx) must keep it — flattening them to 500 hides the real signal.
+    const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
+    if (status >= 500) {
+      logger.error({ err, method: request.method, url: request.url }, 'Request handler error');
+    }
+    if (!reply.sent) {
+      reply.status(status).send(
+        status >= 500 ? { error: 'Internal Server Error' } : { error: err.message },
+      );
+    }
   });
 
   // ===== Routes =====

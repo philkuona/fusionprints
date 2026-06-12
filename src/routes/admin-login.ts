@@ -214,8 +214,11 @@ export async function registerAdminLogin(app: FastifyInstance): Promise<void> {
     return reply.type('text/html').send(loginPageHtml());
   });
 
+  // Brute-force target — same tight per-IP limit as the web auth endpoints.
+  const tightRateLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
+
   // Login POST — accepts JSON, returns JSON
-  app.post('/admin/login', async (request, reply) => {
+  app.post('/admin/login', tightRateLimit, async (request, reply) => {
     const { username, password } = request.body as { username?: string; password?: string };
 
     if (!username || !password) {
@@ -247,7 +250,7 @@ export async function registerAdminLogin(app: FastifyInstance): Promise<void> {
   // GET /admin/autologin?token=<BEELINK_AUTOLOGIN_TOKEN>
   // Validates token, sets session, redirects to dashboard.
   // Falls back to login page on any failure.
-  app.get('/admin/autologin', async (request, reply) => {
+  app.get('/admin/autologin', tightRateLimit, async (request, reply) => {
     const { token } = request.query as { token?: string };
 
     if (!token) return reply.redirect('/admin/login');

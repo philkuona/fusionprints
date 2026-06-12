@@ -22,6 +22,7 @@ import { loadAndApplyPriceOverrides } from '@/services/price-overrides.js';
 import { startVirtualPrinters } from '@/services/virtual-printer.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
 import { registerAgentRoutes, reclaimStaleAgentJobs } from '@/routes/agent-api.js';
+import { expireStalePendingOrders } from '@/services/order.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
 import { registerQboRoutes } from '@/routes/qbo-auth.js';
 import { registerLandingRoutes } from '@/routes/landing.js';
@@ -96,6 +97,11 @@ async function main(): Promise<void> {
   // Re-queue print/slip jobs stuck in 'printing' (agent crashed mid-print) so
   // claimed-but-abandoned jobs recover. Every 5 min; 15-min staleness cutoff.
   setInterval(() => void reclaimStaleAgentJobs(), 1000 * 60 * 5).unref();
+
+  // Auto-cancel abandoned checkouts (pending_payment > 24h). Hourly, plus one
+  // run at boot to clear any backlog accumulated while the server was down.
+  void expireStalePendingOrders();
+  setInterval(() => void expireStalePendingOrders(), 1000 * 60 * 60).unref();
 
   // Diagnostics: log any failing response (>=400) and any handler error.
   // onResponse runs AFTER the response is sent, so it only reads — it can never

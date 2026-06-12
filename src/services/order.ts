@@ -9,9 +9,9 @@
  * Resets sequence each year.
  */
 
-import { eq, and, like, desc, inArray } from 'drizzle-orm';
+import { eq, and, like, desc, inArray, lt } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns, payments } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
 import { normalizePhone } from '@/utils/phone.js';
@@ -789,6 +789,45 @@ export async function cancelOrder(orderNumber: string): Promise<void> {
     .where(eq(orders.orderNumber, orderNumber));
 
   logger.info({ orderNumber }, 'Order cancelled');
+}
+
+/**
+ * Cancel pending_payment orders older than maxAgeHours (default 24).
+ *
+ * Abandoned checkouts otherwise accumulate as pending_payment forever — admin
+ * clutter, and a stale order is a resurrection target for a late webhook or
+ * the dev mock confirm. Their still-pending payments rows are cancelled too;
+ * success/failed payment rows are left untouched as history.
+ */
+export async function expireStalePendingOrders(maxAgeHours = 24): Promise<number> {
+  try {
+    const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+    const expired = await db
+      .update(orders)
+      .set({ status: 'cancelled' })
+      .where(and(eq(orders.status, 'pending_payment'), lt(orders.createdAt, cutoff)))
+      .returning({ id: orders.id, orderNumber: orders.orderNumber });
+    if (expired.length === 0) return 0;
+
+    await db
+      .update(payments)
+      .set({ status: 'cancelled' })
+      .where(
+        and(
+          inArray(payments.orderId, expired.map((o) => o.id)),
+          eq(payments.status, 'pending'),
+        ),
+      );
+
+    logger.info(
+      { count: expired.length, orderNumbers: expired.map((o) => o.orderNumber) },
+      'Expired stale pending_payment orders',
+    );
+    return expired.length;
+  } catch (err) {
+    logger.error({ err }, 'Failed to expire stale pending_payment orders');
+    return 0;
+  }
 }
 
 /**

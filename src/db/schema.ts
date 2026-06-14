@@ -194,6 +194,11 @@ export const orders = pgTable(
     webUserId: uuid('web_user_id').references(() => webUsers.id),
     channel: orderChannelEnum('channel').notNull().default('whatsapp'),
     orderNumber: text('order_number').notNull(), // human-friendly: 'FP-2026-0042'
+    // Opaque, non-sequential public reference for customer-facing surfaces that
+    // aren't behind strong auth (e.g. a "track your order" link). The sequential
+    // order_number stays for admin/display; anything unauthenticated should key
+    // on this instead, so order ids can't be enumerated. ~50 bits of entropy.
+    publicRef: text('public_ref'),
     status: orderStatusEnum('status').notNull().default('pending_payment'),
     subtotalUsd: numeric('subtotal_usd', { precision: 10, scale: 2 }).notNull(),
     deliveryFeeUsd: numeric('delivery_fee_usd', { precision: 10, scale: 2 })
@@ -215,6 +220,7 @@ export const orders = pgTable(
   },
   (table) => ({
     orderNumberIdx: uniqueIndex('orders_order_number_idx').on(table.orderNumber),
+    publicRefIdx: uniqueIndex('orders_public_ref_idx').on(table.publicRef),
     customerIdx: index('orders_customer_idx').on(table.customerId),
     webUserIdx: index('orders_web_user_idx').on(table.webUserId),
     statusIdx: index('orders_status_idx').on(table.status),

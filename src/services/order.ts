@@ -14,6 +14,7 @@ import { db } from '@/db/client.js';
 import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns, payments } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
+import { randomBytes } from 'crypto';
 import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
@@ -52,6 +53,22 @@ async function generateOrderNumber(): Promise<string> {
   const lastNumber = parseInt(existing[0].orderNumber.replace(prefix, ''), 10);
   const nextNumber = String(lastNumber + 1).padStart(4, '0');
   return `${prefix}${nextNumber}`;
+}
+
+// Crockford base32 alphabet (no I/L/O/U — unambiguous when read aloud/typed).
+const REF_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/**
+ * Generate an opaque, non-sequential public order reference (audit IMP-14).
+ * 10 chars of Crockford base32 ≈ 50 bits — not enumerable, unlike the
+ * sequential order_number. Uniqueness is enforced by the column's unique index;
+ * a collision at this scale is astronomically unlikely.
+ */
+function generatePublicRef(): string {
+  const bytes = randomBytes(10);
+  let out = '';
+  for (let i = 0; i < 10; i++) out += REF_ALPHABET[bytes[i] & 31];
+  return out;
 }
 
 export interface CreateOrderInput {
@@ -125,6 +142,7 @@ export async function createOrder(
         .values({
           customerId,
           orderNumber,
+          publicRef: generatePublicRef(),
           status: 'pending_payment',
           subtotalUsd: String(quote.subtotalUsd),
           deliveryFeeUsd: String(quote.deliveryFeeUsd),
@@ -293,6 +311,7 @@ export async function createWebOrder(
           webUserId,
           channel: 'web',
           orderNumber,
+          publicRef: generatePublicRef(),
           status: 'pending_payment',
           subtotalUsd: String(quote.subtotalUsd),
           deliveryFeeUsd: String(quote.deliveryFeeUsd),

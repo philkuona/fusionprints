@@ -17,9 +17,13 @@
  */
 
 import { logger } from '@/utils/logger.js';
+import { env } from '@/config/env.js';
 import { findOrCreateCustomer, updateCustomerName, touchCustomerLastOrder } from '@/services/customer.js';
 import { loadConversationState, saveConversationState } from '@/services/conversation-state.js';
-import { createOrder, cancelOrder, getRecentOrders } from '@/services/order.js';
+import { createOrder, cancelOrder, getRecentOrders, getOrderByNumber } from '@/services/order.js';
+import { initiateEcocashPayment } from '@/services/payment.js';
+import { createUploadSession, getSessionImages, completeSession } from '@/routes/upload.js';
+import { getProduct } from '@/config/catalog.js';
 import { handleMessage } from '@/bot/state-machine.js';
 import { MSG } from '@/bot/messages.js';
 import type { BotReply, IncomingMessage } from '@/bot/state-machine.js';
@@ -147,7 +151,6 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
 
         case 'INITIATE_CARD_PAYMENT': {
           // Get the order total for the message
-          const { getOrderByNumber } = await import('@/services/order.js');
           const order = await getOrderByNumber(effect.orderNumber);
           const total = order ? String(order.totalUsd) : '0.00';
 
@@ -166,7 +169,6 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
           // For now this is a stub — once Magetsi API details are available we
           // POST to their endpoint here. The customer's PIN entry is confirmed
           // via the /webhook/payment/ecocash callback, which calls markOrderPaid.
-          const { initiateEcocashPayment } = await import('@/services/payment.js');
           const success = await initiateEcocashPayment({
             orderNumber: effect.orderNumber,
             ecocashNumber: effect.ecocashNumber,
@@ -183,8 +185,6 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
 
         case 'create_upload_link': {
           // Create a web upload session for this customer
-          const { createUploadSession } = await import('@/routes/upload.js');
-          const { env } = await import('@/config/env.js');
           const { token } = await createUploadSession(customer.id, effect.sizeCode);
           const uploadUrl = `${env.PUBLIC_URL}/u/${token}`;
 
@@ -192,7 +192,6 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
           (response.nextContext as { _uploadToken?: string })._uploadToken = token;
 
           // Get product price for the message
-          const { getProduct } = await import('@/config/catalog.js');
           const product = getProduct(effect.sizeCode);
           const priceLabel = product ? `$${product.unitPriceUsd.toFixed(2)}` : '';
 
@@ -208,7 +207,6 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
             break;
           }
 
-          const { getSessionImages, completeSession } = await import('@/routes/upload.js');
           const sessionData = await getSessionImages(token);
 
           if (!sessionData || sessionData.imageIds.length === 0) {
@@ -216,7 +214,6 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
             break;
           }
 
-          const { getProduct } = await import('@/config/catalog.js');
           const product = getProduct(sessionData.sizeCode);
           if (!product) {
             extraReplies.push(MSG.somethingWentWrong());

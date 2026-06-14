@@ -20,6 +20,7 @@ import { logger } from '@/utils/logger.js';
 import { verifyWebhookSignature } from '@/services/payonify.js';
 import { markOrderPaid, getOrderByNumber } from '@/services/order.js';
 import { sendWebOrderConfirmation } from '@/services/web-order-email.js';
+import { notifyCustomerOfPayment } from '@/routes/payment-webhooks.js';
 
 interface PayonifyEvent {
   type?: string;
@@ -72,7 +73,6 @@ async function fulfilPaidOrder(orderNumber: string, reference: string, rawPayloa
       logger.error({ err, orderNumber }, 'Order confirmation email failed');
     });
   } else {
-    const { notifyCustomerOfPayment } = await import('@/routes/payment-webhooks.js');
     await notifyCustomerOfPayment(orderNumber).catch((err: unknown) => {
       logger.error({ err, orderNumber }, 'WhatsApp payment notification failed');
     });

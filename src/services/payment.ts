@@ -22,6 +22,8 @@
 
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
+import { getOrderByNumber } from '@/services/order.js';
+import { createEcocashCharge } from '@/services/payonify.js';
 
 interface InitiateEcocashParams {
   orderNumber: string;
@@ -51,8 +53,6 @@ export async function initiateEcocashPayment(
   // Payonify EcoCash USSD push (same gateway as web checkout). The push is
   // confirmed later via the charge.succeeded webhook → markOrderPaid.
   if (env.PAYMENT_PROVIDER === 'payonify') {
-    const { getOrderByNumber } = await import('@/services/order.js');
-    const { createEcocashCharge } = await import('@/services/payonify.js');
     const order = await getOrderByNumber(params.orderNumber);
     if (!order) {
       logger.error({ orderNumber: params.orderNumber }, 'EcoCash charge: order not found');

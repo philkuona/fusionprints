@@ -24,7 +24,7 @@ import multipart from '@fastify/multipart';
 import { eq, and, gte, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { db } from '@/db/client.js';
-import { uploadSessions } from '@/db/schema.js';
+import { uploadSessions, images } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { storeImage } from '@/services/image-storage.js';
 import { BRAND_FONT_CSS } from '@/routes/admin-fonts.js';
@@ -794,9 +794,6 @@ export async function getSessionImages(token: string): Promise<{
   const session = await getSession(token);
   if (!session) return null;
 
-  const { images } = await import('@/db/schema.js');
-  const { gte: gteDate } = await import('drizzle-orm');
-
   // Get all images uploaded by this customer since the session started
   const sessionImages = await db
     .select({ id: images.id })
@@ -804,7 +801,7 @@ export async function getSessionImages(token: string): Promise<{
     .where(
       and(
         eq(images.customerId, session.customerId),
-        gteDate(images.uploadedAt, session.createdAt),
+        gte(images.uploadedAt, session.createdAt),
       ),
     );
 

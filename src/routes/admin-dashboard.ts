@@ -25,6 +25,7 @@ import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
+import { releaseOrderForPickup } from '@/services/order.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
 
 // ===== Auth middleware =====
@@ -441,7 +442,6 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
         return;
       }
 
-      const { releaseOrderForPickup } = await import('@/services/order.js');
       await releaseOrderForPickup(order.orderNumber);
 
       logger.info({ orderId: id, orderNumber: order.orderNumber }, 'Order released for pickup');

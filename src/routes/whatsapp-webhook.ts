@@ -23,6 +23,7 @@ import { logger } from '@/utils/logger.js';
 import { handleIncomingMessage } from '@/bot/handler.js';
 import { withKeyLock } from '@/utils/key-lock.js';
 import { storeImage } from '@/services/image-storage.js';
+import { findOrCreateCustomer } from '@/services/customer.js';
 import type { IncomingMessage } from '@/bot/state-machine.js';
 
 // ===== 360dialog API sender =====
@@ -389,7 +390,6 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
 
             try {
               // Resolve customer ID from phone number before processing media
-              const { findOrCreateCustomer } = await import('@/services/customer.js');
               const customer = await findOrCreateCustomer(phoneNumber);
               const customerId = customer.id;
 

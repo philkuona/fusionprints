@@ -33,6 +33,7 @@ import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
 import { ADMIN_FONT_CSS } from '@/routes/admin-fonts.js';
 import { authenticate, authenticatePage, requireFullAdmin, requireFullAdminPage, type AdminRole } from '@/utils/auth.js';
+import { markOrderShipped } from '@/services/order.js';
 
 // Reuse the auth helper from admin-dashboard.ts
 /**
@@ -55,7 +56,6 @@ function checkAuth(
  * WhatsApp "on its way" notification (best effort).
  */
 async function markShipped(orderId: string): Promise<void> {
-  const { markOrderShipped } = await import('@/services/order.js');
   await markOrderShipped(orderId);
 }
 

@@ -17,6 +17,7 @@ import { env } from '@/config/env.js';
 import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
+import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import {
   renderOrderInfoSlip,
   renderEndSeparatorSlip,
@@ -706,10 +707,6 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
   const contact = await resolveOrderContact(order);
   if (!contact) return;
 
-  // Lazy-import to avoid pulling whatsapp into modules that don't need it
-  const { sendWhatsAppMessage, sendWhatsAppTemplate } = await import('@/services/whatsapp.js');
-  const { env } = await import('@/config/env.js');
-
   const firstName = contact.name.split(/\s+/)[0] ?? contact.name;
   const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
 
@@ -767,8 +764,6 @@ async function sendOutForDeliveryNotification(orderNumber: string): Promise<void
 
   const contact = await resolveOrderContact(order);
   if (!contact) return;
-
-  const { sendWhatsAppMessage } = await import('@/services/whatsapp.js');
 
   const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
 

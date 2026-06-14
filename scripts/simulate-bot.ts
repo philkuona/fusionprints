@@ -30,7 +30,7 @@ import * as readline from 'readline';
 import { handleMessage } from '../src/bot/state-machine.js';
 import { emptyContext } from '../src/bot/types.js';
 import type { BotStep, BotContext } from '../src/bot/types.js';
-import type { IncomingMessage } from '../src/bot/state-machine.js';
+import type { IncomingMessage, BotReply } from '../src/bot/state-machine.js';
 
 // ===== Simulator state =====
 
@@ -50,7 +50,9 @@ const YELLOW = '\x1b[33m';
 const GREY = '\x1b[90m';
 const BOLD = '\x1b[1m';
 
-function printBot(message: string): void {
+function printBot(reply: BotReply): void {
+  // Replies are strings or interactive (button/list) payloads — render the text.
+  const message = typeof reply === 'string' ? reply : reply.text;
   const lines = message.split('\n');
   console.log();
   lines.forEach((line) => {
@@ -97,13 +99,13 @@ function printEffect(effect: { type: string; [key: string]: unknown }): void {
       break;
     }
     case 'CANCEL_ORDER':
-      printSystem(`[ORDER CANCELLED: ${(effect as { orderNumber: string }).orderNumber}]`);
+      printSystem(`[ORDER CANCELLED: ${(effect as unknown as { orderNumber: string }).orderNumber}]`);
       break;
     case 'LOOKUP_ORDER_STATUS':
       printSystem(`[LOOKING UP ORDERS for customer]`);
       break;
     case 'INITIATE_PAYMENT':
-      printSystem(`[GENERATING NEW PAYMENT LINK for ${(effect as { orderNumber: string }).orderNumber}]`);
+      printSystem(`[GENERATING NEW PAYMENT LINK for ${(effect as unknown as { orderNumber: string }).orderNumber}]`);
       break;
   }
 }

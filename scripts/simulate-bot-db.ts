@@ -33,7 +33,6 @@ let currentPhone = '+263771000001'; // default test number
 // ===== Display helpers =====
 
 const RESET = '\x1b[0m';
-const CYAN = '\x1b[36m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
 const GREY = '\x1b[90m';

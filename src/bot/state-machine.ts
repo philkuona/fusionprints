@@ -1163,17 +1163,9 @@ function handleChoosingPaymentMethod(text: string, context: BotContext): BotResp
     });
   }
 
-  if (text === 'PAY_CARD' || text === 'CARD' || text === '2') {
-    if (!context.orderNumber) {
-      return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
-    }
-    // Trigger card payment link generation via effect
-    return {
-      replies: [`💳 Generating payment link...`],
-      nextStep: 'awaiting_payment',
-      nextContext: { ...context, paymentMethod: 'card' },
-      effects: [{ type: 'INITIATE_CARD_PAYMENT', orderNumber: context.orderNumber }],
-    };
+  if (text === 'PAY_CARD' || text === 'CARD') {
+    // Card payments aren't built yet — keep them on EcoCash, no dead link.
+    return reply(MSG.cardUnavailable(), 'choosing_payment_method', context);
   }
 
   if (text === 'CANCEL') {
@@ -1194,20 +1186,6 @@ function handleChoosingPaymentMethod(text: string, context: BotContext): BotResp
 }
 
 function handleEnteringEcocashNumber(text: string, context: BotContext): BotResponse {
-  // Customer responded to "wrong network" prompt
-  if (text === '2' && context.paymentMethod === 'ecocash') {
-    // Switch to card
-    if (!context.orderNumber) {
-      return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
-    }
-    return {
-      replies: [`💳 Switching to card payment...`],
-      nextStep: 'awaiting_payment',
-      nextContext: { ...context, paymentMethod: 'card' },
-      effects: [{ type: 'INITIATE_CARD_PAYMENT', orderNumber: context.orderNumber }],
-    };
-  }
-
   // Try to parse the input as an EcoCash number
   const result = isEcocashCapable(text);
 
@@ -1258,20 +1236,7 @@ function handleAwaitingEcocashPin(text: string, context: BotContext): BotRespons
     };
   }
 
-  if (text === '2') {
-    // Switch to card
-    if (!context.orderNumber) {
-      return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
-    }
-    return {
-      replies: [`💳 Switching to card payment...`],
-      nextStep: 'awaiting_payment',
-      nextContext: { ...context, paymentMethod: 'card' },
-      effects: [{ type: 'INITIATE_CARD_PAYMENT', orderNumber: context.orderNumber }],
-    };
-  }
-
-  if (text === '3' || text === 'CANCEL') {
+  if (text === '2' || text === 'CANCEL') {
     return {
       replies: [MSG.orderCancelled()],
       nextStep: 'idle',
@@ -1282,7 +1247,7 @@ function handleAwaitingEcocashPin(text: string, context: BotContext): BotRespons
 
   // Customer typed something else while waiting — ack
   return reply(
-    `⏳ Still waiting for your EcoCash PIN...\n\nIf the prompt didn't arrive, you can:\n1. Try again\n2. Pay by card\n3. Cancel`,
+    `⏳ Still waiting for your EcoCash PIN...\n\nIf the prompt didn't arrive, you can:\n1. Try again\n2. Cancel`,
     'awaiting_ecocash_pin',
     context,
   );

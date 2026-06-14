@@ -296,11 +296,17 @@ describe('EcoCash number handling', () => {
     expect(r.effects[0]).toMatchObject({ type: 'INITIATE_ECOCASH_PAYMENT', ecocashNumber: '+263781234567' });
   });
 
-  it('PIN timeout option 2 switches to card', () => {
+  it('PIN timeout option 2 cancels the order (card payment is hidden)', () => {
     const withNumber = { ...ctx, ecocashNumber: '+263772123456' };
     const r = run('awaiting_ecocash_pin', withNumber, text('2'));
-    expect(r.nextStep).toBe('awaiting_payment');
-    expect(r.effects).toEqual([{ type: 'INITIATE_CARD_PAYMENT', orderNumber: 'FP-2026-0042' }]);
+    expect(r.nextStep).toBe('idle');
+    expect(r.effects).toEqual([{ type: 'CANCEL_ORDER', orderNumber: 'FP-2026-0042' }]);
+  });
+
+  it('typing CARD at payment-method choice stays put with no dead link', () => {
+    const r = run('choosing_payment_method', ctx, text('CARD'));
+    expect(r.nextStep).toBe('choosing_payment_method');
+    expect(r.effects).toEqual([]);
   });
 });
 

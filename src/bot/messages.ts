@@ -317,14 +317,17 @@ export const MSG = {
   choosePaymentMethod: (orderNumber: string, totalUsd: string) =>
     `*Order ${orderNumber}* created. Total: *$${totalUsd}*\n\nHow would you like to pay?`,
 
-  /** Interactive button payload for payment method choice */
+  /** Interactive button payload for payment method choice (EcoCash only for now) */
   choosePaymentMethodButtons: () => ({
     body: `Choose your payment method:`,
     buttons: [
       { id: 'PAY_ECOCASH', title: '📱 EcoCash' },
-      { id: 'PAY_CARD', title: '💳 Card' },
     ],
   }),
+
+  /** Card isn't built yet — steer the customer back to EcoCash. */
+  cardUnavailable: () =>
+    `Card payments aren't available yet — please pay with *EcoCash*. Reply *1* or tap 📱 EcoCash.`,
 
   /** Asking for the EcoCash mobile number */
   askEcocashNumber: () =>
@@ -332,7 +335,7 @@ export const MSG = {
 
   /** Validation failure — wrong network */
   ecocashWrongNetwork: () =>
-    `That number isn't on EcoNet. EcoCash only works with EcoNet numbers (077 or 078).\n\nWant to:\n1. Try a different number\n2. Pay by card instead`,
+    `That number isn't on EcoNet. EcoCash only works with EcoNet numbers (077 or 078).\n\nPlease send a different EcoNet number.`,
 
   /** Validation failure — invalid format */
   ecocashInvalidFormat: () =>
@@ -344,7 +347,7 @@ export const MSG = {
 
   /** EcoCash timeout (after 2 min) */
   ecocashTimeout: (orderNumber: string) =>
-    `⏰ Didn't receive your EcoCash PIN.\n\nOrder *${orderNumber}* is still saved. Want to:\n\n1. Try EcoCash again\n2. Pay by card\n3. Cancel order`,
+    `⏰ Didn't receive your EcoCash PIN.\n\nOrder *${orderNumber}* is still saved. Want to:\n\n1. Try EcoCash again\n2. Cancel order`,
 
   /** Card payment link */
   cardPaymentLink: (orderNumber: string, paymentUrl: string, totalUsd: string) =>

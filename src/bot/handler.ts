@@ -93,11 +93,12 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
           const total = effect.quote.ok ? String(effect.quote.quote.totalUsd) : '0.00';
 
           // Tell the customer their order is created and ask how they want to pay
+          // EcoCash only for now — card payments aren't built yet, so we don't
+          // offer a button that leads to a dead link.
           extraReplies.push({
             text: MSG.choosePaymentMethod(orderResult.orderNumber, total),
             buttons: [
               { id: 'PAY_ECOCASH', title: '📱 EcoCash' },
-              { id: 'PAY_CARD', title: '💳 Card' },
             ],
           });
 

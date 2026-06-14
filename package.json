@@ -15,6 +15,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/reset-db.ts",
     "cleanup:images": "tsx scripts/cleanup-images.ts",
+    "backup:db": "tsx scripts/backup-db.ts",
     "agent:virtual": "tsx scripts/virtual-print-agent.ts",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.ts\"",

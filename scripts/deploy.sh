@@ -99,11 +99,16 @@ echo "   Updated: \$(git log --oneline \${PRE_PULL}..\${POST_PULL} | head -10)"
 
 if git diff --name-only \${PRE_PULL} \${POST_PULL} | grep -q '^package-lock.json\$'; then
     echo -e "\${GREEN}==>\${NC} Installing dependencies (package-lock changed)"
-    npm ci --silent
+    # Cap a hung registry/network so a stuck install can't wedge the deploy.
+    timeout 300 npm ci --silent
 else
     echo "   Dependencies unchanged — skipping npm ci"
 fi
 
+# Migrations run forward-only and idempotent. If one fails, set -e aborts here
+# BEFORE the restart, so prod keeps running the previous code (no half-deployed
+# state). Review pending migrations against staging before deploying anything
+# destructive — there is no automatic rollback.
 echo -e "\${GREEN}==>\${NC} Running database migrations"
 npm run db:migrate 2>&1 | tail -5
 
@@ -111,10 +116,28 @@ echo -e "\${GREEN}==>\${NC} Restarting service"
 sudo -n /bin/systemctl restart ${SERVICE_NAME}
 sleep 2
 
-if sudo -n /bin/systemctl is-active --quiet ${SERVICE_NAME}; then
-    echo "   Service active ✓"
-else
+if ! sudo -n /bin/systemctl is-active --quiet ${SERVICE_NAME}; then
     echo "   Service failed to start! Last 20 log lines:"
+    sudo -n /bin/systemctl status ${SERVICE_NAME} --no-pager | tail -20 || true
+    exit 1
+fi
+echo "   Service active ✓"
+
+# Real health check: poll /health until the app actually answers (DB connected),
+# not just "systemd started the process". Retry to absorb startup warm-up.
+echo -e "\${GREEN}==>\${NC} Verifying health endpoint"
+HEALTHY=0
+for attempt in 1 2 3; do
+    if curl -fsS --max-time 5 http://localhost:3000/health | grep -q '"status":"ok"'; then
+        HEALTHY=1
+        echo "   Health OK on attempt \$attempt ✓"
+        break
+    fi
+    echo "   Health check attempt \$attempt failed — retrying in 3s..."
+    sleep 3
+done
+if [ "\$HEALTHY" -ne 1 ]; then
+    echo "   Service is up but /health never returned ok. Last 20 log lines:"
     sudo -n /bin/systemctl status ${SERVICE_NAME} --no-pager | tail -20 || true
     exit 1
 fi

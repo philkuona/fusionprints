@@ -118,7 +118,7 @@ export async function registerPaymentWebhooks(app: FastifyInstance): Promise<voi
   });
 
   // ===== Stripe webhook (cards) =====
-  app.post('/webhook/payment/stripe', async (request, reply) => {
+  app.post('/webhook/payment/stripe', async () => {
     logger.info('Stripe webhook received');
 
     // TODO: verify Stripe signature with stripe.webhooks.constructEvent
@@ -140,8 +140,7 @@ export async function registerPaymentWebhooks(app: FastifyInstance): Promise<voi
     const { id } = request.params as { id: string };
     const [order] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
     if (!order) {
-      reply.status(404).send({ error: 'Order not found' });
-      return;
+      return reply.status(404).send({ error: 'Order not found' });
     }
 
     try {
@@ -151,7 +150,7 @@ export async function registerPaymentWebhooks(app: FastifyInstance): Promise<voi
       return { ok: true };
     } catch (err) {
       logger.error({ err, orderId: id }, 'Manual mark-paid failed');
-      reply.status(500).send({ error: 'Failed to mark paid' });
+      return reply.status(500).send({ error: 'Failed to mark paid' });
     }
   });
 }

@@ -380,7 +380,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
       };
     } catch (err) {
       logger.error({ err }, 'Failed to get next job');
-      reply.status(500).send({ error: 'Internal error' });
+      return reply.status(500).send({ error: 'Internal error' });
     }
   });
 
@@ -432,10 +432,10 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         return { ok: true };
       }
 
-      reply.status(404).send({ error: 'Job not found in print_jobs or slip_jobs' });
+      return reply.status(404).send({ error: 'Job not found in print_jobs or slip_jobs' });
     } catch (err) {
       logger.error({ err, jobId: id }, 'Failed to mark job started');
-      reply.status(500).send({ error: 'Internal error' });
+      return reply.status(500).send({ error: 'Internal error' });
     }
   });
 
@@ -528,7 +528,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true };
     } catch (err) {
       logger.error({ err, jobId: id }, 'Failed to mark job done');
-      reply.status(500).send({ error: 'Internal error' });
+      return reply.status(500).send({ error: 'Internal error' });
     }
   });
 
@@ -574,10 +574,10 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         return { ok: true };
       }
 
-      reply.status(404).send({ error: 'Job not found' });
+      return reply.status(404).send({ error: 'Job not found' });
     } catch (err) {
       logger.error({ err, jobId: id }, 'Failed to record job failure');
-      reply.status(500).send({ error: 'Internal error' });
+      return reply.status(500).send({ error: 'Internal error' });
     }
   });
 
@@ -607,7 +607,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true };
     } catch (err) {
       logger.error({ err, printerId: id }, 'Failed to update printer heartbeat');
-      reply.status(500).send({ error: 'Internal error' });
+      return reply.status(500).send({ error: 'Internal error' });
     }
   });
 
@@ -731,7 +731,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
 
     } catch (err) {
       logger.error({ err }, 'Failed to create test job');
-      reply.status(500).send({ error: 'Failed to create test job' });
+      return reply.status(500).send({ error: 'Failed to create test job' });
     }
   });
 }

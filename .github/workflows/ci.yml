@@ -15,13 +15,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
       - run: npm test
-
-      # Typecheck is informational for now: src carries a pre-existing error
-      # baseline (audit Phase 5 cleanup). Flip to blocking once it's clean.
-      - name: Typecheck (non-blocking, known-dirty baseline)
-        run: npm run typecheck
-        continue-on-error: true
 
       # The schema-drift check (scripts/schema-drift-check.ts) needs a live
       # database — run it manually or wire a postgres service container later.

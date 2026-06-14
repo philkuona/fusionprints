@@ -760,7 +760,7 @@ export async function registerUploadRoutes(app: FastifyInstance): Promise<void> 
       };
     } catch (err) {
       logger.error({ err, token }, 'Upload error');
-      reply.status(500).send({ error: 'Upload failed' });
+      return reply.status(500).send({ error: 'Upload failed' });
     }
   });
 

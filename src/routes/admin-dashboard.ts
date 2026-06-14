@@ -19,7 +19,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { isEnabled as qboEnabled, isSetupComplete, createSalesReceipt, createRefundReceipt } from '@/services/qbo.js';
 import { payments } from '@/db/schema.js';
-import { desc } from 'drizzle-orm';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
@@ -338,7 +337,7 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       return stats;
     } catch (err) {
       logger.error({ err }, 'Failed to get stats');
-      reply.status(500).send({ error: 'Failed to load stats' });
+      return reply.status(500).send({ error: 'Failed to load stats' });
     }
   });
 
@@ -357,7 +356,7 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       return list;
     } catch (err) {
       logger.error({ err }, 'Failed to get orders');
-      reply.status(500).send({ error: 'Failed to load orders' });
+      return reply.status(500).send({ error: 'Failed to load orders' });
     }
   });
 
@@ -384,7 +383,7 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       return detail;
     } catch (err) {
       logger.error({ err }, 'Failed to get order detail');
-      reply.status(500).send({ error: 'Failed to load order' });
+      return reply.status(500).send({ error: 'Failed to load order' });
     }
   });
 
@@ -407,7 +406,7 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to approve order');
-      reply.status(500).send({ error: 'Failed to approve' });
+      return reply.status(500).send({ error: 'Failed to approve' });
     }
   });
 
@@ -448,7 +447,7 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to release order for pickup');
-      reply.status(500).send({ error: 'Failed to release' });
+      return reply.status(500).send({ error: 'Failed to release' });
     }
   });
 
@@ -470,7 +469,7 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to fulfil order');
-      reply.status(500).send({ error: 'Failed to update' });
+      return reply.status(500).send({ error: 'Failed to update' });
     }
   });
 
@@ -492,7 +491,7 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to cancel order');
-      reply.status(500).send({ error: 'Failed to cancel' });
+      return reply.status(500).send({ error: 'Failed to cancel' });
     }
   });
 }

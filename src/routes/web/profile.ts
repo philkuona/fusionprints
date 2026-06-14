@@ -99,6 +99,13 @@ export async function registerWebProfileRoutes(app: FastifyInstance): Promise<vo
       .limit(1);
 
     if (!user) return reply.status(404).send({ error: 'not_found' });
+    // OAuth-only accounts have no password to verify against.
+    if (!user.passwordHash) {
+      return reply.status(400).send({
+        error: 'no_password',
+        message: 'This account signs in with Google and has no password to change.',
+      });
+    }
 
     const valid = await verifyPassword(result.data.currentPassword, user.passwordHash);
     if (!valid) {

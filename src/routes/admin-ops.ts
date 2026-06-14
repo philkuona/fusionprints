@@ -34,6 +34,7 @@ import { env } from '@/config/env.js';
 import { ADMIN_FONT_CSS } from '@/routes/admin-fonts.js';
 import { authenticate, authenticatePage, requireFullAdmin, requireFullAdminPage, type AdminRole } from '@/utils/auth.js';
 import { markOrderShipped } from '@/services/order.js';
+import { getProduct } from '@/config/catalog.js';
 
 // Reuse the auth helper from admin-dashboard.ts
 /**
@@ -336,7 +337,9 @@ async function generateReceiptText(orderId: string): Promise<string | null> {
   lines.push('*Items*');
   for (const item of items) {
     const total = parseFloat(item.lineTotalUsd);
-    lines.push(`  • ${item.quantity} × ${item.displayLabel} — $${total.toFixed(2)}`);
+    // order_items stores only sizeCode; the human label lives in the catalog.
+    const label = getProduct(item.sizeCode)?.displayLabel ?? item.sizeCode;
+    lines.push(`  • ${item.quantity} × ${label} — $${total.toFixed(2)}`);
   }
   lines.push('');
   lines.push(`Subtotal: $${parseFloat(order.subtotalUsd).toFixed(2)}`);
@@ -1401,7 +1404,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to mark order shipped');
-      reply.status(500).send({ error: 'Failed to update' });
+      return reply.status(500).send({ error: 'Failed to update' });
     }
   });
 
@@ -1414,7 +1417,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to reprint job');
-      reply.status(500).send({ error: 'Failed to reprint' });
+      return reply.status(500).send({ error: 'Failed to reprint' });
     }
   });
 
@@ -1427,7 +1430,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { ok: true, count };
     } catch (err) {
       logger.error({ err }, 'Failed to reprint order');
-      reply.status(500).send({ error: 'Failed to reprint' });
+      return reply.status(500).send({ error: 'Failed to reprint' });
     }
   });
 
@@ -1440,7 +1443,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { ok };
     } catch (err) {
       logger.error({ err }, 'Failed to send receipt');
-      reply.status(500).send({ error: 'Failed to send receipt' });
+      return reply.status(500).send({ error: 'Failed to send receipt' });
     }
   });
 
@@ -1457,7 +1460,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { text };
     } catch (err) {
       logger.error({ err }, 'Failed to preview receipt');
-      reply.status(500).send({ error: 'Failed to preview' });
+      return reply.status(500).send({ error: 'Failed to preview' });
     }
   });
 
@@ -1468,7 +1471,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { printers: await getPrinterStatus() };
     } catch (err) {
       logger.error({ err }, 'Failed to get printer status');
-      reply.status(500).send({ error: 'Failed to load printers' });
+      return reply.status(500).send({ error: 'Failed to load printers' });
     }
   });
 
@@ -1481,7 +1484,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return await getDashboardMetrics(daysBack);
     } catch (err) {
       logger.error({ err }, 'Failed to get metrics');
-      reply.status(500).send({ error: 'Failed to load metrics' });
+      return reply.status(500).send({ error: 'Failed to load metrics' });
     }
   });
 
@@ -1499,7 +1502,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { ok: true, count };
     } catch (err) {
       logger.error({ err }, 'Failed to batch reprint');
-      reply.status(500).send({ error: 'Failed to reprint' });
+      return reply.status(500).send({ error: 'Failed to reprint' });
     }
   });
 
@@ -1549,7 +1552,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       };
     } catch (err) {
       logger.error({ err }, 'Failed to get traffic data');
-      reply.status(500).send({ error: 'Failed to load traffic' });
+      return reply.status(500).send({ error: 'Failed to load traffic' });
     }
   });
 
@@ -1561,7 +1564,7 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { ok: true, count };
     } catch (err) {
       logger.error({ err }, 'Failed to reset stuck jobs');
-      reply.status(500).send({ error: 'Failed to reset jobs' });
+      return reply.status(500).send({ error: 'Failed to reset jobs' });
     }
   });
 }

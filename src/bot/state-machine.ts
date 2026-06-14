@@ -21,7 +21,7 @@ import { calculateQuote } from '@/services/pricing.js';
 import { validateImage } from '@/services/image-validation.js';
 import { isEcocashCapable } from '@/utils/phone.js';
 import { MSG } from './messages.js';
-import type { BotStep, BotContext, CartItem, FulfillmentMethod } from './types.js';
+import type { BotStep, BotContext, CartItem } from './types.js';
 import { emptyContext } from './types.js';
 
 // ===== Types =====
@@ -379,7 +379,7 @@ function handleBack(
 }
 
 function handleIdle(
-  context: BotContext,
+  _context: BotContext,
   customer: { name: string | null } | null,
 ): BotResponse {
   return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', emptyContext());

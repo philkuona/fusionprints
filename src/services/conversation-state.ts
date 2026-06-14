@@ -62,14 +62,14 @@ export async function saveConversationState(
     .values({
       customerId,
       currentStep: step,
-      context: context as Record<string, unknown>,
+      context: context as unknown as Record<string, unknown>,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
       target: conversationState.customerId,
       set: {
         currentStep: step,
-        context: context as Record<string, unknown>,
+        context: context as unknown as Record<string, unknown>,
         updatedAt: new Date(),
       },
     });

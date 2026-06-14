@@ -26,4 +26,27 @@ export async function registerWebCatalogRoutes(app: FastifyInstance): Promise<vo
     }));
     return reply.send(catalog);
   });
+
+  // Composite layouts/prices — the backend catalog is the single source of
+  // truth (audit IMP-3). The web editor keeps a local copy for offline render,
+  // guarded against drift by tests/composite-parity.test.ts; this endpoint lets
+  // it consume the geometry at runtime instead. Internal render fields
+  // (photoMapping, gutter, printer routing) are stripped — customers only need
+  // the geometry, price, and how many photos to provide.
+  app.get('/web/api/composites', async (_request, reply) => {
+    const composites = PRODUCTS.filter((p) => p.productType === 'composite' && p.layout).map((p) => ({
+      sizeCode: p.sizeCode,
+      displayName: p.displayName ?? p.displayLabel,
+      description: p.description ?? null,
+      priceUsd: p.unitPriceUsd,
+      photosRequired: p.layout!.photosRequired,
+      layout: {
+        sheetWidth: p.layout!.sheetWidth,
+        sheetHeight: p.layout!.sheetHeight,
+        printRotation: p.layout!.printRotation,
+        cells: p.layout!.cells.map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+      },
+    }));
+    return reply.send(composites);
+  });
 }

@@ -122,28 +122,3 @@ export function validateImage(
   };
 }
 
-/**
- * Detect if an image was likely compressed by WhatsApp.
- *
- * WhatsApp compresses images sent as photos (not documents) to roughly
- * 1600px on the long edge at ~85% JPEG quality. We use a simple heuristic:
- * if the image is smaller than expected for its claimed file size, it was
- * probably compressed. In production this is detected by checking the
- * MIME type and delivery context from the WhatsApp webhook payload.
- *
- * For now this is a placeholder that the real integration will replace.
- */
-export function detectCompression(
-  widthPx: number,
-  heightPx: number,
-  mimeType: string,
-): boolean {
-  // WhatsApp sends compressed images as image/jpeg with small dimensions
-  // Documents come through with the original format preserved
-  if (mimeType === 'image/jpeg') {
-    const longEdge = Math.max(widthPx, heightPx);
-    // If long edge is suspiciously close to WhatsApp's compression ceiling
-    return longEdge <= 1600;
-  }
-  return false;
-}

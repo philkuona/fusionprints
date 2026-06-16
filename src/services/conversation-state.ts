@@ -76,12 +76,3 @@ export async function saveConversationState(
 
   logger.debug({ customerId, step }, 'Conversation state saved');
 }
-
-/**
- * Reset a customer's conversation to idle.
- * Called after an order is complete, or on explicit CANCEL.
- */
-export async function resetConversationState(customerId: string): Promise<void> {
-  await saveConversationState(customerId, 'idle', emptyContext());
-  logger.info({ customerId }, 'Conversation state reset to idle');
-}

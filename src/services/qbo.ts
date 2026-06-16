@@ -69,13 +69,6 @@ export function isEnabled(): boolean {
   return Boolean(env.QBO_CLIENT_ID);
 }
 
-/** Returns true if OAuth tokens exist and refresh token hasn't expired. */
-export function isConnected(): boolean {
-  const tokens = readTokens();
-  if (!tokens) return false;
-  return new Date(tokens.refreshTokenExpiresAt) > new Date();
-}
-
 /** Returns true if connected AND setup (items/accounts found) is complete. */
 export function isSetupComplete(): boolean {
   const tokens = readTokens();

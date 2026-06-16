@@ -302,13 +302,3 @@ export function formatPriceList(productType: 'photo_print' | 'poster'): string {
 
   return lines.join('\n');
 }
-
-/**
- * Get a single product's price as a formatted string.
- * Used in the bot after a customer selects a size.
- */
-export function formatUnitPrice(sizeCode: string): string | null {
-  const product = getProduct(sizeCode);
-  if (!product) return null;
-  return `$${product.unitPriceUsd.toFixed(2)} each`;
-}

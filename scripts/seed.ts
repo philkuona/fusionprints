@@ -5,7 +5,7 @@
  *
  * Idempotent — won't duplicate if run multiple times.
  * Currently seeds:
- *   - Two printers (DNP DS620A and Epson P900)
+ *   - Two printers (DNP DS620A and Epson P5300)
  */
 
 import { db, closeDatabase } from '../src/db/client.js';
@@ -20,14 +20,14 @@ async function seed(): Promise<void> {
     {
       name: 'DNP DS620A',
       printerType: 'dye_sub' as const,
-      osPrinterName: 'DS620A', // adjust to actual Windows printer name once installed
+      osPrinterName: 'FPDS620A', // Windows print-queue name on the agent mini-PC
       currentMedia: '6x8 ribbon',
       status: 'offline' as const,
     },
     {
-      name: 'Epson SureColor P900',
+      name: 'Epson SureColor P5300',
       printerType: 'inkjet' as const,
-      osPrinterName: 'EPSON SC-P900', // adjust to actual Windows printer name
+      osPrinterName: 'FP5300', // Windows print-queue name on the agent mini-PC
       currentMedia: '17in luster roll',
       status: 'offline' as const,
     },

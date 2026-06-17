@@ -134,7 +134,7 @@ export interface Product {
  * Architecture (locked):
  *   - DNP #1 with 6×8 master media → handles 4×6 (cut), 6×6 (cut), 6×8 (native)
  *   - DNP #2 with 5×7 media        → handles 5×7
- *   - Epson SC-P900                 → handles 8×10, 11×14, 12×18, 16×20
+ *   - Epson SC-P5300               → handles 8×10, 11×14, 12×18, 16×20
  *
  * Catalog at launch — 8 sizes total. Outsourced sizes (18×24, 24×36) were
  * dropped after we decided not to outsource (no SA partner). Customers get

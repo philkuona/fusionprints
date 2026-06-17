@@ -94,7 +94,7 @@ export const printerStatusEnum = pgEnum('printer_status', [
 export const targetPrinterTypeEnum = pgEnum('target_printer_type', [
   'dye_sub_4x6',     // DNP #1 with 6×8 master media (handles 4×6, 6×6, 6×8)
   'dye_sub_5x7',     // DNP #2 with 5×7 media
-  'inkjet',          // Epson SC-P900 (handles 8×10, 11×14, 12×18, 16×20)
+  'inkjet',          // Epson SC-P5300 (handles 8×10, 11×14, 12×18, 16×20)
   'thermal_label',   // Zebra/Xprinter for envelope labels
 ]);
 
@@ -295,7 +295,7 @@ export const payments = pgTable(
 
 /**
  * Printers — registered devices the print agent dispatches to.
- * Phase 1: 2 rows (DNP DS620A and Epson P900).
+ * Phase 1: 2 rows (DNP DS620A and Epson P5300).
  */
 export const printers = pgTable('printers', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -11,9 +11,10 @@
 
 import { eq, and, like, desc, inArray, lt } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns, payments } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns, payments, holidays } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
+import { nextWorkingDay } from '@/utils/working-days.js';
 import { randomBytes } from 'crypto';
 import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
@@ -233,6 +234,10 @@ export async function createOrder(
       return { order, orderNumber };
     });
 
+    // NOTE: 5×7 next-working-day + operator alert is applied at markOrderPaid
+    // (post-payment) for ALL channels — bot orders are created at
+    // pending_payment here, so firing the operator alert now would be premature.
+
     return { ok: true, order: result.order, orderNumber: result.orderNumber };
   } catch (err) {
     logger.error({ err, customerId }, 'Failed to create order');
@@ -396,6 +401,79 @@ export async function enqueueWebPrintJobs(orderId: string): Promise<void> {
   logger.info({ orderId, jobs: items.length }, 'Enqueued web print jobs after payment');
 }
 
+/**
+ * 5×7 special handling. An order containing a 5×7 print is operator-gated (manual
+ * DNP media swap — see services/store-settings.ts), so the WHOLE order goes to the
+ * next working day. This sets orders.scheduled_ready_at to that date and alerts the
+ * operator on WhatsApp. Idempotent (acts only while scheduled_ready_at is null) and
+ * never throws — failures are logged so they can't block an order. The 5×7 jobs
+ * themselves are simply held by the DNP media-mode gate; no job-status change here.
+ */
+export async function applyFiveBySevenHandling(orderId: string): Promise<void> {
+  try {
+    const [order] = await db
+      .select({ orderNumber: orders.orderNumber, scheduledReadyAt: orders.scheduledReadyAt })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+    if (!order || order.scheduledReadyAt) return; // missing, or already handled
+
+    const items = await db
+      .select({ sizeCode: orderItems.sizeCode })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, orderId));
+    const has5x7 = items.some((i) => getProduct(i.sizeCode)?.printer === 'dnp_ds620a_5x7');
+    if (!has5x7) return;
+
+    const holidayRows = await db.select({ date: holidays.date }).from(holidays);
+    const readyAt = nextWorkingDay(new Date(), new Set(holidayRows.map((h) => h.date)));
+
+    await db.update(orders).set({ scheduledReadyAt: readyAt }).where(eq(orders.id, orderId));
+    logger.info(
+      { orderId, orderNumber: order.orderNumber, scheduledReadyAt: readyAt },
+      '5×7 order — whole order set to next working day',
+    );
+
+    await sendFiveBySevenOperatorAlert(order.orderNumber, readyAt);
+  } catch (err) {
+    logger.error({ orderId, err }, 'applyFiveBySevenHandling failed (order unaffected)');
+  }
+}
+
+/** Format a date as e.g. "Mon, 22 Jun" in CAT for customer/operator-facing copy. */
+export function formatReadyDate(d: Date): string {
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'Africa/Harare',
+  });
+}
+
+/** WhatsApp the operator that a 5×7 order is waiting and needs a media swap. */
+async function sendFiveBySevenOperatorAlert(orderNumber: string, readyAt: Date): Promise<void> {
+  const phone = env.OPERATOR_WHATSAPP_PHONE;
+  if (!phone) {
+    logger.warn(
+      { orderNumber },
+      '5×7 order — OPERATOR_WHATSAPP_PHONE unset, skipping operator alert',
+    );
+    return;
+  }
+  const dateStr = formatReadyDate(readyAt);
+  if (env.WHATSAPP_TEMPLATE_5X7_HOLD) {
+    // {{1}} order number, {{2}} ready date
+    await sendWhatsAppTemplate(phone, env.WHATSAPP_TEMPLATE_5X7_HOLD, [orderNumber, dateStr]);
+  } else {
+    const message = `🟡 *5×7 order — media swap needed*\n\nOrder: *${orderNumber}*\nReady by: *${dateStr}* (whole order is next-day).\n\nLoad 5×7 media, then flip the DNP to *5×7 mode* in the admin dashboard to print the held batch. Flip back to 6×8 when done.`;
+    await sendWhatsAppMessage(phone, message);
+  }
+  logger.info(
+    { orderNumber, template: !!env.WHATSAPP_TEMPLATE_5X7_HOLD },
+    'Sent 5×7 operator alert',
+  );
+}
+
 /** Recent orders for a web user (newest first). Used by the web order history. */
 export async function getWebUserOrders(webUserId: string, limit = 20): Promise<Order[]> {
   return db
@@ -467,6 +545,11 @@ export async function markOrderPaid(
       'Failed to queue slips — order is paid, slips will need manual recovery',
     );
   }
+
+  // 5×7 special handling — next-working-day date + operator alert. Idempotent
+  // and self-guarded; runs for whichever channel just got paid.
+  const placedOrder = await getOrderByNumber(orderNumber);
+  if (placedOrder) await applyFiveBySevenHandling(placedOrder.id);
 }
 
 /**

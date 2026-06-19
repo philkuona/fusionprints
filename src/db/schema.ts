@@ -98,6 +98,13 @@ export const targetPrinterTypeEnum = pgEnum('target_printer_type', [
   'thermal_label',   // Zebra/Xprinter for envelope labels
 ]);
 
+// DNP loaded-media mode. There is ONE physical DNP, which prints one media
+// family at a time: '6x8' (default) → 4×6/6×6/6×8; '5x7' → 5×7. The agent
+// job-serving endpoint only hands out dye-sub jobs whose media matches the
+// current mode, so flipping to '5x7' releases the held 5×7 batch AND auto-pauses
+// the 4×6 family (and vice versa). Operator-toggled from the admin dashboard.
+export const dnpMediaModeEnum = pgEnum('dnp_media_mode', ['6x8', '5x7']);
+
 // New for Phase D — slip jobs are operational/branded prints, separate from customer prints.
 export const slipTypeEnum = pgEnum('slip_type', [
   'order_info',      // 4×6 dye-sub card with order details (top of stack)
@@ -214,6 +221,12 @@ export const orders = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),
     readyAt: timestamp('ready_at', { withTimezone: true }),
+    // Promised availability date for orders containing a 5×7 print. Those orders
+    // are operator-gated (manual DNP media swap) so the WHOLE order goes next
+    // working day; this holds the computed next-working-day date (CAT, Sundays +
+    // ZW public holidays excluded). NULL for normal orders. See
+    // utils/working-days.ts and services/order.ts applyFiveBySevenHandling.
+    scheduledReadyAt: timestamp('scheduled_ready_at', { withTimezone: true }),
     shippedAt: timestamp('shipped_at', { withTimezone: true }),
     fulfilledAt: timestamp('fulfilled_at', { withTimezone: true }),
     receiptSentAt: timestamp('receipt_sent_at', { withTimezone: true }),
@@ -439,6 +452,36 @@ export const productPrices = pgTable('product_prices', {
 
 export type ProductPrice = typeof productPrices.$inferSelect;
 export type NewProductPrice = typeof productPrices.$inferInsert;
+
+/**
+ * Store-wide settings — a single row (singleton, id=1). Operational state the
+ * operator toggles at runtime. Currently the DNP's loaded-media mode, which
+ * gates dye-sub job serving (see dnpMediaModeEnum). Future store-wide settings
+ * (e.g. default SLA) can live here too.
+ */
+export const storeSettings = pgTable('store_settings', {
+  id: integer('id').primaryKey().default(1), // singleton: always id=1
+  dnpMediaMode: dnpMediaModeEnum('dnp_media_mode').notNull().default('6x8'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type StoreSettings = typeof storeSettings.$inferSelect;
+export type NewStoreSettings = typeof storeSettings.$inferInsert;
+
+/**
+ * Public-holiday calendar — non-working days for fulfilment date math (treated
+ * exactly like Sundays). One row per calendar date stored as ISO 'YYYY-MM-DD'
+ * in CAT. Movable holidays (e.g. Easter) need a row per year; seeded yearly in
+ * scripts/seed.ts and (later) admin-manageable. See utils/working-days.ts.
+ */
+export const holidays = pgTable('holidays', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  date: text('date').notNull().unique(), // ISO 'YYYY-MM-DD' (CAT)
+  name: text('name').notNull(),
+});
+
+export type Holiday = typeof holidays.$inferSelect;
+export type NewHoliday = typeof holidays.$inferInsert;
 
 // ===== Type exports for use throughout the app =====
 

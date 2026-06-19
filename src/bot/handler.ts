@@ -92,11 +92,19 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
 
           const total = effect.quote.ok ? String(effect.quote.quote.totalUsd) : '0.00';
 
+          // Orders containing a 5×7 are operator-gated (media swap) so the whole
+          // order is next-day — tell the customer before they pay (positive,
+          // reason hidden). See services/order.ts applyFiveBySevenHandling.
+          const has5x7 =
+            effect.quote.ok && effect.quote.quote.items.some((i) => i.sizeCode === '5x7');
+
           // Tell the customer their order is created and ask how they want to pay
           // EcoCash only for now — card payments aren't built yet, so we don't
           // offer a button that leads to a dead link.
           extraReplies.push({
-            text: MSG.choosePaymentMethod(orderResult.orderNumber, total),
+            text:
+              MSG.choosePaymentMethod(orderResult.orderNumber, total) +
+              (has5x7 ? `\n\n${MSG.fiveBySevenNextDay()}` : ''),
             buttons: [
               { id: 'PAY_ECOCASH', title: '📱 EcoCash' },
             ],

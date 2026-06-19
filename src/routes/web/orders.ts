@@ -110,6 +110,7 @@ export async function registerWebOrderRoutes(app: FastifyInstance): Promise<void
       createdAt: order.createdAt,
       paidAt: order.paidAt,
       readyAt: order.readyAt,
+      scheduledReadyAt: order.scheduledReadyAt,
       shippedAt: order.shippedAt,
       fulfilledAt: order.fulfilledAt,
       items,

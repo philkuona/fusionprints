@@ -20,6 +20,7 @@ import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { getProduct, type PrintLayout } from '@/config/catalog.js';
+import { getDnpMediaMode, mediaForPrinterType } from '@/services/store-settings.js';
 
 // ===== Auth =====
 
@@ -111,6 +112,18 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
     const filterType = printerType && validTypes.includes(printerType) ? printerType : null;
 
     try {
+      // DNP media-mode gate. There is ONE physical DNP, loaded with one media
+      // family at a time. Only serve dye-sub jobs whose media matches the
+      // currently loaded mode, so 5×7 jobs stay held under '6x8' (and the 4×6
+      // family — including its slips — stays held under '5x7'). The operator
+      // flips the mode from the admin dashboard after a physical media swap.
+      if (filterType === 'dye_sub_4x6' || filterType === 'dye_sub_5x7') {
+        if (mediaForPrinterType(filterType) !== (await getDnpMediaMode())) {
+          reply.status(404).send({ message: 'No jobs queued' });
+          return;
+        }
+      }
+
       // For thermal_label requests, only check slip_jobs (no print_jobs go there)
       if (filterType === 'thermal_label') {
         const [slip] = await db

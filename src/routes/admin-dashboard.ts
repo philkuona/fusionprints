@@ -25,6 +25,7 @@ import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { releaseOrderForPickup } from '@/services/order.js';
+import { getDnpMediaMode, setDnpMediaMode, type DnpMediaMode } from '@/services/store-settings.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
 
 // ===== Auth middleware =====
@@ -52,6 +53,7 @@ async function getStats() {
     todayOrders,
     todayRevenue,
     totalOrders,
+    pending5x7,
   ] = await Promise.all([
     // Orders awaiting poster approval
     db.select({ count: count() }).from(orders)
@@ -73,7 +75,12 @@ async function getStats() {
       .where(and(gte(orders.createdAt, today), eq(orders.status, 'paid'))),
     // All time orders
     db.select({ count: count() }).from(orders),
+    // Held 5×7 print jobs (queued, dye_sub_5x7) waiting for an operator media swap
+    db.select({ count: count() }).from(printJobs)
+      .where(and(eq(printJobs.status, 'queued'), eq(printJobs.targetPrinterType, 'dye_sub_5x7'))),
   ]);
+
+  const dnpMediaMode = await getDnpMediaMode();
 
   return {
     pendingApproval: pendingApproval[0].count,
@@ -83,6 +90,8 @@ async function getStats() {
     todayOrders: todayOrders[0].count,
     todayRevenue: parseFloat(todayRevenue[0].total ?? '0').toFixed(2),
     totalOrders: totalOrders[0].count,
+    pending5x7: pending5x7[0].count,
+    dnpMediaMode,
   };
 }
 
@@ -449,6 +458,28 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       logger.error({ err }, 'Failed to release order for pickup');
       return reply.status(500).send({ error: 'Failed to release' });
     }
+  });
+
+  // DNP media mode — operator toggle for the single DNP's loaded media.
+  // Flipping to '5x7' releases the held 5×7 batch AND auto-pauses the 4×6 family
+  // (the agent's job-serving endpoint only hands out jobs whose media matches the
+  // current mode). Flip back to '6x8' to resume normal flow. After flipping, the
+  // operator must physically load the matching media.
+  app.get('/admin/api/dnp-media-mode', async (request, reply) => {
+    if (!checkAuth(request, reply)) return;
+    return { mode: await getDnpMediaMode() };
+  });
+
+  app.post('/admin/api/dnp-media-mode', async (request, reply) => {
+    if (!checkAuth(request, reply)) return;
+    const { mode } = (request.body ?? {}) as { mode?: string };
+    if (mode !== '6x8' && mode !== '5x7') {
+      reply.status(400).send({ error: "mode must be '6x8' or '5x7'" });
+      return;
+    }
+    await setDnpMediaMode(mode as DnpMediaMode);
+    logger.info({ mode }, 'DNP media mode changed by operator');
+    return { ok: true, mode };
   });
 
   // Mark as fulfilled (collected)

@@ -24,7 +24,24 @@ import { notifyCustomerOfPayment } from '@/routes/payment-webhooks.js';
 
 interface PayonifyEvent {
   type?: string;
-  data?: { object?: { id?: string; metadata?: Record<string, string>; payment_method?: string } };
+  data?: {
+    object?: {
+      id?: string;
+      // On a checkout_session, the underlying charge id (ch_…) lives here — that's
+      // what refunds target, NOT the cs_… session in `id`. Absent on a direct
+      // charge object (where `id` is already the ch_…).
+      transaction_reference?: string;
+      metadata?: Record<string, string>;
+      payment_method?: string;
+    };
+  };
+}
+
+type PayonifyObject = NonNullable<NonNullable<PayonifyEvent['data']>['object']>;
+
+/** The refundable charge id (ch_…): a session's transaction_reference, else the object id. */
+function chargeIdFromObject(obj: PayonifyObject | undefined): string | undefined {
+  return obj?.transaction_reference ?? obj?.id;
 }
 
 /**
@@ -44,6 +61,7 @@ async function fulfilPaidOrder(
   reference: string,
   rawPayload: string,
   paymentMethod: string | null,
+  chargeReference: string | null,
 ): Promise<void> {
   const order = await getOrderByNumber(orderNumber);
   if (!order) {
@@ -76,10 +94,9 @@ async function fulfilPaidOrder(
         status: 'success',
         completedAt: new Date(),
         webhookPayload: payload,
-        // The succeeded event's object id is the refundable charge id (PR-12).
-        // Store it so a later cancellation can refund against the charge, not
-        // the checkout session in providerReference.
-        chargeReference: reference,
+        // The refundable charge id (ch_…), so a later cancellation refunds the
+        // charge — not the cs_… checkout session in providerReference (PR-12).
+        ...(chargeReference ? { chargeReference } : {}),
         // Record the real method so QBO deposits to the right account. Only set
         // when known — don't overwrite an existing value with null.
         ...(paymentMethod ? { paymentMethod } : {}),
@@ -167,6 +184,7 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
             event.data?.object?.id ?? orderNumber,
             raw,
             mapPayonifyMethod(event.data?.object?.payment_method),
+            chargeIdFromObject(event.data?.object) ?? null,
           );
         } catch (err) {
           // 500 → Payonify retries. Idempotency guard makes retries safe.

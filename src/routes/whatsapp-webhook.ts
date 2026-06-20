@@ -370,13 +370,15 @@ export async function registerWhatsAppWebhook(app: FastifyInstance): Promise<voi
 
           const value = change.value;
 
-          // Process status updates (delivered, read, failed)
+          // Delivery-status receipts for messages WE sent (sent/delivered/read/
+          // failed). These are NOT payment events: payment is confirmed out-of-band
+          // by the Payonify webhook (routes/web/payonify-webhook.ts → markOrderPaid),
+          // never by an inbound WhatsApp message. We just log here.
           for (const status of value.statuses ?? []) {
             logger.info(
               { messageId: status.id, status: status.status },
               'Message status update',
             );
-            // TODO: update payment status if message was a payment confirmation
           }
 
           // Process incoming messages

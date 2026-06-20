@@ -128,6 +128,60 @@ export async function createEcocashCharge(params: {
   return { id: json.id, status: json.status };
 }
 
+export interface PayonifyRefund {
+  id: string;
+  status: string;
+}
+
+/**
+ * Refund a charge, in full. Payonify is Stripe-style, so this posts to
+ * `/v1/refunds` with the charge id + amount in minor units (USD cents).
+ *
+ * `chargeReference` is the refundable charge id captured from the
+ * `*.succeeded` webhook (payments.chargeReference) — NOT the checkout session
+ * id. Throws on a non-2xx so the caller can mark the refund failed and keep the
+ * cancellation request open for a retry / manual handling.
+ *
+ * NOTE: the exact endpoint/params are inferred from Payonify's Stripe-style API
+ * and must be confirmed with one live test refund before we trust it (esp. for
+ * EcoCash). Keep this the single seam so any shape change is one edit.
+ */
+export async function refundPayment(params: {
+  chargeReference: string;
+  amountUsd: number;
+  orderNumber: string;
+}): Promise<PayonifyRefund> {
+  const amountCents = Math.round(params.amountUsd * 100);
+
+  const body = {
+    charge: params.chargeReference,
+    amount: amountCents,
+    metadata: { order_number: params.orderNumber },
+  };
+
+  const res = await fetch(`${API_BASE}/refunds`, {
+    method: 'POST',
+    headers: { Authorization: authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    logger.error(
+      { status: res.status, error: errText, orderNumber: params.orderNumber, chargeReference: params.chargeReference },
+      'Payonify refund failed',
+    );
+    throw new Error(`Payonify refund failed: ${res.status}`);
+  }
+
+  const json = (await res.json()) as { id: string; status: string };
+  logger.info(
+    { orderNumber: params.orderNumber, refundId: json.id, status: json.status, amountUsd: params.amountUsd },
+    'Payonify refund created',
+  );
+  return { id: json.id, status: json.status };
+}
+
 /**
  * Verify a Payonify webhook signature.
  * Header: `Payonify-Signature: t=<unix>,v1=<hex hmac>`

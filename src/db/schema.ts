@@ -64,6 +64,23 @@ export const paymentStatusEnum = pgEnum('payment_status', [
   'cancelled',
 ]);
 
+// Customer-initiated cancellation request lifecycle (PR-12). NULL = no request.
+// requested → (admin) approved | declined. Refunds never happen without an
+// admin moving the request to 'approved'.
+export const cancellationStatusEnum = pgEnum('cancellation_status', [
+  'requested',
+  'approved',
+  'declined',
+]);
+
+// Refund execution state (PR-12). NULL = no refund attempted. Set when an
+// approved cancellation triggers the Payonify refund call.
+export const refundStatusEnum = pgEnum('refund_status', [
+  'pending',
+  'succeeded',
+  'failed',
+]);
+
 export const paymentProviderEnum = pgEnum('payment_provider', [
   'paynow',
   'flutterwave',
@@ -237,6 +254,17 @@ export const orders = pgTable(
     shippedAt: timestamp('shipped_at', { withTimezone: true }),
     fulfilledAt: timestamp('fulfilled_at', { withTimezone: true }),
     receiptSentAt: timestamp('receipt_sent_at', { withTimezone: true }),
+    // ── Cancellation + refund (PR-12) ──
+    // Customer asks to cancel a paid order; refund is issued only after an admin
+    // approves (never automatic). See services/refund.ts.
+    cancellationStatus: cancellationStatusEnum('cancellation_status'),
+    cancellationReason: text('cancellation_reason'),
+    cancellationRequestedAt: timestamp('cancellation_requested_at', { withTimezone: true }),
+    // Refund execution, set when an approved cancellation hits Payonify.
+    refundStatus: refundStatusEnum('refund_status'),
+    refundReference: text('refund_reference'), // Payonify refund id
+    refundAmountUsd: numeric('refund_amount_usd', { precision: 10, scale: 2 }),
+    refundedAt: timestamp('refunded_at', { withTimezone: true }),
   },
   (table) => ({
     orderNumberIdx: uniqueIndex('orders_order_number_idx').on(table.orderNumber),
@@ -299,7 +327,11 @@ export const payments = pgTable(
       .notNull()
       .references(() => orders.id),
     provider: paymentProviderEnum('provider').notNull(),
-    providerReference: text('provider_reference'), // their transaction ID
+    providerReference: text('provider_reference'), // their transaction ID (checkout session id for web)
+    // The refundable charge id, captured from the `*.succeeded` webhook
+    // (event.data.object.id). For web checkout this differs from the session id
+    // in providerReference; refunds must target this. Null for virtual/unpaid.
+    chargeReference: text('charge_reference'),
     amountUsd: numeric('amount_usd', { precision: 10, scale: 2 }).notNull(),
     status: paymentStatusEnum('status').notNull().default('pending'),
     paymentMethod: text('payment_method'), // 'ecocash', 'card', etc.

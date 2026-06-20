@@ -15,6 +15,8 @@ import { authenticateWebUser } from '@/utils/web-auth.js';
 import { getWebUserOrders, getWebOrderByNumber } from '@/services/order.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { getProduct } from '@/config/catalog.js';
+import { requestOrderCancellation, canRequestCancellation } from '@/services/refund.js';
+import { logger } from '@/utils/logger.js';
 
 export async function registerWebOrderRoutes(app: FastifyInstance): Promise<void> {
   // GET /web/api/orders
@@ -113,7 +115,40 @@ export async function registerWebOrderRoutes(app: FastifyInstance): Promise<void
       scheduledReadyAt: order.scheduledReadyAt,
       shippedAt: order.shippedAt,
       fulfilledAt: order.fulfilledAt,
+      // Cancellation + refund (PR-12). `cancellable` drives the "Request
+      // cancellation" button; the status fields render the request/refund state.
+      cancellable: canRequestCancellation(order),
+      cancellationStatus: order.cancellationStatus,
+      cancellationRequestedAt: order.cancellationRequestedAt,
+      refundStatus: order.refundStatus,
+      refundedAt: order.refundedAt,
+      refundAmountUsd: order.refundAmountUsd,
       items,
     });
+  });
+
+  // POST /web/api/orders/:orderNumber/cancel-request — customer asks to cancel a
+  // paid order. Records the request for admin review; no money moves here.
+  app.post('/web/api/orders/:orderNumber/cancel-request', async (request, reply) => {
+    const userId = authenticateWebUser(request, reply);
+    if (!userId) return;
+
+    const { orderNumber } = request.params as { orderNumber: string };
+    const order = await getWebOrderByNumber(userId, orderNumber);
+    if (!order) return reply.status(404).send({ error: 'not_found' });
+
+    const { reason } = (request.body ?? {}) as { reason?: string };
+    const result = await requestOrderCancellation({ orderId: order.id, reason });
+    if (!result.ok) {
+      const messages: Record<string, string> = {
+        not_paid: 'This order has not been paid, so there is nothing to cancel.',
+        already_cancelled: 'This order is already cancelled.',
+        too_late: 'This order is already being prepared and can no longer be cancelled online. Please contact us and we will help.',
+      };
+      return reply.status(409).send({ error: result.reason, message: messages[result.reason ?? ''] ?? 'We could not submit your request.' });
+    }
+
+    logger.info({ orderNumber, userId }, 'Customer requested cancellation');
+    return reply.send({ ok: true, status: 'requested' });
   });
 }

@@ -325,6 +325,46 @@ Admin is served by the backend at **http://localhost:3000/admin** (production: y
 
 ---
 
+## 4b. Cancellation & refund (PR-12)
+
+> Needs a **paid** order to act on. Easiest: place a small real card order (or use a virtual-payment order on staging). The Payonify refund endpoint is best-guess — **REF-01 is the live verification** that confirms the real refund works end to end.
+
+### CR-01 — Customer requests cancellation (web)
+- **Steps:** As the buyer, open the paid order at `/account/orders/<n>` → click **Request cancellation** → optionally type a reason → **Submit request**.
+- **Expected:** The button is replaced by "Cancellation requested". An alert email lands at `notify@fusionprints.co.zw` ("🟠 Cancellation requested"). The request shows in the admin order modal.
+- **Result:** ☐ PASS ☐ FAIL — Notes:
+
+### CR-02 — Request button only shows when eligible
+- **Expected:** "Request cancellation" appears only for paid orders not yet printed/ready/fulfilled. It's absent on unpaid, already-printed, fulfilled, or cancelled orders (and once a request is pending).
+- **Result:** ☐ PASS ☐ FAIL — Notes:
+
+### REF-01 — Admin approves → real Payonify refund ⚠️ (live-money check)
+- **Steps:** Admin → open the order modal → the amber "Cancellation requested" banner shows → click **Approve & refund** → confirm.
+- **Expected:** Success alert "Refund issued". Order flips to **Cancelled**, modal shows "Refunded $X". In **Payonify** the charge shows a matching refund. In **QuickBooks** a Refund Receipt (`REF-<order>`) is posted. Customer gets the refund email (and WhatsApp if a bot order). Any queued/awaiting print + slip jobs are now failed (not dispatched).
+- **Result:** ☐ PASS ☐ FAIL — Notes (record the Payonify refund id):
+
+### REF-02 — Refund failure leaves the order intact
+- **Steps:** Force a failure (e.g. temporarily wrong Payonify key on staging, or an order with no charge reference) → Approve & refund.
+- **Expected:** Red "Refund failed" banner, order is **not** cancelled, a **Retry refund** button appears. No QBO receipt, no customer "refunded" message.
+- **Result:** ☐ PASS ☐ FAIL — Notes:
+
+### CR-03 — Admin declines a request
+- **Steps:** With a pending request, click **Decline request** → confirm.
+- **Expected:** Order stays live (status unchanged), request clears. Customer sees "Cancellation declined" on their order page and gets the declined email/WhatsApp.
+- **Result:** ☐ PASS ☐ FAIL — Notes:
+
+### REF-03 — Admin direct cancel of a paid order refunds too
+- **Steps:** On a paid order with no customer request, click **Cancel order**.
+- **Expected:** Same as REF-01 (Payonify refund + QBO + notify + jobs stopped) — the alert confirms "cancelled and refunded".
+- **Result:** ☐ PASS ☐ FAIL — Notes:
+
+### REF-04 — Idempotency / no double refund
+- **Steps:** After a successful refund, try Approve/Cancel again (or replay).
+- **Expected:** No second Payonify refund is issued; the order stays cancelled/refunded.
+- **Result:** ☐ PASS ☐ FAIL — Notes:
+
+---
+
 ## 5. Defect log
 
 | # | Channel | Case ID | What happened | Severity | Status |

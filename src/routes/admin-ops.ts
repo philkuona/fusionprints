@@ -608,6 +608,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
         const labels = { pending_payment:'Pending payment', paid:'Paid', awaiting_approval:'Needs approval', queued_for_print:'In queue', printing:'Printing', printed:'Printed (release?)', ready_for_pickup:'Ready for pickup', ready_for_collection:'Ready', fulfilled:'Fulfilled', cancelled:'Cancelled', failed:'Failed' };
         return labels[status] || status;
       }
+      function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
       async function showOrder(orderId) {
         document.getElementById('modal-overlay').classList.add('open');
@@ -643,10 +644,15 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
           \${order.deliveryAddress ? \`<div class="detail-row"><span class="detail-label">Address</span><span class="detail-value">\${order.deliveryAddress}</span></div>\` : ''}
           <div class="detail-row"><span class="detail-label">Ordered</span><span class="detail-value">\${new Date(order.createdAt).toLocaleString()}</span></div>
           \${order.paidAt ? \`<div class="detail-row"><span class="detail-label">Paid</span><span class="detail-value">\${new Date(order.paidAt).toLocaleString()}</span></div>\` : ''}
+          \${order.cancellationStatus === 'requested' ? \`<div style="margin-top:14px;padding:12px 14px;background:#FCEFD9;border:1px solid #E9B949;border-radius:10px;color:#7A4E0B;font-size:13px;line-height:1.5;"><strong>⚠️ Cancellation requested by customer.</strong>\${order.cancellationReason ? ' &ldquo;' + esc(order.cancellationReason) + '&rdquo;' : ''} Approving refunds $\${parseFloat(order.totalUsd).toFixed(2)} via Payonify.</div>\` : ''}
+          \${order.refundStatus === 'succeeded' ? \`<div class="detail-row"><span class="detail-label">Refunded</span><span class="detail-value">$\${parseFloat(order.refundAmountUsd || order.totalUsd).toFixed(2)}\${order.refundedAt ? ' · ' + new Date(order.refundedAt).toLocaleDateString() : ''}</span></div>\` : ''}
+          \${order.refundStatus === 'failed' ? \`<div style="margin-top:14px;padding:12px 14px;background:#FBE6E2;border:1px solid #F2C4BB;border-radius:10px;color:#C0392B;font-size:13px;line-height:1.5;"><strong>Refund failed.</strong> The order was left intact — retry below, or refund manually in Payonify.</div>\` : ''}
           <div class="items-list"><div class="items-title">Items (\${items.length})</div>\${itemsHtml}</div>
           \${jobs.length > 0 ? \`<div class="items-list" style="margin-top:16px"><div class="items-title">Print jobs</div>\${jobs.map(j => \`<div class="item-row"><span>\${j.printerName || 'Unassigned'}</span><span style="display:flex;gap:8px;align-items:center;"><span class="badge badge-\${j.status}">\${j.status}</span>\${j.status === 'failed' ? \`<button class="action-btn approve" style="padding:3px 8px;font-size:11px" onclick="reprintJob('\${j.id}')">↻ Reprint</button>\` : ''}</span></div>\`).join('')}</div>\` : ''}
           \${(slips && slips.length > 0) ? \`<div class="items-list" style="margin-top:16px"><div class="items-title">Slip cards (\${slips.length})</div>\${slipsHtml}</div>\` : ''}
           <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
+            \${(!IS_OPERATOR && order.cancellationStatus === 'requested') ? \`<button class="action-btn approve" onclick="doApproveCancellation('\${order.id}')">✓ Approve &amp; refund</button><button class="action-btn cancel" onclick="doDeclineCancellation('\${order.id}')">Decline request</button>\` : ''}
+            \${(!IS_OPERATOR && order.refundStatus === 'failed') ? \`<button class="action-btn approve" onclick="doApproveCancellation('\${order.id}')">↻ Retry refund</button>\` : ''}
             \${order.status === 'awaiting_approval' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'approve'); closeModal()">✓ Approve for printing</button>\` : ''}
             \${order.status === 'printed' && order.fulfillmentMethod !== 'delivery' ? \`<button class="action-btn approve" onclick="doAction('\${order.id}', 'release-for-pickup'); closeModal()">📦 Release for pickup</button>\` : ''}
             \${order.status === 'printed' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn approve" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">🚚 Mark out for delivery</button>\` : ''}
@@ -659,9 +665,32 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
       }
 
       async function doAction(orderId, action) {
-        if (action === 'cancel' && !confirm('Cancel this order?')) return;
-        await fetch(\`/admin/api/orders/\${orderId}/\${action}\`, { method: 'POST' });
+        if (action === 'cancel' && !confirm('Cancel this order? Paid orders are refunded via Payonify.')) return;
+        const r = await fetch(\`/admin/api/orders/\${orderId}/\${action}\`, { method: 'POST' });
+        if (action === 'cancel') {
+          const d = await r.json().catch(function(){ return {}; });
+          if (!r.ok) { alert(d.message || 'Cancel failed.'); return; }
+          if (d.refunded) alert('Order cancelled and refunded. The customer has been notified.');
+        }
         omRefresh();
+      }
+      async function doApproveCancellation(orderId) {
+        if (!confirm('Approve this cancellation and refund the customer via Payonify? This cannot be undone.')) return;
+        try {
+          const r = await fetch('/admin/api/orders/' + orderId + '/approve-cancellation', { method: 'POST' });
+          const d = await r.json().catch(function(){ return {}; });
+          if (!r.ok) { alert(d.message || 'Refund failed.'); return; }
+          alert('Refund issued. The customer has been notified.');
+          closeModal(); omRefresh();
+        } catch (e) { alert('Refund failed.'); }
+      }
+      async function doDeclineCancellation(orderId) {
+        if (!confirm('Decline this cancellation request? The order stays active and the customer is notified.')) return;
+        try {
+          const r = await fetch('/admin/api/orders/' + orderId + '/decline-cancellation', { method: 'POST' });
+          if (!r.ok) throw new Error();
+          closeModal(); omRefresh();
+        } catch (e) { alert('Could not decline the request.'); }
       }
       async function doOpsAction(orderId, action) {
         try { const r = await fetch('/admin/api/ops/orders/' + orderId + '/' + action, { method: 'POST' }); if (!r.ok) throw new Error(); omRefresh(); } catch (e) { alert('Action failed'); }

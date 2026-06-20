@@ -53,6 +53,30 @@ export async function notifyCustomerOfPayment(orderNumber: string): Promise<void
   }
 }
 
+/**
+ * WhatsApp notification for a cancellation outcome (PR-12). 'refunded' when an
+ * admin approves + the refund succeeds; 'declined' when they decline. No-ops for
+ * web orders (no WhatsApp customer) and is best-effort.
+ */
+export async function notifyCustomerOfCancellation(
+  orderNumber: string,
+  outcome: 'refunded' | 'declined',
+): Promise<void> {
+  const order = await getOrderByNumber(orderNumber);
+  if (!order || !order.customerId) return;
+
+  const [customer] = await db.select().from(customers).where(eq(customers.id, order.customerId)).limit(1);
+  if (!customer) return;
+
+  const message = outcome === 'refunded' ? MSG.refundIssued(orderNumber) : MSG.cancellationDeclined(orderNumber);
+  const to = customer.phoneNumber.replace(/^\+/, '');
+  try {
+    await sendWhatsAppMessage(to, message);
+  } catch (err) {
+    logger.error({ err, orderNumber, outcome }, 'Failed to send cancellation notification');
+  }
+}
+
 export async function registerPaymentWebhooks(app: FastifyInstance): Promise<void> {
 
   // ===== Manual confirmation endpoint (admin only) =====

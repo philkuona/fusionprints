@@ -76,6 +76,10 @@ async function fulfilPaidOrder(
         status: 'success',
         completedAt: new Date(),
         webhookPayload: payload,
+        // The succeeded event's object id is the refundable charge id (PR-12).
+        // Store it so a later cancellation can refund against the charge, not
+        // the checkout session in providerReference.
+        chargeReference: reference,
         // Record the real method so QBO deposits to the right account. Only set
         // when known — don't overwrite an existing value with null.
         ...(paymentMethod ? { paymentMethod } : {}),

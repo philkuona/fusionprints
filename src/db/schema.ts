@@ -465,6 +465,10 @@ export type NewProductPrice = typeof productPrices.$inferInsert;
 export const storeSettings = pgTable('store_settings', {
   id: integer('id').primaryKey().default(1), // singleton: always id=1
   dnpMediaMode: dnpMediaModeEnum('dnp_media_mode').notNull().default('6x8'),
+  // Minimum order TOTAL (USD) per fulfilment, to satisfy Payonify's minimum
+  // transaction amount. Admin-editable. Defaults: pickup $2, delivery $5.
+  minPickupUsd: numeric('min_pickup_usd', { precision: 10, scale: 2 }).notNull().default('2.00'),
+  minDeliveryUsd: numeric('min_delivery_usd', { precision: 10, scale: 2 }).notNull().default('5.00'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -54,9 +54,15 @@ export interface OrderQuote {
 }
 
 export interface PricingError {
-  type: 'INVALID_SKU' | 'INVALID_QUANTITY' | 'EMPTY_CART' | 'INVALID_DELIVERY_ZONE';
+  type: 'INVALID_SKU' | 'INVALID_QUANTITY' | 'EMPTY_CART' | 'INVALID_DELIVERY_ZONE' | 'BELOW_MINIMUM';
   message: string;
   sizeCode?: string;
+}
+
+/** Admin-set order minimums (USD total) per fulfilment, e.g. { pickupUsd: 2, deliveryUsd: 5 }. */
+export interface OrderMinimums {
+  pickupUsd: number;
+  deliveryUsd: number;
 }
 
 export type PricingResult =
@@ -110,6 +116,7 @@ export function calculateQuote(
   items: CartItem[],
   fulfillmentMethod: FulfillmentMethod,
   deliveryZone: string,
+  minimums?: OrderMinimums,
 ): PricingResult {
   // --- Validate inputs ---
 
@@ -186,6 +193,22 @@ export function calculateQuote(
 
   const deliveryFee = getDeliveryFee(fulfillmentMethod, deliveryZone);
   const total = roundMoney(discountedSubtotal + deliveryFee);
+
+  // Minimum order total (to satisfy Payonify's minimum transaction amount).
+  // Admin-set per fulfilment; only checked when minimums are supplied.
+  if (minimums) {
+    const minUsd = fulfillmentMethod === 'delivery' ? minimums.deliveryUsd : minimums.pickupUsd;
+    if (total < minUsd) {
+      const where = fulfillmentMethod === 'delivery' ? 'delivery' : 'collection';
+      return {
+        ok: false,
+        error: {
+          type: 'BELOW_MINIMUM',
+          message: `Minimum order for ${where} is $${minUsd.toFixed(2)}. Your total is $${total.toFixed(2)} — please add a little more to continue.`,
+        },
+      };
+    }
+  }
 
   const requiresManualReview = pricedItems.some((i) => i.requiresManualReview);
   const hasOutsourcedItems = pricedItems.some((i) => i.isOutsourced);

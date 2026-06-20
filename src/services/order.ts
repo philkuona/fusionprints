@@ -18,6 +18,7 @@ import { nextWorkingDay } from '@/utils/working-days.js';
 import { randomBytes } from 'crypto';
 import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
+import { getOrderMinimums } from '@/services/store-settings.js';
 import { getProduct } from '@/config/catalog.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import { sendFiveBySevenOperatorEmail } from '@/services/operator-email.js';
@@ -125,7 +126,7 @@ export async function createOrder(
     quantity: item.quantity,
   }));
 
-  const quoteResult = calculateQuote(cartItems, fulfillmentMethod, deliveryZone);
+  const quoteResult = calculateQuote(cartItems, fulfillmentMethod, deliveryZone, await getOrderMinimums());
 
   if (!quoteResult.ok) {
     logger.error({ reason: quoteResult.error }, 'Quote calculation failed during order creation');
@@ -215,7 +216,7 @@ export async function createOrder(
     return { ok: true, order: result.order, orderNumber: result.orderNumber };
   } catch (err) {
     logger.error({ err, customerId }, 'Failed to create order');
-    return { ok: false, reason: 'Database error creating order' };
+    return { ok: false, reason: "Sorry, we couldn't create your order just now. Please try again." };
   }
 }
 
@@ -273,7 +274,7 @@ export async function createWebOrder(
   const deliveryZone = input.deliveryZone ?? 'collection';
 
   const cartItems = items.map((i) => ({ sizeCode: i.sizeCode, quantity: i.quantity }));
-  const quoteResult = calculateQuote(cartItems, fulfillmentMethod, deliveryZone);
+  const quoteResult = calculateQuote(cartItems, fulfillmentMethod, deliveryZone, await getOrderMinimums());
 
   if (!quoteResult.ok) {
     logger.error({ reason: quoteResult.error }, 'Quote calculation failed during web order creation');
@@ -334,7 +335,7 @@ export async function createWebOrder(
     return { ok: true, order: result.order, orderNumber: result.orderNumber };
   } catch (err) {
     logger.error({ err, webUserId }, 'Failed to create web order');
-    return { ok: false, reason: 'Database error creating order' };
+    return { ok: false, reason: "Sorry, we couldn't create your order just now. Please try again." };
   }
 }
 

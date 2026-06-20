@@ -81,7 +81,9 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
 
           if (!orderResult.ok) {
             logger.error({ reason: orderResult.reason }, 'Order creation failed');
-            extraReplies.push(MSG.somethingWentWrong());
+            // Reasons are customer-safe (e.g. the order-minimum message), so show
+            // them directly instead of a generic error.
+            extraReplies.push(orderResult.reason || MSG.somethingWentWrong());
             break;
           }
 

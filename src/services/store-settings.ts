@@ -41,3 +41,36 @@ export async function setDnpMediaMode(mode: DnpMediaMode): Promise<void> {
 export function mediaForPrinterType(targetPrinterType: string): DnpMediaMode {
   return targetPrinterType === 'dye_sub_5x7' ? '5x7' : '6x8';
 }
+
+export interface OrderMinimums {
+  /** Minimum order total (USD) for a collection/pickup order. */
+  pickupUsd: number;
+  /** Minimum order total (USD) for a delivery order. */
+  deliveryUsd: number;
+}
+
+/** Read the admin-set order minimums. Defaults: pickup $2, delivery $5. */
+export async function getOrderMinimums(): Promise<OrderMinimums> {
+  const [row] = await db
+    .select({ pickup: storeSettings.minPickupUsd, delivery: storeSettings.minDeliveryUsd })
+    .from(storeSettings)
+    .where(eq(storeSettings.id, 1))
+    .limit(1);
+  return {
+    pickupUsd: row ? parseFloat(row.pickup) : 2,
+    deliveryUsd: row ? parseFloat(row.delivery) : 5,
+  };
+}
+
+/** Set the order minimums (admin). Upserts the singleton. */
+export async function setOrderMinimums(m: OrderMinimums): Promise<void> {
+  const values = {
+    minPickupUsd: m.pickupUsd.toFixed(2),
+    minDeliveryUsd: m.deliveryUsd.toFixed(2),
+    updatedAt: new Date(),
+  };
+  await db
+    .insert(storeSettings)
+    .values({ id: 1, ...values })
+    .onConflictDoUpdate({ target: storeSettings.id, set: values });
+}

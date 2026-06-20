@@ -26,6 +26,7 @@ import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { requireFullAdmin, requireFullAdminPage } from '@/utils/auth.js';
+import { adminShell } from '@/routes/admin-theme.js';
 
 const s3 = new S3Client({
   endpoint: `https://${env.B2_ENDPOINT}`,
@@ -84,44 +85,31 @@ async function pageHtml(notice?: string): Promise<string> {
     }),
   );
 
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Promo campaigns — FusionPrints admin</title>
-<style>
-  :root { --bg:#16130f; --surface:#211d17; --surface2:#2b261e; --text:#f3ede2; --mute:#9b8f7c; --accent:#05D668; --danger:#ff7a59; --line:#39322820; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; padding:24px; }
-  a { color:var(--accent); }
-  h1 { font-size:22px; margin:0 0 4px; }
-  .sub { color:var(--mute); font-size:13px; margin-bottom:20px; }
-  .notice { background:var(--accent); color:#13110d; padding:10px 14px; border-radius:8px; margin-bottom:16px; font-weight:600; }
-  .card { background:var(--surface); border:1px solid #ffffff14; border-radius:12px; padding:16px; margin-bottom:14px; }
-  .card.active { border-color:var(--accent); }
-  .card-head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-  .badge { background:var(--accent); color:#13110d; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:6px; }
-  .actions { display:flex; gap:8px; }
-  .actions form { margin:0; }
-  .slots { display:flex; gap:14px; margin-top:14px; flex-wrap:wrap; }
-  .slot { background:var(--surface2); border-radius:8px; padding:10px; width:200px; }
-  .slot-h { font-size:12px; color:var(--mute); margin-bottom:8px; }
-  .slot img { width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:4px; background:#000; }
-  .noimg { width:100%; aspect-ratio:2/3; display:flex; align-items:center; justify-content:center; color:var(--mute); background:#0007; border-radius:4px; font-size:12px; }
-  .copy { font-size:12px; color:var(--mute); margin-top:6px; }
-  .btn { cursor:pointer; background:var(--surface2); color:var(--text); border:1px solid #ffffff22; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; }
-  .btn:hover { border-color:var(--accent); }
-  .btn.primary { background:var(--accent); color:#13110d; border:none; }
-  .btn.danger { color:var(--danger); }
-  form.create { background:var(--surface); border:1px solid #ffffff14; border-radius:12px; padding:18px; margin-top:8px; }
-  form.create label { display:block; font-size:12px; color:var(--mute); margin:12px 0 4px; }
-  form.create input[type=text], form.create select { width:100%; max-width:420px; padding:9px 11px; background:var(--surface2); border:1px solid #ffffff22; border-radius:8px; color:var(--text); font-size:14px; }
-  .slot-fields { display:flex; gap:24px; flex-wrap:wrap; margin-top:8px; }
-  .slot-col { flex:1 1 280px; border-top:1px solid #ffffff14; padding-top:8px; }
-  .hint { color:var(--mute); font-size:12px; margin-top:6px; }
-</style></head>
-<body>
-  <p style="margin:0 0 10px"><a href="/admin">&larr; Admin</a></p>
-  <h1>Promo campaigns</h1>
-  <div class="sub">Two cards print with every order. Upload pre-rendered 4×6 PNGs (1200×1800). One campaign is active at a time.</div>
+  const extraCss = `
+    main .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:14px; }
+    main .card.active { border-color:var(--accent); }
+    .card-head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    .card-head .badge { background:var(--accent); color:#0a3d22; font-size:11px; font-weight:700; padding:2px 9px; border-radius:999px; margin-left:6px; }
+    .actions { display:flex; gap:8px; }
+    .actions form { margin:0; }
+    .slots { display:flex; gap:14px; margin-top:14px; flex-wrap:wrap; }
+    .slot { background:var(--surface2); border-radius:10px; padding:10px; width:200px; }
+    .slot-h { font-size:12px; color:var(--text2); margin-bottom:8px; }
+    .slot img { width:100%; aspect-ratio:2/3; object-fit:cover; border-radius:6px; background:#1f1b16; }
+    .noimg { width:100%; aspect-ratio:2/3; display:flex; align-items:center; justify-content:center; color:var(--text2); background:var(--surface); border:1px dashed var(--border); border-radius:6px; font-size:12px; }
+    .copy { font-size:12px; color:var(--text2); margin-top:6px; }
+    form.create { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px; margin-top:8px; }
+    form.create label { display:block; font-size:12px; color:var(--text2); margin:12px 0 4px; }
+    form.create input[type=text], form.create select, form.create input[type=file] { width:100%; max-width:420px; }
+    .slot-fields { display:flex; gap:24px; flex-wrap:wrap; margin-top:8px; }
+    .slot-col { flex:1 1 280px; border-top:1px solid var(--border); padding-top:8px; }
+    .hint { color:var(--text2); font-size:12px; margin-top:6px; }`;
+
+  const body = `
+  <div class="page-header">
+    <h1>Promo campaigns</h1>
+    <div class="sub">Two cards print with every order. Upload pre-rendered 4×6 PNGs (1200×1800). One campaign is active at a time.</div>
+  </div>
   ${notice ? `<div class="notice">${esc(notice)}</div>` : ''}
 
   ${rows.join('') || '<div class="sub">No campaigns yet. Create one below.</div>'}
@@ -143,8 +131,8 @@ async function pageHtml(notice?: string): Promise<string> {
     </div>
     <div class="hint">New campaigns are created inactive. Use “Set active” to switch the live cards.</div>
     <div style="margin-top:16px"><button class="btn primary" type="submit">Create campaign</button></div>
-  </form>
-</body></html>`;
+  </form>`;
+  return adminShell({ active: 'promos', title: 'Promo campaigns', body, role: 'full', extraCss });
 }
 
 export async function registerAdminPromos(app: FastifyInstance): Promise<void> {

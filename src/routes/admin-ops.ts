@@ -20,7 +20,7 @@ import { gte, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { siteVisits, waitlist } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
-import { ADMIN_FONT_CSS } from '@/routes/admin-fonts.js';
+import { adminShell } from '@/routes/admin-theme.js';
 import { authenticate, authenticatePage, requireFullAdmin, requireFullAdminPage, type AdminRole } from '@/utils/auth.js';
 import {
   markShipped,
@@ -51,154 +51,8 @@ function checkAuth(
 }
 
 // ===== HTML page rendering =====
-
-const SHARED_STYLES = `
-${ADMIN_FONT_CSS}
-
-:root {
-  --bg: #0a0a0a;
-  --surface: #141414;
-  --surface2: #1e1e1e;
-  --border: #2a2a2a;
-  --text: #f0f0f0;
-  --text2: #888;
-  --accent: #f97316;
-  --green: #22c55e;
-  --red: #ef4444;
-  --amber: #f59e0b;
-}
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  font-family: 'DM Sans', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-}
-
-header {
-  display: flex;
-  align-items: center;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.logo {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.logo svg { display: block; height: 36px; width: auto; }
-
-.logo .admin-tag {
-  font-family: 'DM Mono', monospace;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text2);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-}
-
-.nav-tabs { display: flex; gap: 2px; flex: 1; margin-left: 24px; }
-.nav-tab {
-  padding: 8px 14px;
-  color: var(--text2);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: 6px;
-  transition: all 0.15s;
-}
-.nav-tab:hover { color: var(--text); background: var(--bg); }
-.nav-tab.active { color: var(--accent); background: var(--bg); }
-.nav-logout { margin-left: auto; }
-
-main { padding: 24px; max-width: 1400px; margin: 0 auto; }
-
-.page-header { margin-bottom: 20px; }
-.page-title { font-size: 22px; font-weight: 600; }
-.page-sub { color: var(--text2); font-size: 13px; margin-top: 4px; }
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
-  margin-bottom: 16px;
-}
-
-.btn {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 8px 14px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.15s;
-}
-.btn:hover { border-color: var(--accent); color: var(--accent); }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: black; }
-.btn-primary:hover { opacity: 0.9; color: black; }
-.btn-danger { background: var(--red); border-color: var(--red); color: white; }
-
-.loading { color: var(--text2); padding: 24px; text-align: center; }
-
-.muted { color: var(--text2); font-size: 13px; }
-.mono { font-family: 'DM Mono', monospace; }
-.hamburger {
-  display: none;
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 6px 11px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 20px;
-  line-height: 1;
-}
-.mobile-nav {
-  display: none;
-  position: fixed;
-  top: 57px;
-  left: 0;
-  right: 0;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  z-index: 999;
-  padding: 8px 0;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-}
-.mobile-nav.open { display: block; }
-.mobile-nav a {
-  display: block;
-  padding: 14px 20px;
-  color: var(--text2);
-  text-decoration: none;
-  font-size: 15px;
-  font-weight: 500;
-  border-bottom: 1px solid var(--border);
-}
-.mobile-nav a:last-child { border-bottom: none; }
-.mobile-nav a.active, .mobile-nav a:hover {
-  background: var(--surface2);
-  color: var(--accent);
-}
-@media (max-width: 768px) {
-  .nav-tabs { display: none !important; }
-  .hamburger { display: block; }
-  header { padding: 10px 14px; }
-  main { padding: 12px; }
-}
-`;
+// Theme + header/nav come from the shared brand module (admin-theme.ts); each
+// page below contributes only its own page-specific styles.
 
 function pageHtml(
   active: 'orders' | 'metrics' | 'printers' | 'jobs',
@@ -206,61 +60,7 @@ function pageHtml(
   body: string,
   role: AdminRole = 'full',
 ): string {
-  const isOperator = role === 'operator';
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} — FusionPrints Admin</title>
-  <style>${SHARED_STYLES}</style>
-</head>
-<body>
-  <header>
-    <div class="logo">
-      <svg viewBox="0 0 280 60" xmlns="http://www.w3.org/2000/svg" aria-label="FusionPrints">
-        <g transform="translate(0,6)">
-          <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="#FBF7F0"/>
-          <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="#05D668"/>
-        </g>
-        <text x="56" y="40" font-family="Outfit, system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="#FBF7F0" letter-spacing="-0.56">fusionprints</text>
-      </svg>
-      <span class="admin-tag">${isOperator ? 'operator' : 'admin'}</span>
-    </div>
-    <nav class="nav-tabs">
-      <a href="/admin/jobs" class="nav-tab ${active === 'jobs' ? 'active' : ''}">Order Management</a>
-      <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers and Configuration</a>
-      ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
-      ${isOperator ? '' : `<a href="/admin/promos" class="nav-tab">Promos</a>`}
-      ${isOperator ? '' : `<a href="/admin/pricing" class="nav-tab">Pricing</a>`}
-      ${isOperator ? '' : `<a href="/admin/locations" class="nav-tab">Locations</a>`}
-      ${isOperator ? '' : `<a href="/admin/qbo" class="nav-tab">QuickBooks</a>`}
-      <a href="/admin/logout" class="nav-tab nav-logout">Logout</a>
-    </nav>
-  <button class="hamburger" id="hamburger-btn" onclick="toggleMobileNav()">&#9776;</button>
-  </header>
-  <div class="mobile-nav" id="mobile-nav">
-    <a href="/admin/jobs" class="${active === 'jobs' ? 'active' : ''}">Order Management</a>
-    <a href="/admin/printers" class="${active === 'printers' ? 'active' : ''}">Printers and Configuration</a>
-    ${isOperator ? '' : `<a href="/admin/metrics" class="${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
-    ${isOperator ? '' : '<a href="/admin/qbo">QuickBooks</a>'}
-    <a href="/admin/logout">Logout</a>
-  </div>
-  <script>
-    function toggleMobileNav() {
-      document.getElementById('mobile-nav').classList.toggle('open');
-    }
-    document.addEventListener('click', function(e) {
-      var nav = document.getElementById('mobile-nav');
-      var btn = document.getElementById('hamburger-btn');
-      if (nav && btn && !nav.contains(e.target) && !btn.contains(e.target)) {
-        nav.classList.remove('open');
-      }
-    });
-  </script>
-  <main>${body}</main>
-</body>
-</html>`;
+  return adminShell({ active, title, body, role });
 }
 
 // Metrics page
@@ -282,7 +82,7 @@ function metricsPageHtml(): string {
     .ops-card .l { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); margin-bottom:6px; }
     .ops-card .v { font-size:26px; font-weight:600; }
     .ops-card .v.red { color:var(--red); } .ops-card .v.green { color:var(--green); }
-    .ops-card .v.blue { color:#60a5fa; } .ops-card .v.yellow { color:var(--amber); } .ops-card .v.orange { color:var(--accent); }
+    .ops-card .v.blue { color:var(--blue); } .ops-card .v.yellow { color:var(--amber); } .ops-card .v.orange { color:var(--accent-deep); }
     @media (max-width:768px) { .ops-snapshot { grid-template-columns:repeat(2,1fr); } }
   </style>
   <div class="page-sub" style="margin:-8px 0 8px;">Live operations snapshot</div>
@@ -395,7 +195,7 @@ function metricsPageHtml(): string {
           data.daily.map(d => \`
             <div style="min-width:28px;flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
               <div style="font-size:10px;color:var(--text2);font-family:'DM Mono',monospace;">\${d.visits}</div>
-              <div title="\${d.day}: \${d.visits} visits" style="width:100%;background:#3b82f6;height:\${Math.max((d.visits/max)*CHART_HEIGHT, 3)}px;border-radius:3px 3px 0 0;"></div>
+              <div title="\${d.day}: \${d.visits} visits" style="width:100%;background:var(--accent);height:\${Math.max((d.visits/max)*CHART_HEIGHT, 3)}px;border-radius:3px 3px 0 0;"></div>
               <div style="font-size:10px;color:var(--text2);font-family:'DM Mono',monospace;white-space:nowrap;">\${d.day.slice(5)}</div>
             </div>
           \`).join('') + '</div>';
@@ -563,16 +363,16 @@ function printersPageHtml(role: AdminRole = 'full'): string {
       if (!bar) return;
       if (mode === '5x7') {
         bar.innerHTML =
-          '<div style="background:#7c2d12;border:1px solid var(--accent);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
+          '<div style="background:#FCEFD9;border:1px solid #E9B949;color:#7A4E0B;border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
           + '<div><strong>⚠️ DNP is in 5×7 mode</strong> — regular 4×6/6×8 prints are PAUSED. Print the 5×7 batch, then switch back.</div>'
-          + '<button class="action-btn" style="background:#16a34a;color:#fff;" onclick="setDnpMode(\\'6x8\\')">↩ Switch back to 6×8</button>'
+          + '<button class="action-btn" style="background:var(--accent);color:#0a3d22;border-color:var(--accent);" onclick="setDnpMode(\\'6x8\\')">↩ Switch back to 6×8</button>'
           + '</div>';
       } else {
         const hot = pending > 0;
         bar.innerHTML =
-          '<div style="background:#111827;border:1px solid ' + (hot ? 'var(--accent)' : '#374151') + ';border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
-          + '<div>DNP media: <strong>6×8</strong> · ' + (hot ? '<span style="color:var(--accent);font-weight:600;">' + pending + ' held 5×7 print(s) waiting</span>' : 'no 5×7 waiting') + '</div>'
-          + (hot ? '<button class="action-btn" style="background:var(--accent);color:#fff;" onclick="setDnpMode(\\'5x7\\')">🔁 Switch to 5×7 &amp; print held batch</button>' : '')
+          '<div style="background:var(--surface);border:1px solid ' + (hot ? 'var(--accent)' : 'var(--border)') + ';border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
+          + '<div>DNP media: <strong>6×8</strong> · ' + (hot ? '<span style="color:var(--accent-deep);font-weight:600;">' + pending + ' held 5×7 print(s) waiting</span>' : 'no 5×7 waiting') + '</div>'
+          + (hot ? '<button class="action-btn" style="background:var(--accent);color:#0a3d22;border-color:var(--accent);" onclick="setDnpMode(\\'5x7\\')">🔁 Switch to 5×7 &amp; print held batch</button>' : '')
           + '</div>';
       }
     }
@@ -685,55 +485,45 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
   const autoRefresh = tab === 'active';
   const body = `
     <style>
-      :root { --blue:#3b82f6; --radius:8px; }
+      /* Order Management — page-specific styles. Tokens + .badge-* status pills
+         come from the shared brand theme (admin-theme.ts). */
       .om-tabs { display:flex; gap:4px; margin-bottom:16px; align-items:center; }
-      .om-tab { padding:8px 18px; border-radius:8px 8px 0 0; font-weight:600; font-size:14px; color:var(--mute,#8a7b66); text-decoration:none; border-bottom:2px solid transparent; }
-      .om-tab.active { color:var(--text,#1f1b16); border-bottom-color:#05D668; }
-      .om-live { margin-left:auto; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--mute,#8a7b66); }
-      .om-live .dot { width:7px; height:7px; border-radius:50%; background:#05D668; animation:ompulse 2s infinite; }
+      .om-tab { padding:8px 18px; border-radius:8px 8px 0 0; font-weight:600; font-size:14px; color:var(--text2); text-decoration:none; border-bottom:2px solid transparent; }
+      .om-tab.active { color:var(--text); border-bottom-color:var(--accent); }
+      .om-live { margin-left:auto; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text2); }
+      .om-live .dot { width:7px; height:7px; border-radius:50%; background:var(--accent); animation:ompulse 2s infinite; }
       @keyframes ompulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
-      table.om { width:100%; border-collapse:collapse; background:var(--surface,#fff); border-radius:10px; overflow:hidden; font-size:13px; }
-      table.om th, table.om td { text-align:left; padding:10px 12px; border-bottom:1px solid #00000010; }
-      table.om th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--mute,#8a7b66); }
-      .om-mono { font-family:ui-monospace,monospace; }
-      .om-badge { font-size:11px; text-transform:capitalize; background:#00000008; padding:2px 8px; border-radius:999px; }
-      .om-link { color:#04A551; font-weight:600; text-decoration:none; cursor:pointer; }
-      .om-btn { cursor:pointer; border:1px solid #ff7a5955; color:#ff7a59; background:transparent; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:600; }
-      .om-empty { text-align:center; color:var(--mute,#8a7b66); padding:28px; }
+      table.om { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; font-size:14px; }
+      table.om th, table.om td { text-align:left; padding:11px 13px; border-bottom:1px solid var(--border); }
+      table.om th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); font-weight:700; }
+      .om-mono { font-family:'DM Mono',ui-monospace,monospace; }
+      .om-badge { font-size:11px; text-transform:capitalize; background:var(--surface2); color:var(--text2); padding:2px 9px; border-radius:999px; }
+      .om-link { color:var(--accent-deep); font-weight:600; text-decoration:none; cursor:pointer; }
+      .om-btn { cursor:pointer; border:1px solid var(--danger); color:var(--danger); background:transparent; border-radius:999px; padding:5px 12px; font-size:12px; font-weight:600; }
+      .om-empty { text-align:center; color:var(--text2); padding:28px; }
 
-      /* Order detail modal (shared theme with the rest of admin) */
-      .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:200; align-items:center; justify-content:center; padding:24px; }
+      /* Order detail modal */
+      .modal-overlay { display:none; position:fixed; inset:0; background:rgba(31,27,22,0.45); z-index:200; align-items:center; justify-content:center; padding:24px; }
       .modal-overlay.open { display:flex; }
-      .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; width:100%; max-width:560px; max-height:80vh; overflow-y:auto; }
+      .modal { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:100%; max-width:560px; max-height:80vh; overflow-y:auto; box-shadow:0 24px 60px rgba(31,27,22,0.18); }
       .modal-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
-      .modal-title { font-weight:600; font-family:'DM Mono',monospace; color:var(--accent); }
+      .modal-title { font-weight:600; font-family:'DM Mono',monospace; color:var(--text); }
       .modal-close { background:none; border:none; color:var(--text2); cursor:pointer; font-size:20px; padding:0 4px; }
       .modal-body { padding:20px; }
-      .detail-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+      .detail-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; }
       .detail-row:last-child { border-bottom:none; }
       .detail-label { color:var(--text2); }
       .detail-value { font-weight:500; text-align:right; }
       .items-list { margin-top:16px; }
       .items-title { font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text2); margin-bottom:8px; }
-      .item-row { background:var(--surface2); border-radius:6px; padding:10px 12px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; font-size:13px; }
-      .loading, .empty { text-align:center; padding:40px; color:var(--text2); font-size:13px; }
-      .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:500; white-space:nowrap; }
-      .badge-pending_payment { background:#1c1917; color:#a8a29e; border:1px solid #292524; }
-      .badge-paid { background:#052e16; color:#86efac; border:1px solid #14532d; }
-      .badge-awaiting_approval { background:#431407; color:#fdba74; border:1px solid #7c2d12; }
-      .badge-queued_for_print { background:#1e3a5f; color:#93c5fd; border:1px solid #1d4ed8; }
-      .badge-printing { background:#1e3a5f; color:#60a5fa; border:1px solid #2563eb; }
-      .badge-printed { background:#422006; color:#fbbf24; border:1px solid #92400e; }
-      .badge-ready_for_pickup, .badge-ready_for_collection { background:#052e16; color:#4ade80; border:1px solid #16a34a; }
-      .badge-fulfilled, .badge-cancelled { background:#141414; color:#6b7280; border:1px solid #374151; }
-      .badge-failed { background:#450a0a; color:#f87171; border:1px solid #991b1b; }
-      .action-btn { padding:5px 10px; border-radius:5px; border:1px solid var(--border); background:transparent; color:var(--text); font-size:11px; cursor:pointer; margin-right:4px; }
+      .item-row { background:var(--surface2); border-radius:8px; padding:10px 12px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; font-size:14px; }
+      .action-btn { padding:6px 12px; border-radius:999px; border:1px solid var(--border); background:transparent; color:var(--text); font-size:12px; cursor:pointer; margin-right:4px; }
       .action-btn:hover { background:var(--surface2); }
       .action-btn.approve { border-color:var(--green); color:var(--green); }
       .action-btn.ready { border-color:var(--blue); color:var(--blue); }
       .action-btn.fulfil { border-color:var(--text2); color:var(--text2); }
       .action-btn.cancel { border-color:var(--red); color:var(--red); }
-      @media (max-width:768px) { .modal-overlay { padding:0; align-items:flex-end; } .modal { max-width:100%; max-height:92vh; border-radius:12px 12px 0 0; } }
+      @media (max-width:768px) { .modal-overlay { padding:0; align-items:flex-end; } .modal { max-width:100%; max-height:92vh; border-radius:14px 14px 0 0; } }
     </style>
     ${tabBar}
     <div id="om-content">${table}</div>

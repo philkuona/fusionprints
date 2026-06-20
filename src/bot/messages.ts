@@ -309,6 +309,17 @@ export const MSG = {
 
   orderCancelled: () => `Order cancelled. Type anything to start a new order.`,
 
+  /** A paid order's cancellation was approved + refunded (PR-12). */
+  refundIssued: (orderNumber: string) =>
+    `Your cancellation for *${orderNumber}* is confirmed and we've refunded your payment. ` +
+    `It can take a few business days to reflect, depending on your bank or mobile money provider. ` +
+    `Thanks for giving us a try, we'd love to print for you another time.`,
+
+  /** A cancellation request was declined (order too far along to stop) (PR-12). */
+  cancellationDeclined: (orderNumber: string) =>
+    `We looked at your cancellation request for *${orderNumber}*, but it's already too far along for us to stop and refund it. ` +
+    `If you think that's a mistake, just reply here and we'll sort it out together.`,
+
   /** Shown when a greeting/menu word arrives mid-order, so we don't silently wipe it. */
   resetGuard: (orderNumber: string | null, cartCount: number) => {
     const what = orderNumber

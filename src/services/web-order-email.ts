@@ -19,6 +19,60 @@ function money(v: string | number): string {
   return `$${Number(v).toFixed(2)}`;
 }
 
+type OrderRow = typeof orders.$inferSelect;
+
+/** Resolve the email + first name for whichever channel an order came through. */
+async function resolveOrderRecipient(order: OrderRow): Promise<{ email: string | null; firstName: string; isWeb: boolean }> {
+  if (order.channel === 'web' && order.webUserId) {
+    const [u] = await db
+      .select({ email: webUsers.email, displayName: webUsers.displayName })
+      .from(webUsers)
+      .where(eq(webUsers.id, order.webUserId))
+      .limit(1);
+    return { email: u?.email ?? null, firstName: u?.displayName?.split(/\s+/)[0] ?? 'there', isWeb: true };
+  }
+  if (order.customerId) {
+    const [c] = await db
+      .select({ email: customers.email, name: customers.name })
+      .from(customers)
+      .where(eq(customers.id, order.customerId))
+      .limit(1);
+    return { email: c?.email ?? null, firstName: c?.name?.split(/\s+/)[0] ?? 'there', isWeb: false };
+  }
+  return { email: null, firstName: 'there', isWeb: false };
+}
+
+/** Wrap body HTML in the brand email shell (cream card, ink text). */
+function brandEmail(heading: string, bodyHtml: string): string {
+  return `
+  <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;background:#fbf7f0;padding:32px 24px;color:#1f1b16;">
+    <h1 style="font-size:22px;margin:0 0 12px;">${heading}</h1>
+    ${bodyHtml}
+    <p style="color:#8a7b66;font-size:12px;margin-top:28px;">FusionPrints. Hold the moment.</p>
+  </div>`;
+}
+
+/** Send one transactional email; returns true on success. Best-effort, never throws. */
+async function sendBrandEmail(to: string, subject: string, html: string, orderNumber: string): Promise<boolean> {
+  if (!env.RESEND_API_KEY) {
+    logger.warn({ orderNumber }, 'No RESEND_API_KEY; skipping email');
+    return false;
+  }
+  try {
+    const resend = new Resend(env.RESEND_API_KEY);
+    const { error } = await resend.emails.send({ from: 'FusionPrints <noreply@fusionprints.co.zw>', to, subject, html });
+    if (error) {
+      logger.error({ orderNumber, to, error }, 'Resend rejected email');
+      return false;
+    }
+    logger.info({ orderNumber, to }, 'Sent transactional email');
+    return true;
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to send email');
+    return false;
+  }
+}
+
 /**
  * Send the branded receipt for a paid order (web or WhatsApp). No-ops if there's
  * no recipient email, no Resend key, or it was already sent.
@@ -124,4 +178,42 @@ export async function sendOrderReceipt(orderNumber: string): Promise<void> {
   } catch (err) {
     logger.error({ orderNumber, err }, 'Failed to send order receipt email');
   }
+}
+
+/**
+ * Refund-issued email — sent when an admin approves a cancellation and the
+ * Payonify refund succeeds. Best-effort; no-ops if there's no recipient email.
+ */
+export async function sendRefundIssuedEmail(orderNumber: string): Promise<void> {
+  const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
+  if (!order) return;
+  const { email, firstName } = await resolveOrderRecipient(order);
+  if (!email) return;
+
+  const body = `
+    <p style="color:#4a3f32;margin:0 0 24px;">Your cancellation is confirmed and we've refunded your payment. It can take a few business days to land back on your account, depending on your bank or mobile money provider.</p>
+    <div style="background:#ffffff;border:1px solid #e7ded0;border-radius:14px;padding:20px;">
+      <p style="margin:0 0 8px;font-family:monospace;color:#8a7b66;">Order ${orderNumber}</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <tr><td style="padding:6px 0;font-weight:bold;">Refunded</td><td style="padding:6px 0;text-align:right;font-weight:bold;">${money(order.totalUsd)}</td></tr>
+      </table>
+    </div>
+    <p style="color:#4a3f32;margin:20px 0 4px;">Thanks for giving us a try. We'd love to print for you another time.</p>`;
+  await sendBrandEmail(email, `Order ${orderNumber} cancelled and refunded`, brandEmail(`You're refunded, ${firstName}.`, body), orderNumber);
+}
+
+/**
+ * Cancellation-declined email — sent when an admin declines a cancellation
+ * request (e.g. the order is already printing). Best-effort.
+ */
+export async function sendCancellationDeclinedEmail(orderNumber: string): Promise<void> {
+  const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
+  if (!order) return;
+  const { email, firstName } = await resolveOrderRecipient(order);
+  if (!email) return;
+
+  const body = `
+    <p style="color:#4a3f32;margin:0 0 16px;">We've looked at your cancellation request for order <strong>${orderNumber}</strong>, but it's already too far along for us to stop and refund it.</p>
+    <p style="color:#4a3f32;margin:0 0 4px;">If you think this is a mistake, just reply to this email or message us and we'll sort it out together.</p>`;
+  await sendBrandEmail(email, `About your cancellation request — ${orderNumber}`, brandEmail(`Hi ${firstName}, about that cancellation`, body), orderNumber);
 }

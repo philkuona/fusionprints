@@ -17,14 +17,13 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { isEnabled as qboEnabled, isSetupComplete, createRefundReceipt } from '@/services/qbo.js';
-import { payments } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { releaseOrderForPickup, postSalesReceiptForOrder } from '@/services/order.js';
+import { approveCancellationAndRefund, declineCancellation } from '@/services/refund.js';
 import { getDnpMediaMode, setDnpMediaMode, type DnpMediaMode } from '@/services/store-settings.js';
 import { eq, desc, and, gte, sql, count, inArray } from 'drizzle-orm';
 
@@ -255,39 +254,10 @@ async function getOrderDetails(orderId: string) {
 
 
 
-// ===== QBO hook helpers =====
-// Sales receipts post at markOrderPaid (services/order.ts postSalesReceiptForOrder),
-// with the fulfil action as an idempotent fallback. Refunds post on cancel below.
-
-async function postQboRefundIfPaid(orderId: string): Promise<void> {
-  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-  if (!order || !order.paidAt) return; // only refund if order was actually paid
-  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-  const [payment] = await db
-    .select({ paymentMethod: payments.paymentMethod })
-    .from(payments)
-    .where(eq(payments.orderId, orderId))
-    .orderBy(desc(payments.completedAt))
-    .limit(1);
-  await createRefundReceipt(
-    {
-      orderNumber:    order.orderNumber,
-      subtotalUsd:    order.subtotalUsd,
-      deliveryFeeUsd: order.deliveryFeeUsd,
-      totalUsd:       order.totalUsd,
-      fulfilledAt:    order.fulfilledAt,
-      createdAt:      order.createdAt,
-    },
-    items.map(i => ({
-      sizeCode:     i.sizeCode,
-      quantity:     i.quantity,
-      unitPriceUsd: i.unitPriceUsd,
-      lineTotalUsd: i.lineTotalUsd,
-      productType:  i.productType,
-    })),
-    payment?.paymentMethod ?? null,
-  );
-}
+// QBO + Payonify refunds for a cancelled paid order are handled in
+// services/refund.ts (approveCancellationAndRefund), called from the cancel +
+// approve-cancellation endpoints below. Sales receipts still post at
+// markOrderPaid (services/order.ts postSalesReceiptForOrder).
 
 // ===== Route registration =====
 
@@ -499,25 +469,77 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
     }
   });
 
-  // Cancel order — full admin only (cancellation is a financial decision)
+  // Cancel order — full admin only (cancellation is a financial decision).
+  // Paid orders go through the refund flow (Payonify refund + QBO receipt +
+  // notify + stop pipeline jobs); unpaid orders just flip to cancelled.
   app.post('/admin/api/orders/:id/cancel', async (request, reply) => {
     if (!requireFullAdmin(request, reply)) return;
     try {
       const { id } = request.params as { id: string };
-      await db.update(orders)
-        .set({ status: 'cancelled' })
-        .where(eq(orders.id, id));
-      logger.info({ orderId: id }, 'Order cancelled from dashboard');
-      // Fire-and-forget QBO Refund Receipt (only if order was paid)
-      if (qboEnabled() && isSetupComplete()) {
-        void postQboRefundIfPaid(id).catch(err =>
-          logger.error({ err, orderId: id }, 'QBO Refund Receipt failed — manual entry needed')
-        );
+      const [order] = await db.select({ paidAt: orders.paidAt }).from(orders).where(eq(orders.id, id)).limit(1);
+      if (!order) return reply.status(404).send({ error: 'not_found' });
+
+      if (order.paidAt) {
+        const result = await approveCancellationAndRefund(id);
+        if (!result.ok) {
+          return reply.status(502).send({ error: result.reason, message: refundErrorMessage(result.reason) });
+        }
+        logger.info({ orderId: id }, 'Paid order cancelled + refunded from dashboard');
+        return { ok: true, refunded: true, refundReference: result.refundReference };
       }
-      return { ok: true };
+
+      await db.update(orders).set({ status: 'cancelled' }).where(eq(orders.id, id));
+      logger.info({ orderId: id }, 'Unpaid order cancelled from dashboard');
+      return { ok: true, refunded: false };
     } catch (err) {
       logger.error({ err }, 'Failed to cancel order');
       return reply.status(500).send({ error: 'Failed to cancel' });
     }
   });
+
+  // Approve a customer's cancellation request → issue the refund. Full admin only.
+  app.post('/admin/api/orders/:id/approve-cancellation', async (request, reply) => {
+    if (!requireFullAdmin(request, reply)) return;
+    try {
+      const { id } = request.params as { id: string };
+      const result = await approveCancellationAndRefund(id);
+      if (!result.ok) {
+        return reply.status(502).send({ error: result.reason, message: refundErrorMessage(result.reason) });
+      }
+      return { ok: true, refundReference: result.refundReference };
+    } catch (err) {
+      logger.error({ err }, 'Failed to approve cancellation');
+      return reply.status(500).send({ error: 'Failed to approve' });
+    }
+  });
+
+  // Decline a customer's cancellation request (order stays live). Full admin only.
+  app.post('/admin/api/orders/:id/decline-cancellation', async (request, reply) => {
+    if (!requireFullAdmin(request, reply)) return;
+    try {
+      const { id } = request.params as { id: string };
+      const result = await declineCancellation(id);
+      if (!result.ok) return reply.status(404).send({ error: result.reason });
+      return { ok: true };
+    } catch (err) {
+      logger.error({ err }, 'Failed to decline cancellation');
+      return reply.status(500).send({ error: 'Failed to decline' });
+    }
+  });
+}
+
+/** Human-readable message for a failed refund, surfaced in the admin modal. */
+function refundErrorMessage(reason?: string): string {
+  switch (reason) {
+    case 'no_charge_reference':
+      return 'No refundable charge on file for this order (e.g. an older or non-gateway payment). Refund manually in Payonify.';
+    case 'no_payment':
+      return 'No successful payment found for this order.';
+    case 'gateway_error':
+      return 'Payonify rejected the refund. The order was left intact — check Payonify and retry.';
+    case 'not_paid':
+      return 'This order was never paid, so there is nothing to refund.';
+    default:
+      return 'Could not issue the refund.';
+  }
 }

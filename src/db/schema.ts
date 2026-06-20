@@ -733,3 +733,30 @@ export const webSessions = pgTable(
 
 export type WebSession = typeof webSessions.$inferSelect;
 export type NewWebSession = typeof webSessions.$inferInsert;
+
+// ===== Collection points =====
+
+/**
+ * Physical locations a customer can collect orders from. Admin-managed and
+ * surfaced across channels (bot pickup notice, web checkout, order detail). The
+ * "primary" point is the lowest sort_order among active rows. Seeded with the
+ * Fusion Prints Lab. `hours` falls back to BUSINESS_HOURS when null.
+ */
+export const collectionPoints = pgTable(
+  'collection_points',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    addressLine: text('address_line').notNull(),
+    hours: text('hours'),
+    active: boolean('active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    activeIdx: index('collection_points_active_idx').on(table.active, table.sortOrder),
+  }),
+);
+
+export type CollectionPoint = typeof collectionPoints.$inferSelect;
+export type NewCollectionPoint = typeof collectionPoints.$inferInsert;

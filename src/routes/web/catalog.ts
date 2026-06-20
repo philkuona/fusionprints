@@ -9,8 +9,18 @@
 
 import type { FastifyInstance } from 'fastify';
 import { PRODUCTS } from '@/config/catalog.js';
+import { getActiveCollectionPoints, pointHours } from '@/services/collection-points.js';
 
 export async function registerWebCatalogRoutes(app: FastifyInstance): Promise<void> {
+  // Active collection points for the storefront (checkout collection note,
+  // order detail). Public — no internal fields. Primary is the first entry.
+  app.get('/web/api/collection-points', async (_request, reply) => {
+    const points = await getActiveCollectionPoints();
+    return reply.send(
+      points.map((p) => ({ id: p.id, name: p.name, address: p.addressLine, hours: pointHours(p) })),
+    );
+  });
+
   app.get('/web/api/catalog', async (_request, reply) => {
     const catalog = PRODUCTS.map((p) => ({
       sizeCode: p.sizeCode,

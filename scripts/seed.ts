@@ -11,7 +11,7 @@
  */
 
 import { db, closeDatabase } from '../src/db/client.js';
-import { printers, holidays, storeSettings } from '../src/db/schema.js';
+import { printers, holidays, storeSettings, collectionPoints } from '../src/db/schema.js';
 import { logger } from '../src/utils/logger.js';
 import { eq } from 'drizzle-orm';
 
@@ -85,6 +85,21 @@ async function seed(): Promise<void> {
   ];
   await db.insert(holidays).values(seedHolidays).onConflictDoNothing();
   logger.info(`✅ Seeded ${seedHolidays.length} public holidays (idempotent)`);
+
+  // Seed the primary collection point (Fusion Prints Lab) if none exist.
+  const existingPoints = await db.select().from(collectionPoints).limit(1);
+  if (existingPoints.length === 0) {
+    await db.insert(collectionPoints).values({
+      name: 'Fusion Prints Lab',
+      addressLine: process.env.BUSINESS_ADDRESS || process.env.BUSINESS_COLLECTION_ADDRESS || 'Harare',
+      hours: process.env.BUSINESS_HOURS || null,
+      active: true,
+      sortOrder: 0,
+    });
+    logger.info('✅ Seeded collection point: Fusion Prints Lab');
+  } else {
+    logger.info('Collection points already exist — skipping');
+  }
 
   logger.info('✅ Seeding complete');
 }

@@ -26,7 +26,7 @@ import { orders, orderItems, customers, printJobs, printers, webUsers, images, p
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { releaseOrderForPickup, postSalesReceiptForOrder } from '@/services/order.js';
 import { getDnpMediaMode, setDnpMediaMode, type DnpMediaMode } from '@/services/store-settings.js';
-import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
+import { eq, desc, and, gte, sql, count, inArray } from 'drizzle-orm';
 
 // ===== Auth middleware =====
 
@@ -447,6 +447,29 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
     const { mode } = (request.body ?? {}) as { mode?: string };
     if (mode !== '6x8' && mode !== '5x7') {
       reply.status(400).send({ error: "mode must be '6x8' or '5x7'" });
+      return;
+    }
+    // No-op if already in that mode (don't run the guard for a non-switch).
+    if ((await getDnpMediaMode()) === mode) {
+      return { ok: true, mode };
+    }
+    // Guard: don't switch media while a dye-sub job is physically PRINTING on the
+    // single DNP — swapping media mid-print ruins that print. Queued jobs are
+    // safely held by the serve-time gate, so we only block on an in-flight job.
+    const [printing] = await db
+      .select({ id: printJobs.id })
+      .from(printJobs)
+      .where(and(eq(printJobs.status, 'printing'), inArray(printJobs.targetPrinterType, ['dye_sub_4x6', 'dye_sub_5x7'])))
+      .limit(1);
+    const [printingSlip] = await db
+      .select({ id: slipJobs.id })
+      .from(slipJobs)
+      .where(and(eq(slipJobs.status, 'printing'), eq(slipJobs.targetPrinterType, 'dye_sub_4x6')))
+      .limit(1);
+    if (printing || printingSlip) {
+      reply
+        .status(409)
+        .send({ error: 'A print is currently running on the DNP. Wait for it to finish before switching media.' });
       return;
     }
     await setDnpMediaMode(mode as DnpMediaMode);

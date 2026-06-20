@@ -180,6 +180,10 @@ export const images = pgTable(
     wasCompressed: boolean('was_compressed').notNull().default(false),
     uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
     deleteAfter: timestamp('delete_after', { withTimezone: true }),
+    // Soft-delete marker: when set, the image is hidden from the user's library
+    // but kept (DB row + B2 object + processed renders) because an order still
+    // references it, so past-order previews don't break.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => ({
     customerIdx: index('images_customer_idx').on(table.customerId),

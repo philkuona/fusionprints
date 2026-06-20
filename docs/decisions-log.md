@@ -94,6 +94,46 @@ Sizes always shown to customers in **both inches and cm** simultaneously.
 
 ---
 
+## 2026-06-19 — Payments: Payonify, not Paynow/Flutterwave/Magetsi/Stripe
+
+**Context:** The original plan (2026-04-29) named Paynow + Flutterwave, and the code later carried Magetsi (EcoCash) and Stripe (card) stubs. None were ever wired up. Payonify — a Zimbabwe gateway (EcoCash / OneMoney / ZimSwitch / card) with a Stripe-style API and signed webhooks — was integrated instead and is now the live provider.
+
+**Decision:**
+- **Payonify is the sole payment gateway.** Web uses its embedded Drop-In checkout; the WhatsApp bot uses its EcoCash USSD push. A signed webhook (`/web/api/payments/payonify/webhook`) is the source of truth → `markOrderPaid`.
+- **Magetsi and Stripe are dropped.** Their dead stub code (webhook endpoints, `createCardCheckoutUrl`, the never-emitted bot `INITIATE_CARD_PAYMENT` effect, env vars) was removed (commit `6a8f420`).
+- Card in the **bot** stays hidden (EcoCash-only); card is available on the **web** via Payonify.
+- QBO reconciliation account renamed **Stripe → Payonify** (`payonifyAccountId`); requires renaming the account in the QuickBooks chart of accounts + re-running QBO setup on prod.
+
+**Consequences:**
+- `PAYMENT_PROVIDER` is now just `stub | payonify`. Paynow/Flutterwave references in older docs are obsolete.
+- One gateway covers both local and diaspora/card — simpler than the original two-provider plan.
+
+---
+
+## 2026-06-19 — 5×7 prints are operator-gated, next-working-day
+
+**Context:** The single DNP DS620A prints one media family at a time; the default is 6×8. 5×7 needs a physical media swap, so it can't be served on demand.
+
+**Decision:**
+- 5×7 dye-sub jobs are **held** by a "DNP media mode" gate (`store_settings` singleton); the print agent is only served jobs matching the loaded media. Switching to 5×7 in admin releases the held batch and **pauses** the 4×6/6×8 family; switching back resumes.
+- Any order containing a 5×7 is pushed to the **next working day** (CAT; Sundays + ZW public holidays excluded). `applyFiveBySevenHandling` at `markOrderPaid` sets `scheduled_ready_at` and alerts the operator on WhatsApp.
+
+**Consequences:**
+- Migration 0023 + seeded holidays. Customers see the next-day date on web + bot. Operator gets a toggle + held count + "regular prints paused" banner.
+- Requires `OPERATOR_WHATSAPP_PHONE` + `WHATSAPP_TEMPLATE_5X7_HOLD` on prod for the operator alert to send (until set, it only logs).
+
+---
+
+## 2026-06-19 — Printer naming: Epson P5300 (not P900)
+
+**Context:** Early docs/seed referenced an Epson SureColor **P900**. The actual large-format unit is the **P5300**.
+
+**Decision:** Use **Epson SureColor P5300** in all display, comments, and seed data (commit `1c466f7`).
+
+**Consequences:** Cosmetic/display only — no routing or pricing change. Older docs mentioning "P900" are superseded.
+
+---
+
 ## How to add a new entry
 
 When something significant changes (architecture, scope, vendor choice, business decision), copy this template:

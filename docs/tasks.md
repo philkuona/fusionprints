@@ -1,6 +1,6 @@
 # FusionPrints — Task Tracker
 
-Last updated: 2026-04-29
+Last updated: 2026-06-19
 Update this file whenever a task is completed. Bring it into every conversation with Claude.
 
 Legend: [ ] Not started | [~] In progress | [x] Done
@@ -42,6 +42,10 @@ Legend: [ ] Not started | [~] In progress | [x] Done
 ---
 
 ## 💳 TRACK B: Payment Processing
+
+> **Superseded (2026-06-19):** the gateway is now **Payonify** (EcoCash / OneMoney / ZimSwitch / card),
+> already integrated and live. Paynow + Flutterwave below are **no longer the plan** — kept for history.
+> Remaining payment task is obtaining **Payonify live credentials** for prod. See `docs/decisions-log.md`.
 
 ### ⚡ You can start both of these NOW — documents are ready
 
@@ -172,58 +176,64 @@ Legend: [ ] Not started | [~] In progress | [x] Done
 - [x] VS Code + WSL extension
 - [x] Project skeleton running locally
 - [x] Database schema migrated (8 tables)
-- [x] Printers seeded (DNP DS620A + Epson P900)
+- [x] Printers seeded (DNP DS620A + Epson P5300)
 - [x] Product catalog (10 SKUs, inch + cm labels)
 - [x] Pricing engine (quotes, bulk discounts, delivery, WhatsApp summaries)
 
-### Bot Logic
-- [ ] Bot state machine — CLI simulator (type messages, see bot responses)
-- [ ] Image validation service (resolution check, compression detection)
-- [ ] Order creation service (confirmed cart → database order)
-- [ ] WhatsApp 360dialog integration (bot wired to real WhatsApp number)
+### Bot Logic ✅
+- [x] Bot state machine — CLI simulators (`scripts/simulate-bot.ts`, `simulate-bot-db.ts`)
+- [x] Image validation service (resolution check, compression detection)
+- [x] Order creation service (confirmed cart → database order)
+- [x] WhatsApp 360dialog integration (webhook + outbound). Live once the number/credentials are connected.
 
-### Payments
-- [ ] Paynow integration + webhook handler
-- [ ] Flutterwave integration + webhook handler
-- [ ] Webhook signature verification (security — prevents fake payment confirmations)
-- [ ] Payment reconciliation job (catches missed webhooks every 15 min)
+### Payments ✅ (Payonify — Paynow/Flutterwave/Stripe/Magetsi NOT used)
+- [x] Payonify integration — embedded web checkout + EcoCash USSD push
+- [x] Signed webhook handler (`/web/api/payments/payonify/webhook`) → markOrderPaid
+- [x] Webhook signature verification (HMAC-SHA256, replay-protected)
+- [x] Abandoned-checkout auto-cancel (24h) + admin manual mark-paid fallback
+- See `docs/decisions-log.md` (2026-06-19 — Payonify).
 
-### Operations
-- [ ] Admin dashboard (orders list, poster approval, mark ready for collection)
-- [ ] Print job queue service
-- [ ] Customer notification service (payment confirmed, order ready)
-- [ ] Automated image cleanup (delete originals 30 days post-fulfillment)
+### Operations ✅
+- [x] Admin dashboard (orders, poster approval, mark ready, fulfilment, pricing, promos, fonts)
+- [x] Print job queue + virtual printers for hardware-free testing
+- [x] Customer notification service (payment confirmed, order ready, out for delivery)
+- [x] Automated image cleanup + data-retention sweeps
+- [x] 5×7 operator-gating + next-working-day handling (migration 0023)
+- [x] QuickBooks Online integration (sales/refund receipts)
 
 ### Print Agent (separate codebase — Windows mini-PC)
-- [ ] Print agent project setup
-- [ ] DNP DS620A driver integration
-- [ ] Epson P900 driver integration
+- [x] Backend agent-API (job polling endpoint, media-mode gating) + virtual agent for testing
+- [ ] Windows print agent project (real DNP DS620A + Epson P5300 drivers)
 - [ ] Image → print-ready file generation (ICC profiles, correct dimensions)
-- [ ] Job polling loop (checks backend every 30 seconds for new jobs)
 - [ ] Failure handling + alert to your WhatsApp on error
+      → Blocked on hardware purchase; backend side is ready and testable virtually.
 
-### Production Deployment
-- [ ] Provision Hetzner VPS (CX22, ~$5/month)
-- [ ] Deploy backend to production server
-- [ ] Configure Caddy (reverse proxy + auto-HTTPS)
-- [ ] Automated daily database backups
+### Production Deployment ✅
+- [x] Hetzner VPS provisioned + backend deployed (systemd `fusionprints`)
+- [x] Reverse proxy + HTTPS
+- [x] Automated nightly database backup (Backblaze B2)
+- [x] Web storefront (`fusionprints-web`) deployed via Vercel
 - [ ] Uptime monitoring via Better Stack
-- [ ] Domain A records pointed to VPS IP
+- [ ] Domain A records / DNS finalised (Cloudflare + redirects + email forwarding)
 
 ---
 
 ## 🎯 PRIORITY ORDER RIGHT NOW
 
+Software is built and live in production. The remaining blockers are real-world/vendor:
+
 1. **[x] Dev environment + project running** ✅
-2. **[ ] Apply for Paynow** — documents ready, do it today
-3. **[ ] Apply for Flutterwave** — documents ready, do it today
-4. **[ ] Get a dedicated SIM** — then apply to 360dialog immediately
-5. **[ ] Register FusionPrints trading name** — quick, unblocks some vendors
-6. **[ ] Get hardware quotes** — DNP + Epson + Harare IT
-7. **[ ] Get competitor pricing** — 3 Harare print shops
-8. **[ ] Decide on premises** — needed before hardware purchase
-9. **[ ] Find SA outsourcing partner** — needed before selling large formats
-10. **[ ] Continue software build** — bot state machine is next
+2. **[x] Software build (backend + web + bot + admin)** ✅ — live in prod
+3. **[ ] Connect 360dialog** — dedicated SIM + API approval + credentials (real WhatsApp transport)
+4. **[ ] Payonify live credentials** on prod (test keys for staging)
+5. **[ ] Arm 5×7 alerts** — set `OPERATOR_WHATSAPP_PHONE` + `WHATSAPP_TEMPLATE_5X7_HOLD`; final brand copy
+6. **[ ] QBO prod migration** — rename "Stripe" account → "Payonify" + re-run `/admin/qbo/setup`
+7. **[ ] Register FusionPrints trading name** — unblocks some vendors
+8. **[ ] Get hardware quotes** — DNP + Epson P5300 + Harare IT; then buy + place
+9. **[ ] Get competitor pricing** — 3 Harare print shops (pressure-test prices)
+10. **[ ] Find SA outsourcing partner** — needed before selling 18×24 / 24×36
+11. **[ ] Decide on premises** — power, internet, security for the print server
+12. **[ ] Cloudflare/DNS + email forwarding + uptime monitoring**
 
 ---
 
@@ -236,3 +246,7 @@ Legend: [ ] Not started | [~] In progress | [x] Done
 2026-04-29 — Dev environment fully operational (WSL2 + Node + Postgres + VS Code)
 2026-04-29 — Project skeleton running locally, health check passing
 2026-04-29 — Pricing engine built and tested — all scenarios correct
+2026-06-19 — Software build complete & live in production: WhatsApp bot, web storefront (fusionprints-web on Vercel), admin dashboard, Payonify payments, QBO integration, B2 storage + nightly backup, 5×7 operator-gating (migration 0023). Backend on Hetzner.
+2026-06-19 — Payments decided: Payonify (not Paynow/Flutterwave). Magetsi + Stripe dead code removed.
+2026-06-19 — Added docs/test-plan.md — full manual QA guide for both channels + operator.
+2026-06-19 — This tracker refreshed to match shipped reality (was ~7 weeks stale).

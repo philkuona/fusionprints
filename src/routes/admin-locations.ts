@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
 import { logger } from '@/utils/logger.js';
 import { requireFullAdmin, requireFullAdminPage } from '@/utils/auth.js';
+import { adminShell } from '@/routes/admin-theme.js';
 import {
   listCollectionPoints,
   createCollectionPoint,
@@ -34,43 +35,32 @@ function row(p?: CollectionPoint): string {
     <input name="hours" placeholder="Hours (optional)" value="${esc(p?.hours ?? '')}">
     <input class="num" name="sort" type="number" value="${p?.sortOrder ?? 0}" title="Sort order">
     <label class="chk"><input type="checkbox" name="active" ${checked}> Active</label>
-    <button class="btn" type="submit">${p ? 'Save' : 'Add'}</button>
+    <button class="btn primary" type="submit">${p ? 'Save' : 'Add'}</button>
     ${p ? `</form><form method="post" action="/admin/locations/${p.id}/delete" onsubmit="return confirm('Delete this point?')"><button class="btn del" type="submit">Delete</button>` : ''}
   </form>`;
 }
 
 function pageHtml(points: CollectionPoint[], notice?: string): string {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Collection points — FusionPrints admin</title>
-<style>
-  :root { --bg:#16130f; --surface:#211d17; --surface2:#2b261e; --text:#f3ede2; --mute:#9b8f7c; --accent:#05D668; --red:#ef4444; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; padding:24px; }
-  a { color:var(--accent); }
-  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:13px; color:var(--mute); text-transform:uppercase; letter-spacing:.05em; margin:22px 0 8px; }
-  .sub { color:var(--mute); font-size:13px; margin-bottom:8px; }
-  .notice { background:var(--accent); color:#13110d; padding:10px 14px; border-radius:8px; margin-bottom:16px; font-weight:600; }
-  .pt { display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:var(--surface); padding:12px; border-radius:10px; margin-bottom:10px; }
-  input[type=text], input:not([type]), input[type=number] { padding:8px 10px; background:var(--surface2); border:1px solid #ffffff22; border-radius:8px; color:var(--text); font-size:14px; }
-  input:not(.num) { flex:1; min-width:140px; } .num { width:70px; }
-  input:focus { outline:none; border-color:var(--accent); }
-  .chk { color:var(--mute); font-size:13px; display:flex; align-items:center; gap:5px; }
-  .btn { cursor:pointer; background:var(--accent); color:#13110d; border:none; border-radius:8px; padding:9px 16px; font-size:14px; font-weight:700; }
-  .btn.del { background:transparent; color:var(--red); border:1px solid var(--red); }
-</style></head>
-<body>
-  <p style="margin:0 0 10px"><a href="/admin">&larr; Admin</a></p>
-  <h1>Collection points</h1>
-  <div class="sub">Pickup locations shown to customers. The primary (lowest sort, active) is used where one location is shown.</div>
+  const extraCss = `
+    .pt { display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:var(--surface); border:1px solid var(--border); padding:12px; border-radius:12px; margin-bottom:10px; }
+    .pt input:not(.num) { flex:1; min-width:140px; }
+    .pt .num { width:74px; }
+    .chk { color:var(--text2); font-size:14px; display:flex; align-items:center; gap:5px; }
+    .pt .btn { padding:9px 16px; }`;
+
+  const body = `
+  <div class="page-header">
+    <h1>Collection points</h1>
+    <div class="sub">Pickup locations shown to customers. The primary (lowest sort, active) is used where one location is shown.</div>
+  </div>
   ${notice ? `<div class="notice">${esc(notice)}</div>` : ''}
 
   <h2>Existing</h2>
   ${points.length ? points.map((p) => row(p)).join('') : '<div class="sub">No collection points yet — add one below.</div>'}
 
   <h2>Add a point</h2>
-  ${row()}
-</body></html>`;
+  ${row()}`;
+  return adminShell({ active: 'locations', title: 'Collection points', body, role: 'full', extraCss });
 }
 
 async function parseFields(request: unknown): Promise<Record<string, string>> {

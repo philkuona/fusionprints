@@ -13,7 +13,7 @@
 import type { FastifyInstance } from 'fastify';
 import { requireFullAdminPage, requireFullAdmin } from '@/utils/auth.js';
 import { logger } from '@/utils/logger.js';
-import { ADMIN_FONT_CSS } from '@/routes/admin-fonts.js';
+import { adminShell } from '@/routes/admin-theme.js';
 import {
   getAuthorizationUrl,
   exchangeCodeForTokens,
@@ -37,105 +37,28 @@ function qboPageHtml(status: ReturnType<typeof getStatus>): string {
     });
   }
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuickBooks — FusionPrints Admin</title>
-  <style>
-    ${ADMIN_FONT_CSS}
-    :root {
-      --bg: #0a0a0a; --surface: #141414; --surface2: #1e1e1e;
-      --border: #2a2a2a; --text: #f0f0f0; --text2: #888;
-      --accent: #f97316; --green: #22c55e; --red: #ef4444; --amber: #f59e0b;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-    header {
-      display: flex; align-items: center; padding: 14px 24px;
-      border-bottom: 1px solid var(--border); background: var(--surface);
-      position: sticky; top: 0; z-index: 100;
-    }
-    .logo { display: inline-flex; align-items: center; gap: 8px; }
-    .logo svg { display: block; height: 36px; width: auto; }
-    .logo .admin-tag {
-      font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500;
-      color: var(--text2); text-transform: uppercase; letter-spacing: 1px;
-      padding: 2px 6px; border: 1px solid var(--border); border-radius: 3px;
-    }
-    nav { display: flex; gap: 2px; flex: 1; margin-left: 24px; }
-    .nav-tab {
-      padding: 8px 14px; color: var(--text2); text-decoration: none;
-      font-size: 13px; font-weight: 500; border-radius: 6px; transition: all 0.15s;
-    }
-    .nav-tab:hover { color: var(--text); background: var(--bg); }
-    .nav-tab.active { color: var(--accent); background: var(--bg); }
-    main { max-width: 800px; margin: 0 auto; padding: 32px 24px; }
-    .page-title { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
-    .page-sub { color: var(--text2); font-size: 13px; margin-bottom: 28px; }
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 20px; margin-bottom: 16px;
-    }
-    .card-title { font-size: 13px; font-weight: 600; margin-bottom: 16px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
-    .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-    .dot-green { background: var(--green); }
-    .dot-red { background: var(--red); }
-    .dot-amber { background: var(--amber); }
-    .status-label { font-size: 15px; font-weight: 500; }
-    .meta-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-    .meta-row:last-child { border-bottom: none; }
-    .meta-label { color: var(--text2); }
-    .meta-value { font-family: 'DM Mono', monospace; font-size: 12px; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 9px 16px; border-radius: 7px; border: 1px solid var(--border);
-      background: var(--surface2); color: var(--text); font-family: inherit;
-      font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none;
-      transition: all 0.15s;
-    }
-    .btn:hover { border-color: var(--accent); color: var(--accent); }
-    .btn-primary { background: var(--accent); border-color: var(--accent); color: #000; }
-    .btn-primary:hover { opacity: 0.88; color: #000; }
-    .btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
-    .btn-danger:hover { opacity: 0.88; color: #fff; }
-    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
-    .info-box {
-      background: rgba(249,115,22,0.08); border: 1px solid rgba(249,115,22,0.25);
-      border-radius: 8px; padding: 12px 14px; font-size: 13px;
-      color: #fdba74; margin-bottom: 16px; line-height: 1.5;
-    }
-    #setup-result { display: none; margin-top: 12px; padding: 10px 14px; border-radius: 7px; font-size: 13px; }
-    .result-ok { background: rgba(34,197,94,0.1); border: 1px solid var(--green); color: var(--green); }
-    .result-err { background: rgba(239,68,68,0.1); border: 1px solid var(--red); color: var(--red); }
-  </style>
-</head>
-<body>
-<header>
-  <div class="logo">
-    <svg viewBox="0 0 280 60" xmlns="http://www.w3.org/2000/svg" aria-label="FusionPrints">
-      <g transform="translate(0,6)">
-        <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="#FBF7F0"/>
-        <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="#05D668"/>
-      </g>
-      <text x="56" y="40" font-family="Outfit, system-ui, sans-serif" font-size="28" font-weight="700" fill="#FBF7F0" letter-spacing="-0.56">fusionprints</text>
-    </svg>
-    <span class="admin-tag">admin</span>
+  const extraCss = `
+    main { max-width: 800px; }
+    .card-title { font-size:13px; font-weight:700; margin-bottom:16px; color:var(--text2); text-transform:uppercase; letter-spacing:.5px; }
+    .status-row { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .dot-green { background:var(--green); } .dot-red { background:var(--red); } .dot-amber { background:var(--amber); }
+    .status-label { font-size:15px; font-weight:600; }
+    .meta-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; gap:16px; }
+    .meta-row:last-child { border-bottom:none; }
+    .meta-label { color:var(--text2); }
+    .meta-value { font-family:'DM Mono',monospace; font-size:12px; text-align:right; }
+    .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+    .info-box { background:#FCEFD9; border:1px solid #F0D9A8; border-radius:10px; padding:12px 14px; font-size:13px; color:#7A4E0B; margin-bottom:16px; line-height:1.5; }
+    #setup-result { display:none; margin-top:12px; padding:10px 14px; border-radius:8px; font-size:13px; }
+    .result-ok { background:#E3F7EC; border:1px solid #A7E8C4; color:#04A551; }
+    .result-err { background:#FBE6E2; border:1px solid #F2C4BB; color:#C0392B; }`;
+
+  const body = `
+  <div class="page-header">
+    <h1>QuickBooks Online</h1>
+    <div class="sub">Automatic accounting — Sales Receipts post when an order is paid, Refund Receipts post when paid orders are cancelled.</div>
   </div>
-  <nav>
-    <a href="/admin/jobs"     class="nav-tab">Order Management</a>
-    <a href="/admin/printers" class="nav-tab">Printers</a>
-    <a href="/admin/metrics"  class="nav-tab">Key Metrics</a>
-    <a href="/admin/promos"   class="nav-tab">Promos</a>
-    <a href="/admin/pricing"  class="nav-tab">Pricing</a>
-    <a href="/admin/qbo"      class="nav-tab active">QuickBooks</a>
-  </nav>
-</header>
-<main>
-  <div class="page-title">QuickBooks Online</div>
-  <div class="page-sub">Automatic accounting — Sales Receipts post when orders are fulfilled, Refund Receipts post when paid orders are cancelled.</div>
 
   ${!isEnabled() ? `
   <div class="info-box">
@@ -204,9 +127,8 @@ function qboPageHtml(status: ReturnType<typeof getStatus>): string {
     <div class="meta-row"><span class="meta-label">Paid order cancelled</span><span class="meta-value">Refund Receipt posted to QBO</span></div>
     <div class="meta-row"><span class="meta-label">Failed post</span><span class="meta-value">Logged, order not affected — manual entry needed</span></div>
     <div class="meta-row"><span class="meta-label">Payment method</span><span class="meta-value">EcoCash / Payonify / Cash mapped to correct QBO account</span></div>
-    <div class="meta-row"><span class="meta-label">Customer in QBO</span><span class="meta-value">Generic "FusionPrints Customer" (not per-customer)</span></div>
+    <div class="meta-row"><span class="meta-label">Customer in QBO</span><span class="meta-value">Posted under the real buyer (name + email + phone)</span></div>
   </div>
-</main>
 <script>
   async function doSetup() {
     const btn = document.getElementById('setup-btn');
@@ -242,9 +164,8 @@ function qboPageHtml(status: ReturnType<typeof getStatus>): string {
     await fetch('/admin/qbo/disconnect', { method: 'POST' });
     location.reload();
   }
-</script>
-</body>
-</html>`;
+</script>`;
+  return adminShell({ active: 'qbo', title: 'QuickBooks', body, role: 'full', extraCss });
 }
 
 // ── Route registration ─────────────────────────────────────────────────────

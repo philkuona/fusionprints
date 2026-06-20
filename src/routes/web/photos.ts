@@ -16,9 +16,9 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import multipart from '@fastify/multipart';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, isNull } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { images } from '@/db/schema.js';
+import { images, orderItems, processedImages } from '@/db/schema.js';
 import { storeWebImage, deleteImage, getSignedImageUrl } from '@/services/image-storage.js';
 import { authenticateWebUser } from '@/utils/web-auth.js';
 import { logger } from '@/utils/logger.js';
@@ -51,7 +51,7 @@ export async function registerWebPhotoRoutes(app: FastifyInstance): Promise<void
         uploadedAt: images.uploadedAt,
       })
       .from(images)
-      .where(eq(images.webUserId, userId))
+      .where(and(eq(images.webUserId, userId), isNull(images.deletedAt)))
       .orderBy(desc(images.uploadedAt));
 
     // Bucket is private — hand back time-limited signed URLs the browser can load.
@@ -124,7 +124,31 @@ export async function registerWebPhotoRoutes(app: FastifyInstance): Promise<void
 
     if (!owned) return reply.status(404).send({ error: 'not_found' });
 
-    await deleteImage(id);
+    // If any order references this image — directly, or via a processed render
+    // derived from it — soft-delete it (hide from the library, keep the row + B2
+    // object + renders) so past-order previews don't break. Otherwise hard-delete.
+    const [refByImage] = await db
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .where(eq(orderItems.imageId, id))
+      .limit(1);
+    let referenced = Boolean(refByImage);
+    if (!referenced) {
+      const [refByRender] = await db
+        .select({ id: orderItems.id })
+        .from(orderItems)
+        .innerJoin(processedImages, eq(orderItems.processedImageId, processedImages.id))
+        .where(eq(processedImages.sourceImageId, id))
+        .limit(1);
+      referenced = Boolean(refByRender);
+    }
+
+    if (referenced) {
+      await db.update(images).set({ deletedAt: new Date() }).where(eq(images.id, id));
+      logger.info({ imageId: id, userId }, 'Photo soft-deleted (referenced by an order)');
+    } else {
+      await deleteImage(id);
+    }
 
     return reply.send({ success: true });
   });

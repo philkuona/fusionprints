@@ -604,6 +604,24 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * GET /api/agent/printers
+   * List registered printers so the agent can map its physical devices to rows
+   * (by printer_type) and heartbeat them by id.
+   */
+  app.get('/api/agent/printers', async (request, reply) => {
+    if (!checkAgentAuth(request, reply)) return;
+    const rows = await db
+      .select({
+        id: printers.id,
+        name: printers.name,
+        printerType: printers.printerType,
+        osPrinterName: printers.osPrinterName,
+      })
+      .from(printers);
+    return { printers: rows };
+  });
+
+  /**
    * POST /api/agent/printers/:id/heartbeat
    * Receive a printer status update from the agent.
    */

@@ -361,40 +361,40 @@ function printersPageHtml(role: AdminRole = 'full'): string {
     function renderDnpMediaBar(mode, pending) {
       const bar = document.getElementById('dnp-media-bar');
       if (!bar) return;
-      const primaryBtn = function(action, label) {
-        return '<button class="action-btn" style="background:var(--accent);color:#0a3d22;border-color:var(--accent);font-weight:600;" onclick="setDnpMode(\\'' + action + '\\')">' + label + '</button>';
-      };
       const n = pending || 0;
       const plural = n === 1 ? 'print' : 'prints';
+      const is5x7 = mode === '5x7';
+      const hot = !is5x7 && n > 0;
 
-      if (mode === '5x7') {
-        bar.innerHTML =
-          '<div class="dnp-bar paused">'
-          + '<div class="dnp-main">'
-          +   '<span class="dnp-icon">⏸️</span>'
-          +   '<div><div class="dnp-label">DNP media mode</div>'
-          +     '<div class="dnp-status"><strong>5×7 loaded</strong> — regular 4×6 / 6×8 prints are paused. Print the held 5×7 batch, then switch back.</div></div>'
-          +   '<span class="dnp-chip"><span class="dot paused"></span>5×7</span>'
-          + '</div>'
-          + primaryBtn('6x8', '↩ Switch back to 6×8')
-          + '</div>';
-        return;
+      let icon, cls, status;
+      if (is5x7) {
+        icon = '⏸️'; cls = 'paused';
+        status = '<strong>5×7 loaded</strong> — regular 4×6 / 6×8 prints are paused. Print the held batch, then switch back to 6×8.';
+      } else if (hot) {
+        icon = '🎞️'; cls = 'waiting';
+        status = '<strong>6×8 loaded</strong> — regular prints running. <span class="accent">' + n + ' held 5×7 ' + plural + ' waiting — switch to 5×7 to release.</span>';
+      } else {
+        icon = '🎞️'; cls = 'running';
+        status = '<strong>6×8 loaded</strong> — regular prints running. No 5×7 orders waiting.';
       }
 
-      const hot = n > 0;
+      // Segmented switch. The active side is just shown (no handler); the other
+      // side is clickable and calls setDnpMode (which confirms + is guarded
+      // server-side against switching mid-print). Pending count rides the 5×7 side.
+      const count = n > 0 ? '<span class="count">' + n + '</span>' : '';
+      const seg6 = is5x7
+        ? '<button class="dnp-seg" onclick="setDnpMode(\\'6x8\\')">6×8</button>'
+        : '<button class="dnp-seg active">6×8</button>';
+      const seg7 = is5x7
+        ? '<button class="dnp-seg active amber">5×7</button>'
+        : '<button class="dnp-seg" onclick="setDnpMode(\\'5x7\\')">5×7' + count + '</button>';
+
       bar.innerHTML =
-        '<div class="dnp-bar ' + (hot ? 'waiting' : 'running') + '">'
-        + '<div class="dnp-main">'
-        +   '<span class="dnp-icon">🎞️</span>'
-        +   '<div><div class="dnp-label">DNP media mode</div>'
-        +     '<div class="dnp-status"><strong>6×8 loaded</strong> — regular prints running. '
-        +       (hot
-                  ? '<span class="accent">' + n + ' held 5×7 ' + plural + ' waiting to be released.</span>'
-                  : 'No 5×7 orders waiting.')
-        +     '</div></div>'
-        +   '<span class="dnp-chip"><span class="dot ' + (hot ? 'waiting' : 'running') + '"></span>6×8</span>'
+        '<div class="dnp-bar ' + cls + '">'
+        + '<div class="dnp-main"><span class="dnp-icon">' + icon + '</span>'
+        +   '<div><div class="dnp-label">DNP media mode</div><div class="dnp-status">' + status + '</div></div>'
         + '</div>'
-        + (hot ? primaryBtn('5x7', '🔁 Switch to 5×7 &amp; print held batch') : '')
+        + '<div class="dnp-toggle">' + seg6 + seg7 + '</div>'
         + '</div>';
     }
 
@@ -424,24 +424,29 @@ function printersPageHtml(role: AdminRole = 'full'): string {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.3; }
     }
-    /* DNP media-mode status panel */
-    .dnp-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    /* DNP media-mode control: status copy on the left, segmented switch on the right */
+    .dnp-bar { display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap;
       background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--border);
-      border-radius:12px; padding:14px 16px; }
-    .dnp-bar.waiting { border-color:var(--accent); border-left-color:var(--accent); background:#F3FBF6; }
-    .dnp-bar.paused { border-color:#E9B949; border-left-color:#E9B949; background:#FDF6E8; }
+      border-radius:12px; padding:15px 18px; }
+    .dnp-bar.waiting { border-color:var(--accent); border-left-color:var(--accent); background:#F4FBF7; }
+    .dnp-bar.paused { border-color:#E9B949; border-left-color:#E9B949; background:#FDF7EA; }
     .dnp-main { display:flex; align-items:center; gap:13px; min-width:0; }
     .dnp-icon { font-size:22px; line-height:1; flex-shrink:0; }
     .dnp-label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text2); font-weight:700; }
     .dnp-status { font-size:14px; color:var(--text); margin-top:2px; }
     .dnp-status .accent { color:var(--accent-deep); font-weight:600; }
-    .dnp-chip { display:inline-flex; align-items:center; gap:6px; font-family:'DM Mono',monospace; font-weight:600;
-      font-size:13px; padding:5px 11px; border-radius:999px; background:var(--surface2); color:var(--text);
-      border:1px solid var(--border); flex-shrink:0; }
-    .dnp-chip .dot { width:7px; height:7px; border-radius:50%; }
-    .dnp-chip .dot.running { background:var(--green); }
-    .dnp-chip .dot.waiting { background:var(--accent); animation:pulse 2s infinite; }
-    .dnp-chip .dot.paused { background:#D9920B; }
+    /* segmented toggle */
+    .dnp-toggle { display:inline-flex; background:var(--surface2); border:1px solid var(--border);
+      border-radius:999px; padding:3px; gap:2px; flex-shrink:0; }
+    .dnp-seg { border:none; background:transparent; cursor:pointer; font-family:'DM Mono',monospace;
+      font-weight:600; font-size:13px; padding:7px 16px; border-radius:999px; color:var(--text2);
+      display:inline-flex; align-items:center; gap:7px; white-space:nowrap; transition:all .15s; }
+    .dnp-seg:not(.active):hover { color:var(--text); background:rgba(31,27,22,0.05); }
+    .dnp-seg.active { cursor:default; background:var(--accent); color:#0a3d22; box-shadow:0 1px 2px rgba(31,27,22,0.14); }
+    .dnp-seg.active.amber { background:#E9B949; color:#5c3d06; }
+    .dnp-seg .count { background:var(--accent); color:#0a3d22; font-size:11px; font-weight:700;
+      padding:1px 7px; border-radius:999px; line-height:1.5; }
+    .dnp-seg.active .count { background:rgba(31,27,22,0.16); }
   </style>`;
   return pageHtml('printers', 'Printers and Configuration', body, role);
 }

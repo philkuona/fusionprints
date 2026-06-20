@@ -11,6 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import { markOrderPaid, getOrderByNumber } from '@/services/order.js';
 import { logger } from '@/utils/logger.js';
 import { sendWhatsAppMessage } from '@/services/whatsapp.js';
+import { sendWhatsAppReceipt } from '@/services/receipt-pdf.js';
 import { db } from '@/db/client.js';
 import { customers, orders, orderItems } from '@/db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -51,6 +52,11 @@ export async function notifyCustomerOfPayment(orderNumber: string): Promise<void
   } catch (err) {
     logger.error({ err, orderNumber }, 'Failed to send payment confirmation');
   }
+
+  // Follow the in-chat confirmation with the branded PDF receipt (best-effort).
+  await sendWhatsAppReceipt(orderNumber).catch((err) =>
+    logger.error({ err, orderNumber }, 'Failed to send WhatsApp receipt'),
+  );
 }
 
 /**

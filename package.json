@@ -36,6 +36,7 @@
     "drizzle-orm": "^0.36.4",
     "fastify": "^5.1.0",
     "libphonenumber-js": "^1.13.6",
+    "pdf-lib": "^1.17.1",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
     "postgres": "^3.4.5",

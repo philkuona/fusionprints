@@ -114,6 +114,35 @@ export async function sendWhatsAppMessage(to: string, message: BotReply): Promis
 }
 
 /**
+ * Send a document (e.g. a PDF receipt) into the chat via 360dialog. `link` must
+ * be a publicly fetchable URL; WhatsApp downloads + re-hosts it. Best-effort
+ * caller — throws on a non-2xx so the caller can log + swallow.
+ */
+export async function sendWhatsAppDocument(
+  to: string,
+  link: string,
+  filename: string,
+  caption?: string,
+): Promise<void> {
+  const response = await fetch(`${env.WHATSAPP_API_BASE}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'D360-API-KEY': env.WHATSAPP_API_KEY },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'document',
+      document: { link, filename, ...(caption ? { caption } : {}) },
+    }),
+  });
+  if (!response.ok) {
+    const errBody = await response.text();
+    logger.error({ status: response.status, error: errBody, to }, 'WhatsApp document send error');
+    throw new Error(`WhatsApp document error: ${response.status}`);
+  }
+}
+
+/**
  * Send a pre-approved WhatsApp template message via 360dialog.
  *
  * Templates are the ONLY messages WhatsApp lets a business send outside the

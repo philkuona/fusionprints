@@ -20,6 +20,7 @@ import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
+import { sendFiveBySevenOperatorEmail } from '@/services/operator-email.js';
 import {
   renderOrderInfoSlip,
   renderEndSeparatorSlip,
@@ -452,26 +453,9 @@ export function formatReadyDate(d: Date): string {
 
 /** WhatsApp the operator that a 5×7 order is waiting and needs a media swap. */
 async function sendFiveBySevenOperatorAlert(orderNumber: string, readyAt: Date): Promise<void> {
-  const phone = env.OPERATOR_WHATSAPP_PHONE;
-  if (!phone) {
-    logger.warn(
-      { orderNumber },
-      '5×7 order — OPERATOR_WHATSAPP_PHONE unset, skipping operator alert',
-    );
-    return;
-  }
-  const dateStr = formatReadyDate(readyAt);
-  if (env.WHATSAPP_TEMPLATE_5X7_HOLD) {
-    // {{1}} order number, {{2}} ready date
-    await sendWhatsAppTemplate(phone, env.WHATSAPP_TEMPLATE_5X7_HOLD, [orderNumber, dateStr]);
-  } else {
-    const message = `🟡 *5×7 order — media swap needed*\n\nOrder: *${orderNumber}*\nReady by: *${dateStr}* (whole order is next-day).\n\nLoad 5×7 media, then flip the DNP to *5×7 mode* in the admin dashboard to print the held batch. Flip back to 6×8 when done.`;
-    await sendWhatsAppMessage(phone, message);
-  }
-  logger.info(
-    { orderNumber, template: !!env.WHATSAPP_TEMPLATE_5X7_HOLD },
-    'Sent 5×7 operator alert',
-  );
+  // Emailed to OPERATOR_ALERT_EMAIL (notify@…). Best-effort inside the email
+  // service; this just hands off the order number + formatted ready date.
+  await sendFiveBySevenOperatorEmail(orderNumber, formatReadyDate(readyAt));
 }
 
 /** Recent orders for a web user (newest first). Used by the web order history. */

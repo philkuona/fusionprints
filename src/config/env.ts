@@ -49,10 +49,8 @@ const envSchema = z.object({
   WHATSAPP_TEMPLATE_DELIVERY: z.string().default(''),
   WHATSAPP_TEMPLATE_LANG: z.string().default('en'),
   // Operator alert when an order contains a 5×7 (needs a manual DNP media swap).
-  // Phone in E.164, e.g. +263771234567. When the template name is blank the alert
-  // falls back to free-form text (delivered if a service window is open).
-  OPERATOR_WHATSAPP_PHONE: z.string().default(''),
-  WHATSAPP_TEMPLATE_5X7_HOLD: z.string().default(''),
+  // Emailed via Resend to this address (needs RESEND_API_KEY set).
+  OPERATOR_ALERT_EMAIL: z.string().default('notify@fusionprints.co.zw'),
 
   // Payments (optional until we wire them up)
   PAYNOW_INTEGRATION_ID: z.string().default(''),

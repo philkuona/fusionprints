@@ -318,9 +318,9 @@ export const MSG = {
     `*Order ${orderNumber}* created. Total: *$${totalUsd}*\n\nHow would you like to pay?`,
 
   /** Next-day notice for an order containing a 5×7. Positive framing; the reason
-      (manual media swap) is never exposed — final copy via the brand-copy layer. */
+      (manual media swap) is never exposed to the customer. */
   fiveBySevenNextDay: () =>
-    `✨ Because your order is special, it'll be ready the next day — we'll let you know the moment it's ready to collect or deliver.`,
+    `✨ Ooh, your order is one of our special ones, so it gets a little extra love before it leaves the studio. It'll be ready the next working day, and we'll message you the very moment it's ready to collect or deliver.`,
 
   /** Interactive button payload for payment method choice (EcoCash only for now) */
   choosePaymentMethodButtons: () => ({

@@ -1023,13 +1023,10 @@ function handleAddMoreOrCheckout(
   }
 
   if (text === '2' || text === 'CHECKOUT' || text === 'DONE' || text === 'NEXT') {
-    // We need full name + email before fulfillment (for the order + the QBO
-    // customer record). Ask for whichever is missing, in order.
+    // Full name is required before fulfillment. Email is OPTIONAL — it's asked
+    // once (right after a new customer's name) and is skippable, never gated here.
     if (!customer?.name) {
       return reply(MSG.askName(), 'collecting_name', context);
-    }
-    if (!customer?.email) {
-      return reply(MSG.askEmail(), 'collecting_email', context);
     }
     return reply(
       MSG.chooseFulfillmentInteractive(customer.name),
@@ -1078,19 +1075,24 @@ function handleCollectingEmail(
   context: BotContext,
   customer: { name: string | null; email: string | null } | null,
 ): BotResponse {
-  const email = text.trim();
+  const raw = text.trim();
+  // The name is either already on the customer or was just collected (in context).
+  const name = (context as { _customerName?: string })._customerName ?? customer?.name ?? 'there';
+
+  // Email is OPTIONAL — let them skip and continue.
+  if (/^(skip|no|none|n\/a|-)$/i.test(raw)) {
+    return reply(MSG.chooseFulfillmentInteractive(name), 'choosing_fulfillment', context);
+  }
+
   // Permissive local@domain.tld check — good enough to catch typos/non-emails.
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
     return reply(MSG.invalidEmail(), 'collecting_email', context);
   }
 
   // Saving to the DB is an effect the caller handles; pass via context.
-  const newContext = { ...context, _customerEmail: email.toLowerCase() } as BotContext & {
+  const newContext = { ...context, _customerEmail: raw.toLowerCase() } as BotContext & {
     _customerEmail: string;
   };
-
-  // The name is either already on the customer or was just collected (in context).
-  const name = (context as { _customerName?: string })._customerName ?? customer?.name ?? 'there';
   return reply(
     MSG.chooseFulfillmentInteractive(name),
     'choosing_fulfillment',

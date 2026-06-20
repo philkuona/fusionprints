@@ -104,20 +104,27 @@ describe('happy path: greeting to EcoCash push', () => {
     expect(r.nextStep).toBe('collecting_name');
   });
 
-  it('asks for an email at checkout when the customer has a name but no email', () => {
+  it('a named customer goes straight to fulfillment at checkout (email not required)', () => {
     const ctx = { ...emptyContext(), cart: [cartItem()] };
     const r = run('adding_more_or_checkout', ctx, text('2'), { name: 'Rudo', email: null });
-    expect(r.nextStep).toBe('collecting_email');
+    expect(r.nextStep).toBe('choosing_fulfillment');
   });
 
-  it('after collecting the name, asks for the email next', () => {
+  it('after collecting a new customer name, asks for the optional email next', () => {
     const ctx = { ...emptyContext(), cart: [cartItem()] };
     const r = run('collecting_name', ctx, text('rudo moyo'), { name: null, email: null });
     expect(r.nextStep).toBe('collecting_email');
     expect((r.nextContext as { _customerName?: string })._customerName).toBe('Rudo Moyo');
   });
 
-  it('rejects an invalid email then accepts a valid one and moves to fulfillment', () => {
+  it('email step: SKIP continues to fulfillment without an email', () => {
+    const ctx = { ...emptyContext(), cart: [cartItem()] };
+    const r = run('collecting_email', ctx, text('SKIP'), { name: 'Rudo', email: null });
+    expect(r.nextStep).toBe('choosing_fulfillment');
+    expect((r.nextContext as { _customerEmail?: string })._customerEmail).toBeUndefined();
+  });
+
+  it('email step: rejects an invalid email, accepts a valid one', () => {
     const ctx = { ...emptyContext(), cart: [cartItem()] };
     let r = run('collecting_email', ctx, text('not-an-email'), { name: 'Rudo', email: null });
     expect(r.nextStep).toBe('collecting_email');

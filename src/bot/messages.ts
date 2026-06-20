@@ -266,10 +266,10 @@ export const MSG = {
   invalidName: () => `Please reply with your name.`,
 
   askEmail: () =>
-    `And your email? _(for your receipt — just need it once)_`,
+    `Want a receipt by email? Reply with your email, or *SKIP* to continue. _(optional)_`,
 
   invalidEmail: () =>
-    `Hmm, that doesn't look like an email. Please reply with a valid one, e.g. *you@example.com*.`,
+    `Hmm, that doesn't look like an email. Reply with a valid one (e.g. *you@example.com*) or *SKIP*.`,
 
   // ===== Fulfillment =====
 

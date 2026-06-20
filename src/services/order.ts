@@ -21,6 +21,7 @@ import { calculateQuote } from '@/services/pricing.js';
 import { getOrderMinimums } from '@/services/store-settings.js';
 import { getPrimaryCollectionPoint, pointHours } from '@/services/collection-points.js';
 import { getProduct } from '@/config/catalog.js';
+import { getProductCost } from '@/services/cost-overrides.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import { sendFiveBySevenOperatorEmail } from '@/services/operator-email.js';
 import { isEnabled as qboEnabled, isSetupComplete, createSalesReceipt, findSalesReceiptId } from '@/services/qbo.js';
@@ -198,6 +199,8 @@ export async function createOrder(
             quantity: pricedItem.quantity,
             unitPriceUsd: String(pricedItem.unitPriceUsd),
             lineTotalUsd: String(pricedItem.lineTotalUsd),
+            unitCostUsd: getProductCost(pricedItem.sizeCode).toFixed(2),
+            lineCostUsd: (getProductCost(pricedItem.sizeCode) * pricedItem.quantity).toFixed(2),
             requiresManualReview: pricedItem.requiresManualReview,
           });
       }
@@ -325,6 +328,8 @@ export async function createWebOrder(
           quantity: priced.quantity,
           unitPriceUsd: String(priced.unitPriceUsd),
           lineTotalUsd: String(priced.lineTotalUsd),
+          unitCostUsd: getProductCost(priced.sizeCode).toFixed(2),
+          lineCostUsd: (getProductCost(priced.sizeCode) * priced.quantity).toFixed(2),
           requiresManualReview: priced.requiresManualReview,
         });
       }

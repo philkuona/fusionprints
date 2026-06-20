@@ -241,12 +241,13 @@ export async function getDashboardMetrics(daysBack = 30) {
     .where(gte(orders.createdAt, cutoff))
     .groupBy(orders.status);
 
-  // Print volume by size
+  // Print volume by size (with consumable cost snapshotted on each order item)
   const sizeBreakdown = await db
     .select({
       sizeCode: orderItems.sizeCode,
       totalPrints: sql<string>`SUM(${orderItems.quantity})::text`,
       revenue: sql<string>`SUM(${orderItems.lineTotalUsd})::text`,
+      cost: sql<string>`COALESCE(SUM(${orderItems.lineCostUsd}), 0)::text`,
     })
     .from(orderItems)
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
@@ -257,6 +258,18 @@ export async function getDashboardMetrics(daysBack = 30) {
       ),
     )
     .groupBy(orderItems.sizeCode);
+
+  // Total consumable cost in the period (sum of snapshotted line costs).
+  const [costAgg] = await db
+    .select({ totalCost: sql<string>`COALESCE(SUM(${orderItems.lineCostUsd}), 0)::text` })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .where(
+      and(
+        gte(orders.createdAt, cutoff),
+        sql`${orders.status} NOT IN ('pending_payment', 'cancelled')`,
+      ),
+    );
 
   // Daily revenue for last 14 days (for chart)
   const dailyRevenue = await db
@@ -311,22 +324,39 @@ export async function getDashboardMetrics(daysBack = 30) {
     .from(printJobs)
     .where(eq(printJobs.status, 'failed'));
 
+  const totalRevenue = parseFloat(revenue?.totalRevenue ?? '0');
+  const totalCost = parseFloat(costAgg?.totalCost ?? '0');
+  const marginUsd = totalRevenue - totalCost;
+
   return {
     daysBack,
     revenue: {
-      totalUsd: parseFloat(revenue?.totalRevenue ?? '0'),
+      totalUsd: totalRevenue,
       orderCount: parseInt(revenue?.orderCount ?? '0', 10),
       avgOrderValue: parseFloat(revenue?.avgOrderValue ?? '0'),
+    },
+    // Consumable cost + gross margin. Cost is 0 until per-size costs are set on
+    // the Pricing page (and only fills forward — pre-feature orders snapshot null).
+    cost: {
+      totalUsd: totalCost,
+      marginUsd,
+      marginPct: totalRevenue > 0 ? Math.round((marginUsd / totalRevenue) * 100) : 0,
     },
     statusBreakdown: statusBreakdown.map((r) => ({
       status: r.status,
       count: parseInt(r.count, 10),
     })),
-    sizeBreakdown: sizeBreakdown.map((r) => ({
-      sizeCode: r.sizeCode,
-      totalPrints: parseInt(r.totalPrints, 10),
-      revenue: parseFloat(r.revenue),
-    })),
+    sizeBreakdown: sizeBreakdown.map((r) => {
+      const rev = parseFloat(r.revenue);
+      const cost = parseFloat(r.cost);
+      return {
+        sizeCode: r.sizeCode,
+        totalPrints: parseInt(r.totalPrints, 10),
+        revenue: rev,
+        cost,
+        marginPct: rev > 0 ? Math.round(((rev - cost) / rev) * 100) : 0,
+      };
+    }),
     dailyRevenue: dailyRevenue.map((r) => ({
       day: r.day,
       revenue: parseFloat(r.revenue),

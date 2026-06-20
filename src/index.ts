@@ -20,6 +20,7 @@ import { registerAdminPromos } from '@/routes/admin-promos.js';
 import { registerAdminPricing } from '@/routes/admin-pricing.js';
 import { registerAdminLocations } from '@/routes/admin-locations.js';
 import { loadAndApplyPriceOverrides } from '@/services/price-overrides.js';
+import { loadAndApplyCostOverrides } from '@/services/cost-overrides.js';
 import { startVirtualPrinters } from '@/services/virtual-printer.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
 import { registerAgentRoutes, reclaimStaleAgentJobs } from '@/routes/agent-api.js';
@@ -236,8 +237,9 @@ async function main(): Promise<void> {
   await registerWebOrderRoutes(app);
   await registerWebImportRoutes(app);
 
-  // Apply admin price overrides onto the in-memory catalog before serving.
+  // Apply admin price + cost overrides onto the in-memory catalog before serving.
   await loadAndApplyPriceOverrides();
+  await loadAndApplyCostOverrides();
 
   // ===== Start the server =====
 

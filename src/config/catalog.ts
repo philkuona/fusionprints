@@ -108,6 +108,8 @@ export interface Product {
   description?: string;
   /** Price per single unit in USD */
   unitPriceUsd: number;
+  /** Consumable cost per single unit in USD (admin-set; 0 until configured). */
+  costUsd?: number;
   /** Which printer handles this product */
   printer: 'dnp_ds620a_4x6' | 'dnp_ds620a_5x7' | 'epson_p900';
   /** Print finish — locked per size at launch (Phase 2 may allow customer choice) */

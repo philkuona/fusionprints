@@ -304,6 +304,10 @@ export const orderItems = pgTable(
     quantity: integer('quantity').notNull().default(1),
     unitPriceUsd: numeric('unit_price_usd', { precision: 10, scale: 2 }).notNull(),
     lineTotalUsd: numeric('line_total_usd', { precision: 10, scale: 2 }).notNull(),
+    // Consumable cost snapshotted at order time (parallel to price), so historical
+    // margin is deterministic even if costs change later. Null on pre-feature rows.
+    unitCostUsd: numeric('unit_cost_usd', { precision: 10, scale: 2 }),
+    lineCostUsd: numeric('line_cost_usd', { precision: 10, scale: 2 }),
     requiresManualReview: boolean('requires_manual_review').notNull().default(false),
   },
   (table) => ({
@@ -497,6 +501,14 @@ export const promoCampaigns = pgTable(
 export const productPrices = pgTable('product_prices', {
   sizeCode: text('size_code').primaryKey(),
   unitPriceUsd: numeric('unit_price_usd', { precision: 10, scale: 2 }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Admin-editable consumable cost per print size (ribbon/ink + paper), parallel to
+// productPrices. Drives margin in the metrics dashboard. See services/cost-overrides.ts.
+export const productCosts = pgTable('product_costs', {
+  sizeCode: text('size_code').primaryKey(),
+  unitCostUsd: numeric('unit_cost_usd', { precision: 10, scale: 2 }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

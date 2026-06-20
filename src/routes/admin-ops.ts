@@ -118,11 +118,17 @@ function metricsPageHtml(): string {
 
     function render(d) {
       const html = \`
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px;">
           <div class="card">
             <div class="muted">Revenue</div>
             <div style="font-size:26px;font-weight:600;margin-top:4px;">\${fmtMoney(d.revenue.totalUsd)}</div>
             <div class="muted">\${d.revenue.orderCount} orders</div>
+          </div>
+          <div class="card">
+            <div class="muted">Gross margin</div>
+            \${d.cost && d.cost.totalUsd > 0
+              ? '<div style="font-size:26px;font-weight:600;margin-top:4px;">' + d.cost.marginPct + '%</div><div class="muted">' + fmtMoney(d.cost.marginUsd) + ' after ' + fmtMoney(d.cost.totalUsd) + ' cost</div>'
+              : '<div style="font-size:26px;font-weight:600;margin-top:4px;color:var(--text2)">—</div><div class="muted">set costs in Pricing</div>'}
           </div>
           <div class="card">
             <div class="muted">Avg order</div>
@@ -239,8 +245,9 @@ function metricsPageHtml(): string {
           <div style="flex:1;background:var(--surface2);border-radius:4px;height:18px;overflow:hidden;">
             <div style="background:var(--accent);height:100%;width:\${(d.totalPrints/total)*100}%;"></div>
           </div>
-          <div style="font-size:13px;width:80px;text-align:right;font-family:'DM Mono',monospace;">\${d.totalPrints}</div>
-          <div style="font-size:13px;width:80px;text-align:right;color:var(--text2);">\${fmtMoney(d.revenue)}</div>
+          <div style="font-size:13px;width:54px;text-align:right;font-family:'DM Mono',monospace;">\${d.totalPrints}</div>
+          <div style="font-size:13px;width:74px;text-align:right;color:var(--text2);">\${fmtMoney(d.revenue)}</div>
+          <div style="font-size:13px;width:54px;text-align:right;font-family:'DM Mono',monospace;color:\${(d.cost > 0 && d.marginPct < 40) ? 'var(--red)' : 'var(--text2)'};">\${d.cost > 0 ? d.marginPct + '%' : '—'}</div>
         </div>
       \`).join('');
     }

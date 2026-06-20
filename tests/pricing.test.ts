@@ -125,3 +125,32 @@ describe('calculateQuote — flags and summary', () => {
     expect(r.quote.summary).toContain(p4x6.displayLabel);
   });
 });
+
+describe('calculateQuote — order minimums', () => {
+  const mins = { pickupUsd: 2, deliveryUsd: 5 };
+
+  it('skips the minimum check when minimums are not supplied (back-compat)', () => {
+    // 4x6 = $0.80, below any floor, but no minimums passed → allowed.
+    const r = calculateQuote([{ sizeCode: '4x6', quantity: 1 }], 'collection', 'collection');
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a pickup order below the pickup minimum', () => {
+    const r = calculateQuote([{ sizeCode: '4x6', quantity: 1 }], 'collection', 'collection', mins);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.type).toBe('BELOW_MINIMUM');
+  });
+
+  it('accepts a pickup order at the pickup minimum', () => {
+    // 5x7 = $2.00 == pickup minimum.
+    const r = calculateQuote([{ sizeCode: '5x7', quantity: 1 }], 'collection', 'collection', mins);
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a delivery order above the delivery minimum', () => {
+    const zone = Object.keys(DELIVERY_FEES)[0];
+    // 5x7 × 3 = $6 + delivery fee, comfortably above $5.
+    const r = calculateQuote([{ sizeCode: '5x7', quantity: 3 }], 'delivery', zone, mins);
+    expect(r.ok).toBe(true);
+  });
+});

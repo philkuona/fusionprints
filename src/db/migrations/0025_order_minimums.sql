@@ -1,0 +1,2 @@
+ALTER TABLE "store_settings" ADD COLUMN "min_pickup_usd" numeric(10, 2) DEFAULT '2.00' NOT NULL;--> statement-breakpoint
+ALTER TABLE "store_settings" ADD COLUMN "min_delivery_usd" numeric(10, 2) DEFAULT '5.00' NOT NULL;

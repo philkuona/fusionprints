@@ -176,6 +176,13 @@
       "when": 1781926469351,
       "tag": "0024_order_contact_name",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781935774358,
+      "tag": "0025_order_minimums",
+      "breakpoints": true
     }
   ]
 }

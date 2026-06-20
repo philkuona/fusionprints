@@ -18,7 +18,7 @@ import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { registerBrandFonts } from '@/utils/fonts.js';
 import { getProduct } from '@/config/catalog.js';
-import { getPrimaryCollectionPoint } from '@/services/collection-points.js';
+import { getOrderCollectionPoint } from '@/services/collection-points.js';
 import { sendWhatsAppDocument } from '@/services/whatsapp.js';
 
 registerBrandFonts();
@@ -145,7 +145,7 @@ export async function generateReceiptPdf(orderNumber: string): Promise<string | 
     if (order.fulfillmentMethod === 'delivery') {
       fulfilment = `Delivery\n${order.deliveryAddress ?? "We'll be in touch with the details."}`;
     } else {
-      const point = await getPrimaryCollectionPoint();
+      const point = await getOrderCollectionPoint(order.collectionPointId);
       fulfilment = point ? `Collection — ${point.name}\n${point.addressLine}` : `Collection\n${env.BUSINESS_NAME}`;
     }
 

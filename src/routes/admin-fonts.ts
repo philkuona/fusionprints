@@ -67,7 +67,23 @@ async function serveFont(request: FastifyRequest, reply: FastifyReply): Promise<
   }
 }
 
+// Brand favicon for the admin pages (served same-origin by the backend). The
+// geometric mark from the wordmark, ink + malachite on a rounded cream tile.
+const ADMIN_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#FBF7F0"/>
+  <g transform="translate(15,10) scale(0.82)">
+    <path d="M0 8 L12 0 L40 0 L40 14 L26 14 L14 22 L14 48 L0 48 Z" fill="#1F1B16"/>
+    <path d="M14 22 L26 14 L40 14 L40 28 Z" fill="#05D668"/>
+  </g>
+</svg>`;
+
 export async function registerAdminFonts(app: FastifyInstance): Promise<void> {
   app.get('/assets/fonts/:file', serveFont);
   app.get('/admin/assets/fonts/:file', serveFont); // alias for older cached admin HTML
+  app.get('/admin/favicon.svg', async (_request, reply) => {
+    reply
+      .header('Content-Type', 'image/svg+xml')
+      .header('Cache-Control', 'public, max-age=86400')
+      .send(ADMIN_FAVICON_SVG);
+  });
 }

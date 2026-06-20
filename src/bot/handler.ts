@@ -215,6 +215,19 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
             break;
           }
 
+          // One photo → ask how many copies (route into the existing quantity
+          // step). Many photos → one print each (a batch), as before.
+          if (sessionData.imageIds.length === 1) {
+            response.nextContext.pendingSize = product.sizeCode;
+            (response.nextContext as { _pendingImageRef?: string })._pendingImageRef = sessionData.imageIds[0];
+            response.nextContext.uploadMode = undefined;
+            (response.nextContext as { _uploadToken?: string })._uploadToken = undefined;
+            await completeSession(token);
+            extraReplies.push(MSG.imageOkNoCheck());
+            response.nextStep = 'choosing_quantity';
+            break;
+          }
+
           // Add each uploaded image as a separate cart item
           const newCart = [...response.nextContext.cart];
           for (const imageId of sessionData.imageIds) {

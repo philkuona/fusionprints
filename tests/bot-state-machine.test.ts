@@ -45,32 +45,18 @@ describe('happy path: greeting to EcoCash push', () => {
     expect(r.nextStep).toBe('choosing_size');
     expect(r.nextContext.pendingProductType).toBe('photo_print');
 
-    // first size → upload mode
+    // first size → straight to the web upload link (the single upload path)
     r = run(r.nextStep, r.nextContext, text('1'));
-    expect(r.nextStep).toBe('choosing_upload_mode');
+    expect(r.nextStep).toBe('awaiting_web_upload');
     expect(r.nextContext.pendingSize).toBe(PHOTO_PRODUCTS[0].sizeCode);
+    expect(r.effects).toEqual([expect.objectContaining({ type: 'create_upload_link' })]);
 
-    // single image mode → awaiting image
-    r = run(r.nextStep, r.nextContext, text('1'));
-    expect(r.nextStep).toBe('awaiting_image');
-
-    // good photo → quantity
-    r = run(r.nextStep, r.nextContext, photo());
-    expect(r.nextStep).toBe('choosing_quantity');
-
-    // 10 copies → cart + add-more-or-checkout
-    r = run(r.nextStep, r.nextContext, text('10'));
-    expect(r.nextStep).toBe('adding_more_or_checkout');
-    expect(r.nextContext.cart).toHaveLength(1);
-    expect(r.nextContext.cart[0]).toMatchObject({
-      sizeCode: PHOTO_PRODUCTS[0].sizeCode,
-      quantity: 10,
-      imageRef: 'img-1',
-    });
-    expect(r.nextContext.pendingSize).toBeUndefined();
+    // The upload is resolved by the (DB-backed) handler, which fills the cart;
+    // resume the pure flow from a seeded cart.
+    const ctx = { ...emptyContext(), cart: [cartItem()] };
 
     // checkout (customer already has a name) → fulfillment
-    r = run(r.nextStep, r.nextContext, text('2'));
+    r = run('adding_more_or_checkout', ctx, text('2'));
     expect(r.nextStep).toBe('choosing_fulfillment');
 
     // collection → order summary

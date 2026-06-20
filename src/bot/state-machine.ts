@@ -637,13 +637,16 @@ function handleChoosingSize(text: string, context: BotContext): BotResponse {
   }
 
   const product = products[choice - 1];
-  const priceLabel = `$${product.unitPriceUsd.toFixed(2)}`;
 
-  return reply(
-    MSG.chooseUploadModeInteractive(product.displayLabel, priceLabel),
-    'choosing_upload_mode',
-    { ...context, pendingSize: product.sizeCode },
-  );
+  // One upload path now: the web link (single button). Old document modes are
+  // retired; handleChoosingUploadMode is kept only for in-flight conversations.
+  // The create_upload_link effect sends the customer the upload link message.
+  return {
+    replies: [],
+    nextStep: 'awaiting_web_upload',
+    nextContext: { ...context, pendingSize: product.sizeCode, uploadMode: 'web' },
+    effects: [{ type: 'create_upload_link', sizeCode: product.sizeCode, displayLabel: product.displayLabel }],
+  };
 }
 
 function handleChoosingUploadMode(text: string, context: BotContext): BotResponse {

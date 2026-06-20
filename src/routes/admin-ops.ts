@@ -117,6 +117,7 @@ header {
 }
 .nav-tab:hover { color: var(--text); background: var(--bg); }
 .nav-tab.active { color: var(--accent); background: var(--bg); }
+.nav-logout { margin-left: auto; }
 
 main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 
@@ -233,6 +234,7 @@ function pageHtml(
       ${isOperator ? '' : `<a href="/admin/promos" class="nav-tab">Promos</a>`}
       ${isOperator ? '' : `<a href="/admin/pricing" class="nav-tab">Pricing</a>`}
       ${isOperator ? '' : `<a href="/admin/qbo" class="nav-tab">QuickBooks</a>`}
+      <a href="/admin/logout" class="nav-tab nav-logout">Logout</a>
     </nav>
   <button class="hamburger" id="hamburger-btn" onclick="toggleMobileNav()">&#9776;</button>
   </header>
@@ -241,6 +243,7 @@ function pageHtml(
     <a href="/admin/printers" class="${active === 'printers' ? 'active' : ''}">Printers and Configuration</a>
     ${isOperator ? '' : `<a href="/admin/metrics" class="${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
     ${isOperator ? '' : '<a href="/admin/qbo">QuickBooks</a>'}
+    <a href="/admin/logout">Logout</a>
   </div>
   <script>
     function toggleMobileNav() {
@@ -621,11 +624,14 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
   let table: string;
   if (tab === 'completed') {
     const rows = await getCompletedOrdersList();
+    // Operators don't see order amounts (consistent with the hidden Total in the
+    // detail modal + the redacted revenue stats).
+    const showTotal = role !== 'operator';
     table = `<table class="om">
-      <thead><tr><th>Date</th><th>Order #</th><th>Name</th><th>Status</th><th>Total</th><th>Fulfilment</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Order #</th><th>Name</th><th>Status</th>${showTotal ? '<th>Total</th>' : ''}<th>Fulfilment</th><th></th></tr></thead>
       <tbody>${
         rows.length === 0
-          ? '<tr><td colspan="7" class="om-empty">No completed orders.</td></tr>'
+          ? `<tr><td colspan="${showTotal ? 7 : 6}" class="om-empty">No completed orders.</td></tr>`
           : rows
               .map(
                 (o) => `<tr>
@@ -633,7 +639,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
         <td class="om-mono">${o.orderNumber}</td>
         <td>${o.name ?? '<span style="color:#8a7b66">—</span>'}</td>
         <td><span class="om-badge">${o.status.replace(/_/g, ' ')}</span></td>
-        <td class="om-mono">$${parseFloat(o.totalUsd).toFixed(2)}</td>
+        ${showTotal ? `<td class="om-mono">$${parseFloat(o.totalUsd).toFixed(2)}</td>` : ''}
         <td>${o.fulfillmentMethod === 'delivery' ? '🚚 Delivery' : '🏪 Collection'}</td>
         <td><a class="om-link" href="#" onclick="showOrder('${o.id}');return false;">View</a></td>
       </tr>`,

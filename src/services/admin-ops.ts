@@ -200,7 +200,9 @@ export async function getPrinterStatus(): Promise<PrinterStatusInfo[]> {
       id: p.id,
       name: p.name,
       type: p.printerType,
-      status: p.status,
+      // If we haven't heard from the agent recently, the stored status is stale —
+      // report 'offline' rather than a frozen 'online' from hours ago.
+      status: staleness === 'online' ? p.status : 'offline',
       lastHeartbeat: p.lastHeartbeatAt,
       staleness,
       mediaRemaining: null, // not tracked in current schema

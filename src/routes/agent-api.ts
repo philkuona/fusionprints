@@ -22,6 +22,11 @@ import { getSignedImageUrl } from '@/services/image-storage.js';
 import { getProduct, type PrintLayout } from '@/config/catalog.js';
 import { getDnpMediaMode, mediaForPrinterType } from '@/services/store-settings.js';
 
+// Max times a transient (printer offline / unreachable) failure requeues a job
+// before we give up and mark it failed. High enough to ride out a printer being
+// off for a while; bounded so a job that fails every single poll can't hot-loop.
+const OFFLINE_REQUEUE_MAX = 30;
+
 // ===== Auth =====
 
 function checkAgentAuth(request: FastifyRequest, reply: FastifyReply): boolean {
@@ -552,39 +557,43 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/agent/jobs/:id/fail', async (request, reply) => {
     if (!checkAgentAuth(request, reply)) return;
     const { id } = request.params as { id: string };
-    const { reason } = request.body as { reason: string };
+    const { reason, retryable } = request.body as { reason: string; retryable?: boolean };
+
+    // A printer being offline/unreachable is TRANSIENT — keep the job queued so
+    // it dispatches FIFO once a printer is back, instead of hard-failing it.
+    // Honour an explicit `retryable` flag from the agent, else detect
+    // connectivity-style reasons. Capped so a genuinely stuck job (the same one
+    // failing every poll) eventually surfaces as failed rather than hot-looping.
+    const transient =
+      retryable === true ||
+      /offline|not responding|unreachable|no printer|disconnect|connection|timed?\s*out|timeout/i.test(reason ?? '');
 
     try {
-      // Try print_jobs first
-      const printJobUpdate = await db
-        .update(printJobs)
-        .set({
-          status: 'failed',
-          errorMessage: reason,
-          attempts: 1,
-        })
-        .where(eq(printJobs.id, id))
-        .returning({ id: printJobs.id });
-
-      if (printJobUpdate.length > 0) {
-        logger.error({ jobId: id, reason }, 'Print job failed');
-        return { ok: true };
+      // print_jobs first, then slip_jobs — read attempts so we can cap requeues.
+      const [pj] = await db.select({ attempts: printJobs.attempts }).from(printJobs).where(eq(printJobs.id, id)).limit(1);
+      if (pj) {
+        const attempts = pj.attempts + 1;
+        const requeue = transient && attempts < OFFLINE_REQUEUE_MAX;
+        await db
+          .update(printJobs)
+          .set({ status: requeue ? 'queued' : 'failed', errorMessage: reason, attempts })
+          .where(eq(printJobs.id, id));
+        if (requeue) logger.warn({ jobId: id, reason, attempts }, 'Print job requeued (printer offline/transient) — will retry FIFO');
+        else logger.error({ jobId: id, reason, attempts }, 'Print job failed');
+        return { ok: true, status: requeue ? 'queued' : 'failed' };
       }
 
-      // Try slip_jobs
-      const slipJobUpdate = await db
-        .update(slipJobs)
-        .set({
-          status: 'failed',
-          errorMessage: reason,
-          attempts: 1,
-        })
-        .where(eq(slipJobs.id, id))
-        .returning({ id: slipJobs.id });
-
-      if (slipJobUpdate.length > 0) {
-        logger.error({ slipJobId: id, reason }, 'Slip job failed');
-        return { ok: true };
+      const [sj] = await db.select({ attempts: slipJobs.attempts }).from(slipJobs).where(eq(slipJobs.id, id)).limit(1);
+      if (sj) {
+        const attempts = sj.attempts + 1;
+        const requeue = transient && attempts < OFFLINE_REQUEUE_MAX;
+        await db
+          .update(slipJobs)
+          .set({ status: requeue ? 'queued' : 'failed', errorMessage: reason, attempts })
+          .where(eq(slipJobs.id, id));
+        if (requeue) logger.warn({ slipJobId: id, reason, attempts }, 'Slip job requeued (printer offline/transient) — will retry FIFO');
+        else logger.error({ slipJobId: id, reason, attempts }, 'Slip job failed');
+        return { ok: true, status: requeue ? 'queued' : 'failed' };
       }
 
       return reply.status(404).send({ error: 'Job not found' });

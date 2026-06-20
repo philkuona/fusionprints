@@ -177,7 +177,14 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
       const orderNumber = event.data?.object?.metadata?.order_number;
       logger.info({ type, orderNumber: orderNumber ?? null }, 'Payonify webhook event');
 
-      if (type.endsWith('.succeeded') && orderNumber) {
+      // Scope to PAYMENT lifecycle events only. `endsWith('.succeeded')` also
+      // matched `refund.succeeded` — and our own refundPayment() sets the order
+      // number in metadata, so a refund would have re-run fulfilment and flipped
+      // the payment back to success. Same trap for `.failed` (refund.failed).
+      const isPaymentSucceeded = type === 'checkout.succeeded' || type === 'charge.succeeded';
+      const isPaymentFailed = type === 'checkout.failed' || type === 'charge.failed';
+
+      if (isPaymentSucceeded && orderNumber) {
         try {
           await fulfilPaidOrder(
             orderNumber,
@@ -191,7 +198,7 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
           logger.error({ orderNumber, err }, 'Payonify webhook: fulfilment failed');
           return reply.status(500).send({ error: 'processing_failed' });
         }
-      } else if (type.endsWith('.failed') && orderNumber) {
+      } else if (isPaymentFailed && orderNumber) {
         try {
           await markPaymentFailed(orderNumber, raw);
         } catch (err) {

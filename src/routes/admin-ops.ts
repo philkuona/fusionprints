@@ -147,7 +147,7 @@ function metricsPageHtml(): string {
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
           <div class="card">
             <div style="font-weight:600;margin-bottom:14px;">Daily revenue (14 days)</div>
             \${renderDailyChart(d.dailyRevenue)}
@@ -348,7 +348,7 @@ function printersPageHtml(role: AdminRole = 'full'): string {
             </div>
           </div>
 
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:14px;margin-top:16px;">
             <div>
               <div class="muted" style="font-size:11px;">Status</div>
               <div style="font-family:'DM Mono',monospace;margin-top:2px;">\${p.status}</div>
@@ -602,7 +602,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
       @media (max-width:768px) { .modal-overlay { padding:0; align-items:flex-end; } .modal { max-width:100%; max-height:92vh; border-radius:14px 14px 0 0; } }
     </style>
     ${tabBar}
-    <div id="om-content">${table}</div>
+    <div id="om-content" class="scroll-x">${table}</div>
 
     <!-- Order detail modal -->
     <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">

@@ -167,18 +167,33 @@ th { color: var(--text2); font-size: 11px; text-transform: uppercase; letter-spa
 .muted { color: var(--text2); font-size: 14px; }
 .mono { font-family: 'DM Mono', monospace; }
 
+.logo { text-decoration: none; }            /* it's an <a> home link */
+
 /* ---- Mobile nav ---- */
 .hamburger { display: none; background: none; border: 1px solid var(--border); color: var(--text); padding: 6px 11px; border-radius: 8px; cursor: pointer; font-size: 20px; line-height: 1; }
-.mobile-nav { display: none; position: fixed; top: 57px; left: 0; right: 0; background: var(--surface); border-bottom: 1px solid var(--border); z-index: 999; padding: 8px 0; box-shadow: 0 8px 24px rgba(31,27,22,0.12); }
+.mobile-nav { display: none; position: fixed; top: 56px; left: 0; right: 0; background: var(--surface); border-bottom: 1px solid var(--border); z-index: 999; padding: 6px 0; box-shadow: 0 10px 28px rgba(31,27,22,0.16); max-height: calc(100vh - 56px); overflow-y: auto; }
 .mobile-nav.open { display: block; }
-.mobile-nav a { display: block; padding: 14px 20px; color: var(--text2); text-decoration: none; font-size: 15px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.mobile-nav a { display: block; padding: 14px 20px; color: var(--text2); text-decoration: none; font-size: 16px; font-weight: 600; border-bottom: 1px solid var(--border); }
 .mobile-nav a:last-child { border-bottom: none; }
 .mobile-nav a.active, .mobile-nav a:hover { background: var(--surface2); color: var(--text); }
+
+/* ---- Responsive helpers + wide-table scroll ---- */
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 820px) {
+  header { position: sticky; top: 0; z-index: 1000; }
+  .logo svg { height: 28px; }
+  .page-title, h1 { font-size: 22px; }
+  .card { padding: 16px; border-radius: 10px; }
+  main table { font-size: 13px; }
+  th, td { padding: 9px 10px; }
+}
 @media (max-width: 768px) {
   .nav-tabs { display: none !important; }
   .hamburger { display: block; }
   header { padding: 10px 14px; }
-  main { padding: 16px 14px; }
+  main { padding: 14px 12px; }
+  .btn, .action-btn { padding: 8px 14px; }   /* easier tap targets */
 }
 `;
 
@@ -201,10 +216,10 @@ function adminHeader(active: AdminNavKey, role: AdminRole): string {
   const tab = (href: string, key: AdminNavKey, label: string) =>
     `<a href="${href}" class="nav-tab ${active === key ? 'active' : ''}">${label}</a>`;
   return `<header>
-    <div class="logo">
+    <a class="logo" href="/admin" aria-label="FusionPrints Admin home">
       ${adminLogoSvg()}
       <span class="admin-tag">${isOperator ? 'operator' : 'admin'}</span>
-    </div>
+    </a>
     <nav class="nav-tabs">
       ${tab('/admin/jobs', 'jobs', 'Order Management')}
       ${tab('/admin/printers', 'printers', 'Printers and Configuration')}
@@ -253,7 +268,8 @@ export function adminShell(opts: {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} — FusionPrints Admin</title>
+  <title>FusionPrints Admin — ${title}</title>
+  <link rel="icon" type="image/svg+xml" href="/admin/favicon.svg">
   <style>${ADMIN_THEME_CSS}${extraCss}</style>
 </head>
 <body>

@@ -24,10 +24,27 @@ import { notifyCustomerOfPayment } from '@/routes/payment-webhooks.js';
 
 interface PayonifyEvent {
   type?: string;
-  data?: { object?: { id?: string; metadata?: Record<string, string> } };
+  data?: { object?: { id?: string; metadata?: Record<string, string>; payment_method?: string } };
 }
 
-async function fulfilPaidOrder(orderNumber: string, reference: string, rawPayload: string): Promise<void> {
+/**
+ * Map Payonify's payment_method to our internal value, which drives the QBO
+ * deposit account (services/qbo.ts depositAccountId): 'card' → Payonify account,
+ * 'ecocash' → EcoCash Business account, anything else → Cash on Hand.
+ * Decision (2026-06-19): keep EcoCash on its own account; only card → Payonify.
+ */
+function mapPayonifyMethod(method: string | undefined): string | null {
+  if (method === 'card') return 'card';
+  if (method === 'mobile_money') return 'ecocash'; // EcoCash / OneMoney USSD
+  return null;
+}
+
+async function fulfilPaidOrder(
+  orderNumber: string,
+  reference: string,
+  rawPayload: string,
+  paymentMethod: string | null,
+): Promise<void> {
   const order = await getOrderByNumber(orderNumber);
   if (!order) {
     logger.warn({ orderNumber }, 'Payonify webhook: no matching order');
@@ -55,7 +72,14 @@ async function fulfilPaidOrder(orderNumber: string, reference: string, rawPayloa
       .for('update');
     await tx
       .update(payments)
-      .set({ status: 'success', completedAt: new Date(), webhookPayload: payload })
+      .set({
+        status: 'success',
+        completedAt: new Date(),
+        webhookPayload: payload,
+        // Record the real method so QBO deposits to the right account. Only set
+        // when known — don't overwrite an existing value with null.
+        ...(paymentMethod ? { paymentMethod } : {}),
+      })
       .where(eq(payments.orderId, order.id));
     if (locked?.status === 'pending_payment') {
       await tx.update(orders).set({ status: 'paid', paidAt: new Date() }).where(eq(orders.id, order.id));
@@ -133,7 +157,12 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
 
       if (type.endsWith('.succeeded') && orderNumber) {
         try {
-          await fulfilPaidOrder(orderNumber, event.data?.object?.id ?? orderNumber, raw);
+          await fulfilPaidOrder(
+            orderNumber,
+            event.data?.object?.id ?? orderNumber,
+            raw,
+            mapPayonifyMethod(event.data?.object?.payment_method),
+          );
         } catch (err) {
           // 500 → Payonify retries. Idempotency guard makes retries safe.
           logger.error({ orderNumber, err }, 'Payonify webhook: fulfilment failed');

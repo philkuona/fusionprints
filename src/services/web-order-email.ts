@@ -78,14 +78,21 @@ export async function sendWebOrderConfirmation(orderNumber: string): Promise<voi
 
   try {
     const resend = new Resend(env.RESEND_API_KEY);
-    await resend.emails.send({
+    // resend.emails.send() returns { error } instead of throwing on API errors.
+    // Only mark the receipt as sent when it actually succeeded, so a rejected
+    // send (e.g. bad API key) doesn't permanently suppress the confirmation.
+    const { data, error } = await resend.emails.send({
       from: 'FusionPrints <noreply@fusionprints.co.zw>',
       to: user.email,
       subject: `Order ${orderNumber} confirmed`,
       html,
     });
+    if (error) {
+      logger.error({ orderNumber, to: user.email, error }, 'Resend rejected web order confirmation email');
+      return;
+    }
     await db.update(orders).set({ receiptSentAt: new Date() }).where(eq(orders.id, order.id));
-    logger.info({ orderNumber, to: user.email }, 'Sent web order confirmation email');
+    logger.info({ orderNumber, to: user.email, id: data?.id }, 'Sent web order confirmation email');
   } catch (err) {
     logger.error({ orderNumber, err }, 'Failed to send web order confirmation email');
   }

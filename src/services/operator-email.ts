@@ -43,13 +43,19 @@ export async function sendFiveBySevenOperatorEmail(
 
   try {
     const resend = new Resend(env.RESEND_API_KEY);
-    await resend.emails.send({
+    // resend.emails.send() does NOT throw on API errors — it returns { error }.
+    // Must inspect it, or a rejected send (e.g. bad API key) looks like success.
+    const { data, error } = await resend.emails.send({
       from: 'FusionPrints <noreply@fusionprints.co.zw>',
       to: env.OPERATOR_ALERT_EMAIL,
       subject: `🟡 5×7 media swap needed — Order ${orderNumber}`,
       html,
     });
-    logger.info({ orderNumber, to: env.OPERATOR_ALERT_EMAIL }, 'Sent 5×7 operator alert email');
+    if (error) {
+      logger.error({ orderNumber, to: env.OPERATOR_ALERT_EMAIL, error }, 'Resend rejected 5×7 operator alert email');
+      return;
+    }
+    logger.info({ orderNumber, to: env.OPERATOR_ALERT_EMAIL, id: data?.id }, 'Sent 5×7 operator alert email');
   } catch (err) {
     logger.error({ orderNumber, err }, 'Failed to send 5×7 operator alert email');
   }

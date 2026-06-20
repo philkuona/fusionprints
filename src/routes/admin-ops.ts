@@ -228,7 +228,7 @@ function pageHtml(
     </div>
     <nav class="nav-tabs">
       <a href="/admin/jobs" class="nav-tab ${active === 'jobs' ? 'active' : ''}">Order Management</a>
-      <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers</a>
+      <a href="/admin/printers" class="nav-tab ${active === 'printers' ? 'active' : ''}">Printers and Configuration</a>
       ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
       ${isOperator ? '' : `<a href="/admin/promos" class="nav-tab">Promos</a>`}
       ${isOperator ? '' : `<a href="/admin/pricing" class="nav-tab">Pricing</a>`}
@@ -238,7 +238,7 @@ function pageHtml(
   </header>
   <div class="mobile-nav" id="mobile-nav">
     <a href="/admin/jobs" class="${active === 'jobs' ? 'active' : ''}">Order Management</a>
-    <a href="/admin/printers" class="${active === 'printers' ? 'active' : ''}">Printers</a>
+    <a href="/admin/printers" class="${active === 'printers' ? 'active' : ''}">Printers and Configuration</a>
     ${isOperator ? '' : `<a href="/admin/metrics" class="${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
     ${isOperator ? '' : '<a href="/admin/qbo">QuickBooks</a>'}
   </div>
@@ -284,8 +284,6 @@ function metricsPageHtml(): string {
   <div class="page-sub" style="margin:-8px 0 8px;">Live operations snapshot</div>
   <div id="ops-snapshot" class="ops-snapshot"><div class="loading">Loading…</div></div>
 
-  <div id="dnp-media-bar" style="margin:8px 0;"></div>
-
   <div id="content"><div class="loading">Loading metrics...</div></div>
 
   <script>
@@ -301,39 +299,7 @@ function metricsPageHtml(): string {
         + '<div class="ops-card"><div class="l">Ready to collect</div><div class="v blue">' + (s.readyForCollection ?? 0) + '</div></div>'
         + '<div class="ops-card"><div class="l">In print queue</div><div class="v yellow">' + (s.queuedForPrint ?? 0) + '</div></div>'
         + '<div class="ops-card"><div class="l">Pending payment</div><div class="v">' + (s.pendingPayment ?? 0) + '</div></div>';
-        renderDnpMediaBar(s.dnpMediaMode || '6x8', s.pending5x7 ?? 0);
       } catch (e) { /* leave placeholder */ }
-    }
-
-    // DNP media-mode control. The single DNP prints one media family at a time;
-    // 5×7 jobs are held until the operator loads 5×7 media and switches mode here.
-    function renderDnpMediaBar(mode, pending) {
-      const bar = document.getElementById('dnp-media-bar');
-      if (!bar) return;
-      if (mode === '5x7') {
-        bar.innerHTML =
-          '<div style="background:#7c2d12;border:1px solid var(--accent);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
-          + '<div><strong>⚠️ DNP is in 5×7 mode</strong> — regular 4×6/6×8 prints are PAUSED. Print the 5×7 batch, then switch back.</div>'
-          + '<button class="action-btn" style="background:#16a34a;color:#fff;" onclick="setDnpMode(\\'6x8\\')">↩ Switch back to 6×8</button>'
-          + '</div>';
-      } else {
-        const hot = pending > 0;
-        bar.innerHTML =
-          '<div style="background:#111827;border:1px solid ' + (hot ? 'var(--accent)' : '#374151') + ';border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
-          + '<div>DNP media: <strong>6×8</strong> · ' + (hot ? '<span style="color:var(--accent);font-weight:600;">' + pending + ' held 5×7 print(s) waiting</span>' : 'no 5×7 waiting') + '</div>'
-          + (hot ? '<button class="action-btn" style="background:var(--accent);color:#fff;" onclick="setDnpMode(\\'5x7\\')">🔁 Switch to 5×7 &amp; print held batch</button>' : '')
-          + '</div>';
-      }
-    }
-
-    async function setDnpMode(mode) {
-      const msg = mode === '5x7'
-        ? 'Switch DNP to 5×7 mode?\\n\\nLoad 5×7 media on the printer FIRST. This releases the held 5×7 jobs and PAUSES regular 4×6/6×8 prints until you switch back.'
-        : 'Switch DNP back to 6×8 mode?\\n\\nReload 6×8 media. Regular prints resume; any remaining 5×7 jobs are held again.';
-      if (!confirm(msg)) return;
-      const r = await fetch('/admin/api/dnp-media-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: mode }) });
-      if (!r.ok) { alert('Failed to change DNP media mode'); return; }
-      loadSnapshot();
     }
 
     async function loadMetrics() {
@@ -496,14 +462,16 @@ function metricsPageHtml(): string {
 function printersPageHtml(role: AdminRole = 'full'): string {
   const body = `
   <div class="page-header">
-    <div class="page-title">🖨️ Printer Status</div>
-    <div class="page-sub">Live status from print agents. Heartbeats arrive every 30 seconds.</div>
+    <div class="page-title">🖨️ Printers and Configuration</div>
+    <div class="page-sub">Printer status (heartbeats every 30s) and the DNP media-mode control.</div>
   </div>
 
   <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;">
     <button class="btn" onclick="loadPrinters()">↻ Refresh</button>
     ${role === 'operator' ? '' : '<button class="btn" onclick="resetStuck()">🔧 Reset stuck jobs</button>'}
   </div>
+
+  <div id="dnp-media-bar" style="margin:0 0 16px;"></div>
 
   <div id="content"><div class="loading">Loading printers...</div></div>
 
@@ -574,9 +542,52 @@ function printersPageHtml(role: AdminRole = 'full'): string {
       alert('Reset ' + data.count + ' stuck job(s).');
     }
 
+    // DNP media-mode control. The single DNP prints one media family at a time;
+    // 5×7 jobs are held until the operator loads 5×7 media and switches mode here.
+    // An operational control — visible to both operators and admins.
+    async function loadMediaBar() {
+      try {
+        const r = await fetch('/admin/api/stats');
+        if (!r.ok) return;
+        const s = await r.json();
+        renderDnpMediaBar(s.dnpMediaMode || '6x8', s.pending5x7 ?? 0);
+      } catch (e) { /* leave placeholder */ }
+    }
+
+    function renderDnpMediaBar(mode, pending) {
+      const bar = document.getElementById('dnp-media-bar');
+      if (!bar) return;
+      if (mode === '5x7') {
+        bar.innerHTML =
+          '<div style="background:#7c2d12;border:1px solid var(--accent);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
+          + '<div><strong>⚠️ DNP is in 5×7 mode</strong> — regular 4×6/6×8 prints are PAUSED. Print the 5×7 batch, then switch back.</div>'
+          + '<button class="action-btn" style="background:#16a34a;color:#fff;" onclick="setDnpMode(\\'6x8\\')">↩ Switch back to 6×8</button>'
+          + '</div>';
+      } else {
+        const hot = pending > 0;
+        bar.innerHTML =
+          '<div style="background:#111827;border:1px solid ' + (hot ? 'var(--accent)' : '#374151') + ';border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
+          + '<div>DNP media: <strong>6×8</strong> · ' + (hot ? '<span style="color:var(--accent);font-weight:600;">' + pending + ' held 5×7 print(s) waiting</span>' : 'no 5×7 waiting') + '</div>'
+          + (hot ? '<button class="action-btn" style="background:var(--accent);color:#fff;" onclick="setDnpMode(\\'5x7\\')">🔁 Switch to 5×7 &amp; print held batch</button>' : '')
+          + '</div>';
+      }
+    }
+
+    async function setDnpMode(mode) {
+      const msg = mode === '5x7'
+        ? 'Switch DNP to 5×7 mode?\\n\\nLoad 5×7 media on the printer FIRST. This releases the held 5×7 jobs and PAUSES regular 4×6/6×8 prints until you switch back.'
+        : 'Switch DNP back to 6×8 mode?\\n\\nReload 6×8 media. Regular prints resume; any remaining 5×7 jobs are held again.';
+      if (!confirm(msg)) return;
+      const r = await fetch('/admin/api/dnp-media-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: mode }) });
+      if (!r.ok) { alert('Failed to change DNP media mode'); return; }
+      loadMediaBar();
+    }
+
     loadPrinters();
+    loadMediaBar();
     // Auto-refresh every 15 seconds
     setInterval(loadPrinters, 15000);
+    setInterval(loadMediaBar, 15000);
   </script>
 
   <style>
@@ -585,7 +596,7 @@ function printersPageHtml(role: AdminRole = 'full'): string {
       50% { opacity: 0.3; }
     }
   </style>`;
-  return pageHtml('printers', 'Printers', body, role);
+  return pageHtml('printers', 'Printers and Configuration', body, role);
 }
 
 

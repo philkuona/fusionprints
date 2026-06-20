@@ -1,36 +1,61 @@
 /**
- * Web order confirmation email (Phase 2.3 W6).
+ * Branded order receipt email — both channels.
  *
- * Sent once, when a web order's payment is confirmed. Idempotent via
- * orders.receiptSentAt. Best-effort: failures are logged, never thrown, so they
- * can't roll back a paid order.
+ * Sent once when an order's payment is confirmed, to whoever has an email on
+ * file: a web user (always) or a WhatsApp customer who gave one (optional). The
+ * in-chat plain-text confirmation is sent separately for WhatsApp. Idempotent via
+ * orders.receiptSentAt. Best-effort: failures are logged, never thrown.
  */
 import { Resend } from 'resend';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, webUsers } from '@/db/schema.js';
+import { orders, orderItems, webUsers, customers } from '@/db/schema.js';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { getProduct } from '@/config/catalog.js';
+import { getPrimaryCollectionPoint } from '@/services/collection-points.js';
 
 function money(v: string | number): string {
   return `$${Number(v).toFixed(2)}`;
 }
 
-export async function sendWebOrderConfirmation(orderNumber: string): Promise<void> {
+/**
+ * Send the branded receipt for a paid order (web or WhatsApp). No-ops if there's
+ * no recipient email, no Resend key, or it was already sent.
+ */
+export async function sendOrderReceipt(orderNumber: string): Promise<void> {
   const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
-  if (!order || order.channel !== 'web' || !order.webUserId) return;
+  if (!order) return;
   if (order.receiptSentAt) return; // already sent
 
-  const [user] = await db
-    .select({ email: webUsers.email, displayName: webUsers.displayName })
-    .from(webUsers)
-    .where(eq(webUsers.id, order.webUserId))
-    .limit(1);
-  if (!user?.email) return;
+  // Resolve the recipient email + first name from whichever channel the order
+  // came through. WhatsApp customers may have no email (it's optional) — then
+  // there's nothing to send here (they got the in-chat confirmation instead).
+  let email: string | null = null;
+  let firstName = 'there';
+  let isWeb = false;
+  if (order.channel === 'web' && order.webUserId) {
+    const [u] = await db
+      .select({ email: webUsers.email, displayName: webUsers.displayName })
+      .from(webUsers)
+      .where(eq(webUsers.id, order.webUserId))
+      .limit(1);
+    email = u?.email ?? null;
+    firstName = u?.displayName?.split(/\s+/)[0] ?? 'there';
+    isWeb = true;
+  } else if (order.customerId) {
+    const [c] = await db
+      .select({ email: customers.email, name: customers.name })
+      .from(customers)
+      .where(eq(customers.id, order.customerId))
+      .limit(1);
+    email = c?.email ?? null;
+    firstName = c?.name?.split(/\s+/)[0] ?? 'there';
+  }
+  if (!email) return;
 
   if (!env.RESEND_API_KEY) {
-    logger.warn({ orderNumber }, 'No RESEND_API_KEY; skipping order confirmation email');
+    logger.warn({ orderNumber }, 'No RESEND_API_KEY; skipping order receipt email');
     return;
   }
 
@@ -46,13 +71,23 @@ export async function sendWebOrderConfirmation(orderNumber: string): Promise<voi
     })
     .join('');
 
-  const fulfilment = order.fulfillmentMethod === 'delivery' ? 'Delivery' : 'Collection';
-  const trackUrl = `${env.WEB_URL}/account/orders/${orderNumber}`;
-  const name = user.displayName?.split(/\s+/)[0] ?? 'there';
+  const isDelivery = order.fulfillmentMethod === 'delivery';
+  let fulfilmentLine: string;
+  if (isDelivery) {
+    fulfilmentLine = "<strong>Delivery.</strong> We'll be in touch with delivery details.";
+  } else {
+    const point = await getPrimaryCollectionPoint();
+    const where = point ? `${point.name}, ${point.addressLine}` : env.BUSINESS_NAME;
+    fulfilmentLine = `<strong>Collection.</strong> We'll let you know the moment it's ready to collect at <strong>${where}</strong>.`;
+  }
+
+  const cta = isWeb
+    ? `<a href="${env.WEB_URL}/account/orders/${orderNumber}" style="display:inline-block;margin-top:16px;background:#05d668;color:#1f1b16;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:999px;">Track your order</a>`
+    : '';
 
   const html = `
   <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;background:#fbf7f0;padding:32px 24px;color:#1f1b16;">
-    <h1 style="font-size:22px;margin:0 0 4px;">Thanks, ${name}. Your order is confirmed.</h1>
+    <h1 style="font-size:22px;margin:0 0 4px;">Thanks, ${firstName}. Your order is confirmed.</h1>
     <p style="color:#4a3f32;margin:0 0 24px;">Payment received. We print everything ourselves, so your order is already on its way to the printer.</p>
 
     <div style="background:#ffffff;border:1px solid #e7ded0;border-radius:14px;padding:20px;">
@@ -65,35 +100,28 @@ export async function sendWebOrderConfirmation(orderNumber: string): Promise<voi
       </table>
     </div>
 
-    <p style="color:#4a3f32;margin:20px 0 4px;"><strong>${fulfilment}.</strong> ${
-      order.fulfillmentMethod === 'delivery'
-        ? "We'll be in touch with delivery details."
-        : "We'll let you know the moment it's ready for pickup."
-    } Most orders are ready within 24 hours.</p>
-
-    <a href="${trackUrl}" style="display:inline-block;margin-top:16px;background:#05d668;color:#1f1b16;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:999px;">Track your order</a>
-
+    <p style="color:#4a3f32;margin:20px 0 4px;">${fulfilmentLine} Most orders are ready within 24 hours.</p>
+    ${cta}
     <p style="color:#8a7b66;font-size:12px;margin-top:28px;">FusionPrints. Hold the moment.</p>
   </div>`;
 
   try {
     const resend = new Resend(env.RESEND_API_KEY);
     // resend.emails.send() returns { error } instead of throwing on API errors.
-    // Only mark the receipt as sent when it actually succeeded, so a rejected
-    // send (e.g. bad API key) doesn't permanently suppress the confirmation.
+    // Only mark the receipt sent when it actually succeeded.
     const { data, error } = await resend.emails.send({
       from: 'FusionPrints <noreply@fusionprints.co.zw>',
-      to: user.email,
+      to: email,
       subject: `Order ${orderNumber} confirmed`,
       html,
     });
     if (error) {
-      logger.error({ orderNumber, to: user.email, error }, 'Resend rejected web order confirmation email');
+      logger.error({ orderNumber, to: email, error }, 'Resend rejected order receipt email');
       return;
     }
     await db.update(orders).set({ receiptSentAt: new Date() }).where(eq(orders.id, order.id));
-    logger.info({ orderNumber, to: user.email, id: data?.id }, 'Sent web order confirmation email');
+    logger.info({ orderNumber, to: email, channel: order.channel, id: data?.id }, 'Sent order receipt email');
   } catch (err) {
-    logger.error({ orderNumber, err }, 'Failed to send web order confirmation email');
+    logger.error({ orderNumber, err }, 'Failed to send order receipt email');
   }
 }

@@ -19,7 +19,7 @@ import { payments, orders } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { verifyWebhookSignature } from '@/services/payonify.js';
 import { markOrderPaid, getOrderByNumber } from '@/services/order.js';
-import { sendWebOrderConfirmation } from '@/services/web-order-email.js';
+import { sendOrderReceipt } from '@/services/web-order-email.js';
 import { notifyCustomerOfPayment } from '@/routes/payment-webhooks.js';
 
 interface PayonifyEvent {
@@ -92,11 +92,12 @@ async function fulfilPaidOrder(
   // Post-commit side effects (idempotent: enqueue checks for existing jobs).
   // markOrderPaid re-sets status (harmless) and enqueues print jobs + slips.
   await markOrderPaid(orderNumber, reference);
-  if (order.channel === 'web') {
-    await sendWebOrderConfirmation(orderNumber).catch((err: unknown) => {
-      logger.error({ err, orderNumber }, 'Order confirmation email failed');
-    });
-  } else {
+  // Branded receipt email — both channels (self-guards on email presence).
+  await sendOrderReceipt(orderNumber).catch((err: unknown) => {
+    logger.error({ err, orderNumber }, 'Order receipt email failed');
+  });
+  // In-chat plain-text confirmation for WhatsApp customers.
+  if (order.channel !== 'web') {
     await notifyCustomerOfPayment(orderNumber).catch((err: unknown) => {
       logger.error({ err, orderNumber }, 'WhatsApp payment notification failed');
     });

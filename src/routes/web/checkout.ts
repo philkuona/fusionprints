@@ -23,7 +23,7 @@ import {
   type CreateWebOrderItem,
 } from '@/services/order.js';
 import { initiateWebPayment } from '@/services/web-payment.js';
-import { sendWebOrderConfirmation } from '@/services/web-order-email.js';
+import { sendOrderReceipt } from '@/services/web-order-email.js';
 import { logger } from '@/utils/logger.js';
 
 const compositeLayoutSchema = z.object({
@@ -286,9 +286,9 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
           .set({ status: 'success', completedAt: new Date() })
           .where(eq(payments.orderId, order.id));
         await markOrderPaid(order.orderNumber, `VIRT-${order.orderNumber}`);
-        // Confirmation email — best effort, never blocks the response.
-        await sendWebOrderConfirmation(order.orderNumber).catch((err: unknown) => {
-          logger.error({ err, orderNumber: order.orderNumber }, 'Order confirmation email failed');
+        // Branded receipt email — best effort, never blocks the response.
+        await sendOrderReceipt(order.orderNumber).catch((err: unknown) => {
+          logger.error({ err, orderNumber: order.orderNumber }, 'Order receipt email failed');
         });
       }
       return reply.send({ status: 'paid', orderNumber });

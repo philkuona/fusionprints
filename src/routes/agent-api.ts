@@ -15,7 +15,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { eq, and, desc, sql, lt } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { orders, orderItems, printJobs, printers, images, customers, conversationState, slipJobs, processedImages } from '@/db/schema.js';
+import { orders, orderItems, printJobs, printers, images, customers, conversationState, slipJobs, processedImages, type InkLevel } from '@/db/schema.js';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
@@ -632,6 +632,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
       status: 'online' | 'offline' | 'media_low' | 'error';
       currentMedia?: string;
       errorMessage?: string;
+      inkLevels?: InkLevel[] | null;
     };
 
     try {
@@ -641,6 +642,9 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
           status: body.status,
           currentMedia: body.currentMedia ?? null,
           lastHeartbeatAt: new Date(),
+          // Only overwrite ink when the agent reports it — a heartbeat without an
+          // ink read (e.g. unknown / DNP) must not wipe a prior good reading.
+          ...(body.inkLevels !== undefined ? { inkLevels: body.inkLevels } : {}),
         })
         .where(eq(printers.id, id));
 

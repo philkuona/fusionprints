@@ -300,6 +300,29 @@ function printersPageHtml(role: AdminRole = 'full'): string {
       return Math.floor(ago / 86400) + 'd ago';
     }
 
+    function inkHtml(p) {
+      if (p.type !== 'inkjet') {
+        return '<div class="muted" style="margin-top:14px;font-size:12px;">Dye-sub — ribbon based, no ink levels.</div>';
+      }
+      if (!p.inkLevels || !p.inkLevels.length) {
+        return '<div class="muted" style="margin-top:14px;font-size:12px;">Ink levels: unknown — reported once the printer is online.</div>';
+      }
+      var bars = p.inkLevels.map(function(ink) {
+        var pct = (typeof ink.pct === 'number' && ink.pct >= 0) ? ink.pct : null;
+        var low = pct !== null && pct <= 15;
+        var swatch = ink.colorHex || '#8a7b66';
+        return '<div style="margin-top:8px;">'
+          + '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">'
+          +   '<span style="display:flex;align-items:center;gap:6px;"><span style="width:9px;height:9px;border-radius:2px;background:'+swatch+';border:1px solid rgba(0,0,0,.15);"></span>'+ink.name+'</span>'
+          +   '<span class="mono" style="color:'+(low?'var(--red)':'var(--text2)')+';">'+(pct===null?'—':pct+'%')+'</span>'
+          + '</div>'
+          + '<div style="height:6px;border-radius:999px;background:var(--surface2);overflow:hidden;">'
+          +   '<div style="height:100%;width:'+(pct===null?0:pct)+'%;background:'+(low?'var(--red)':swatch)+';"></div>'
+          + '</div></div>';
+      }).join('');
+      return '<div style="margin-top:16px;"><div class="muted" style="font-size:11px;margin-bottom:2px;">Ink levels</div>'+bars+'</div>';
+    }
+
     function render(printers) {
       if (!printers.length) {
         document.getElementById('content').innerHTML = '<div class="card"><div class="muted">No printers registered yet. The print agent will register them when it first connects.</div></div>';
@@ -332,6 +355,8 @@ function printersPageHtml(role: AdminRole = 'full'): string {
               <div style="font-family:'DM Mono',monospace;margin-top:2px;font-size:11px;color:var(--text2);">\${p.id.slice(0, 8)}</div>
             </div>
           </div>
+
+          \${inkHtml(p)}
 
           \${p.errorMessage ? \`<div style="margin-top:14px;padding:10px;background:rgba(239,68,68,0.1);border:1px solid var(--red);border-radius:6px;color:var(--red);font-size:13px;">⚠️ \${p.errorMessage}</div>\` : ''}
         </div>

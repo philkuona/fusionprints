@@ -357,8 +357,19 @@ export const printers = pgTable('printers', {
   currentMedia: text('current_media'), // '6x8 ribbon', '17in luster roll'
   status: printerStatusEnum('status').notNull().default('online'),
   lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+  // Ink levels reported by the agent (Epson only — the DNP is dye-sub, no ink).
+  // Array of { name, pct, colorHex? }, or null when unknown / not applicable.
+  // Filled on-site once the live P5300 read is wired (Status Monitor / SNMP).
+  inkLevels: jsonb('ink_levels').$type<InkLevel[]>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** One supply/cartridge level on a printer. pct is 0-100, or -1 if unknown. */
+export interface InkLevel {
+  name: string;      // e.g. 'Photo Black', 'Cyan'
+  pct: number;       // 0-100; -1 = level reported but unknown
+  colorHex?: string; // optional swatch for the admin UI
+}
 
 /**
  * Print jobs — what the print agent picks up and produces.

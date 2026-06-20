@@ -273,6 +273,8 @@ export interface CreateWebOrderInput {
   deliveryAddress?: string | null;
   /** Contact phone captured at checkout (required for web orders). */
   contactPhone?: string | null;
+  /** Full name captured at checkout (required for web orders) — for QBO. */
+  contactName?: string | null;
   notes?: string | null;
 }
 
@@ -289,7 +291,7 @@ export interface CreateWebOrderInput {
 export async function createWebOrder(
   input: CreateWebOrderInput,
 ): Promise<CreateOrderResult | CreateOrderError> {
-  const { webUserId, items, deliveryAddress, contactPhone, notes } = input;
+  const { webUserId, items, deliveryAddress, contactPhone, contactName, notes } = input;
 
   if (!items || items.length === 0) {
     return { ok: false, reason: 'Cart is empty' };
@@ -326,6 +328,7 @@ export async function createWebOrder(
           fulfillmentMethod,
           deliveryAddress: deliveryAddress ?? null,
           contactPhone: contactPhone ?? null,
+          contactName: contactName ?? null,
           notes: notes ?? null,
         })
         .returning();
@@ -563,6 +566,27 @@ export async function postSalesReceiptForOrder(orderId: string): Promise<void> {
     .where(eq(payments.orderId, orderId))
     .orderBy(desc(payments.completedAt))
     .limit(1);
+
+  // Gather the real buyer so the receipt posts under their QBO customer (not the
+  // generic one). Web: checkout full name + account email + checkout phone.
+  // WhatsApp: the customer's name, email, and number.
+  let customer: { name: string | null; email: string | null; phone: string | null } | null = null;
+  if (order.channel === 'web' && order.webUserId) {
+    const [wu] = await db
+      .select({ email: webUsers.email })
+      .from(webUsers)
+      .where(eq(webUsers.id, order.webUserId))
+      .limit(1);
+    customer = { name: order.contactName, email: wu?.email ?? null, phone: order.contactPhone };
+  } else if (order.customerId) {
+    const [c] = await db
+      .select({ name: customers.name, email: customers.email, phone: customers.phoneNumber })
+      .from(customers)
+      .where(eq(customers.id, order.customerId))
+      .limit(1);
+    if (c) customer = { name: c.name, email: c.email, phone: c.phone };
+  }
+
   await createSalesReceipt(
     {
       orderNumber:    order.orderNumber,
@@ -580,6 +604,7 @@ export async function postSalesReceiptForOrder(orderId: string): Promise<void> {
       productType:  i.productType,
     })),
     payment?.paymentMethod ?? null,
+    customer,
   );
 }
 

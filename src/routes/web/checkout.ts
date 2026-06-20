@@ -69,6 +69,8 @@ const checkoutSchema = z.object({
     .string()
     .trim()
     .regex(/^\+?[1-9]\d{7,14}$/, 'Enter a valid phone number, e.g. +263771234567.'),
+  // Required: the buyer's full name, for their QBO customer record + receipt.
+  fullName: z.string().trim().min(1, 'Enter your full name.').max(120),
 });
 
 const confirmSchema = z.object({ outcome: z.enum(['success', 'fail']) });
@@ -104,7 +106,7 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
         issues: parsed.error.flatten().fieldErrors,
       });
     }
-    const { items, fulfillmentMethod, addressId, phone } = parsed.data;
+    const { items, fulfillmentMethod, addressId, phone, fullName } = parsed.data;
     // Store the contact number in E.164 (any country, default Zimbabwe) so
     // WhatsApp notifications work for local and international customers alike.
     const contactPhone = normalizePhone(phone) ?? phone;
@@ -215,6 +217,7 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
       deliveryZone,
       deliveryAddress,
       contactPhone,
+      contactName: fullName,
     });
     if (!res.ok) {
       return reply.status(400).send({ error: 'order_failed', message: res.reason });

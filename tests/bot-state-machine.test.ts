@@ -14,7 +14,7 @@ import { handleMessage, type IncomingMessage, type BotResponse } from '@/bot/sta
 import { emptyContext, type BotContext, type BotStep } from '@/bot/types.js';
 import { PHOTO_PRODUCTS, getProduct } from '@/config/catalog.js';
 
-const NAMED = { name: 'Rudo' };
+const NAMED = { name: 'Rudo', email: 'rudo@example.com' };
 
 /** A photo comfortably above every recommended resolution. */
 const GOOD_IMAGE = { widthPx: 4000, heightPx: 3000, wasCompressed: false, ref: 'img-1' };
@@ -29,7 +29,7 @@ function run(
   step: BotStep,
   context: BotContext,
   message: IncomingMessage,
-  customer: { name: string | null } | null = NAMED,
+  customer: { name: string | null; email: string | null } | null = NAMED,
 ): BotResponse {
   return handleMessage(step, context, message, customer);
 }
@@ -100,8 +100,31 @@ describe('happy path: greeting to EcoCash push', () => {
 
   it('asks for a name at checkout when the customer has none', () => {
     const ctx = { ...emptyContext(), cart: [cartItem()] };
-    const r = run('adding_more_or_checkout', ctx, text('2'), { name: null });
+    const r = run('adding_more_or_checkout', ctx, text('2'), { name: null, email: null });
     expect(r.nextStep).toBe('collecting_name');
+  });
+
+  it('asks for an email at checkout when the customer has a name but no email', () => {
+    const ctx = { ...emptyContext(), cart: [cartItem()] };
+    const r = run('adding_more_or_checkout', ctx, text('2'), { name: 'Rudo', email: null });
+    expect(r.nextStep).toBe('collecting_email');
+  });
+
+  it('after collecting the name, asks for the email next', () => {
+    const ctx = { ...emptyContext(), cart: [cartItem()] };
+    const r = run('collecting_name', ctx, text('rudo moyo'), { name: null, email: null });
+    expect(r.nextStep).toBe('collecting_email');
+    expect((r.nextContext as { _customerName?: string })._customerName).toBe('Rudo Moyo');
+  });
+
+  it('rejects an invalid email then accepts a valid one and moves to fulfillment', () => {
+    const ctx = { ...emptyContext(), cart: [cartItem()] };
+    let r = run('collecting_email', ctx, text('not-an-email'), { name: 'Rudo', email: null });
+    expect(r.nextStep).toBe('collecting_email');
+
+    r = run('collecting_email', ctx, text('rudo@example.com'), { name: 'Rudo', email: null });
+    expect(r.nextStep).toBe('choosing_fulfillment');
+    expect((r.nextContext as { _customerEmail?: string })._customerEmail).toBe('rudo@example.com');
   });
 
   it('delivery asks for an address before the summary', () => {

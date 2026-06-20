@@ -37,6 +37,7 @@ import type { IncomingMessage, BotReply } from '../src/bot/state-machine.js';
 let currentStep: BotStep = 'idle';
 let currentContext: BotContext = emptyContext();
 let customerName: string | null = null;
+let customerEmail: string | null = null;
 
 // Fake order number counter
 let orderCounter = 1;
@@ -224,6 +225,7 @@ async function main(): Promise<void> {
         currentStep = 'idle';
         currentContext = emptyContext();
         customerName = null;
+        customerEmail = null;
         printSystem('Conversation reset.');
         const greeting = handleMessage('idle', emptyContext(), { text: 'hi' }, null);
         greeting.replies.forEach(printBot);
@@ -238,11 +240,12 @@ async function main(): Promise<void> {
       const message: IncomingMessage = simulatedMessage ?? { text: trimmed };
 
       // Process through the state machine
-      const customer = customerName ? { name: customerName } : null;
+      const customer = { name: customerName, email: customerEmail };
       const response = handleMessage(currentStep, currentContext, message, customer);
 
-      // Handle name collection side effect
+      // Handle name/email collection side effects
       const collectingName = currentStep === 'collecting_name';
+      const collectingEmail = currentStep === 'collecting_email';
       currentStep = response.nextStep;
       currentContext = response.nextContext;
 
@@ -252,6 +255,13 @@ async function main(): Promise<void> {
           .replace(/\b\w/g, (c) => c.toUpperCase());
         customerName = formatted;
         printSystem(`[Customer name saved: ${customerName}]`);
+      }
+      if (collectingEmail && response.nextStep !== 'collecting_email') {
+        const savedEmail = (currentContext as { _customerEmail?: string })._customerEmail;
+        if (savedEmail) {
+          customerEmail = savedEmail;
+          printSystem(`[Customer email saved: ${customerEmail}]`);
+        }
       }
 
       // Send replies

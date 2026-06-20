@@ -95,7 +95,7 @@ export function handleMessage(
   step: BotStep,
   context: BotContext,
   message: IncomingMessage,
-  customer: { name: string | null } | null,
+  customer: { name: string | null; email: string | null } | null,
 ): BotResponse {
   const text = message.text.trim().toUpperCase();
 
@@ -190,7 +190,10 @@ export function handleMessage(
       return handleAddMoreOrCheckout(text, context, customer);
 
     case 'collecting_name':
-      return handleCollectingName(text, context);
+      return handleCollectingName(text, context, customer);
+
+    case 'collecting_email':
+      return handleCollectingEmail(text, context, customer);
 
     case 'choosing_fulfillment':
       return handleChoosingFulfillment(text, context);
@@ -233,7 +236,7 @@ export function handleMessage(
 function handleBack(
   step: BotStep,
   context: BotContext,
-  customer: { name: string | null } | null,
+  customer: { name: string | null; email: string | null } | null,
 ): BotResponse {
   switch (step) {
     case 'idle':
@@ -324,6 +327,14 @@ function handleBack(
         context,
       );
 
+    case 'collecting_email':
+      // Back to checkout/cart screen
+      return reply(
+        MSG.addMoreOrCheckoutInteractive(),
+        'adding_more_or_checkout',
+        context,
+      );
+
     case 'choosing_fulfillment': {
       // Back to checkout decision
       return reply(
@@ -379,7 +390,7 @@ function handleBack(
 
 function handleIdle(
   _context: BotContext,
-  customer: { name: string | null } | null,
+  customer: { name: string | null; email: string | null } | null,
 ): BotResponse {
   return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', emptyContext());
 }
@@ -387,7 +398,7 @@ function handleIdle(
 function handleChoosingProduct(
   text: string,
   context: BotContext,
-  customer: { name: string | null } | null,
+  customer: { name: string | null; email: string | null } | null,
 ): BotResponse {
   // Accept the interactive list ids, typed numbers (1-6), or natural words.
   if (text === '1' || text === 'PHOTOS' || text === 'PHOTO' || text === 'PHOTO PRINTS') {
@@ -1005,18 +1016,21 @@ function handleChoosingQuantity(text: string, context: BotContext): BotResponse 
 function handleAddMoreOrCheckout(
   text: string,
   context: BotContext,
-  customer: { name: string | null } | null,
+  customer: { name: string | null; email: string | null } | null,
 ): BotResponse {
   if (text === '1' || text === 'ADD' || text === 'MORE' || text === 'ADD MORE') {
     return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', context);
   }
 
   if (text === '2' || text === 'CHECKOUT' || text === 'DONE' || text === 'NEXT') {
-    // If we don't have their name yet, ask for it
+    // We need full name + email before fulfillment (for the order + the QBO
+    // customer record). Ask for whichever is missing, in order.
     if (!customer?.name) {
       return reply(MSG.askName(), 'collecting_name', context);
     }
-    // Otherwise go straight to fulfillment
+    if (!customer?.email) {
+      return reply(MSG.askEmail(), 'collecting_email', context);
+    }
     return reply(
       MSG.chooseFulfillmentInteractive(customer.name),
       'choosing_fulfillment',
@@ -1027,7 +1041,11 @@ function handleAddMoreOrCheckout(
   return reply(MSG.addMoreOrCheckoutInteractive(), 'adding_more_or_checkout', context);
 }
 
-function handleCollectingName(text: string, context: BotContext): BotResponse {
+function handleCollectingName(
+  text: string,
+  context: BotContext,
+  customer: { name: string | null; email: string | null } | null,
+): BotResponse {
   const name = text.trim();
   if (!name || name.length < 2) {
     return reply(MSG.invalidName(), 'collecting_name', context);
@@ -1044,8 +1062,37 @@ function handleCollectingName(text: string, context: BotContext): BotResponse {
     _customerName: string;
   };
 
+  // Still need their email before fulfillment.
+  if (!customer?.email) {
+    return reply(MSG.askEmail(), 'collecting_email', newContext);
+  }
   return reply(
     MSG.chooseFulfillmentInteractive(formattedName),
+    'choosing_fulfillment',
+    newContext,
+  );
+}
+
+function handleCollectingEmail(
+  text: string,
+  context: BotContext,
+  customer: { name: string | null; email: string | null } | null,
+): BotResponse {
+  const email = text.trim();
+  // Permissive local@domain.tld check — good enough to catch typos/non-emails.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return reply(MSG.invalidEmail(), 'collecting_email', context);
+  }
+
+  // Saving to the DB is an effect the caller handles; pass via context.
+  const newContext = { ...context, _customerEmail: email.toLowerCase() } as BotContext & {
+    _customerEmail: string;
+  };
+
+  // The name is either already on the customer or was just collected (in context).
+  const name = (context as { _customerName?: string })._customerName ?? customer?.name ?? 'there';
+  return reply(
+    MSG.chooseFulfillmentInteractive(name),
     'choosing_fulfillment',
     newContext,
   );

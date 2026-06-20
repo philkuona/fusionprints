@@ -25,6 +25,7 @@ export type BotStep =
   | 'choosing_quantity'
   | 'adding_more_or_checkout'
   | 'collecting_name'
+  | 'collecting_email'
   | 'choosing_fulfillment'
   | 'collecting_address'
   | 'confirming_order'

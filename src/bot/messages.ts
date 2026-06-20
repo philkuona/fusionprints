@@ -265,6 +265,12 @@ export const MSG = {
 
   invalidName: () => `Please reply with your name.`,
 
+  askEmail: () =>
+    `And your email? _(for your receipt — just need it once)_`,
+
+  invalidEmail: () =>
+    `Hmm, that doesn't look like an email. Please reply with a valid one, e.g. *you@example.com*.`,
+
   // ===== Fulfillment =====
 
   chooseFulfillment: (name: string) =>

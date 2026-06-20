@@ -18,7 +18,7 @@
 
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
-import { findOrCreateCustomer, updateCustomerName, touchCustomerLastOrder } from '@/services/customer.js';
+import { findOrCreateCustomer, updateCustomerName, updateCustomerEmail, touchCustomerLastOrder } from '@/services/customer.js';
 import { loadConversationState, saveConversationState } from '@/services/conversation-state.js';
 import { createOrder, cancelOrder, getRecentOrders } from '@/services/order.js';
 import { initiateEcocashPayment } from '@/services/payment.js';
@@ -65,7 +65,7 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
       currentStep,
       context,
       message,
-      customer.name ? { name: customer.name } : null,
+      { name: customer.name, email: customer.email },
     );
 
     // ── Step 4: Handle side effects ───────────────────────────────────────
@@ -265,6 +265,20 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
       if (name) {
         await updateCustomerName(customer.id, name);
         logger.info({ customerId: customer.id, name }, 'Customer name saved');
+      }
+    }
+
+    // ── Step 5b: Handle email collection side effect ───────────────────────
+    // When the bot transitions out of collecting_email, save the email to DB.
+    if (
+      currentStep === 'collecting_email' &&
+      response.nextStep !== 'collecting_email' &&
+      !customer.email
+    ) {
+      const email = (response.nextContext as { _customerEmail?: string })._customerEmail;
+      if (email) {
+        await updateCustomerEmail(customer.id, email);
+        logger.info({ customerId: customer.id }, 'Customer email saved');
       }
     }
 

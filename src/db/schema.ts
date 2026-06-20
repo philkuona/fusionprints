@@ -217,6 +217,9 @@ export const orders = pgTable(
     // Contact phone captured at web checkout (required there). WhatsApp orders
     // use the customer's phone instead, so this stays nullable at the column level.
     contactPhone: text('contact_phone'),
+    // Full name captured at web checkout (required there) for the QBO customer.
+    // WhatsApp orders use the customer's name instead, so this stays nullable.
+    contactName: text('contact_name'),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),

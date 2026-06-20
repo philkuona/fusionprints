@@ -73,6 +73,22 @@ export async function updateCustomerName(
 }
 
 /**
+ * Update a customer's email.
+ * Called when the bot collects it during the first order (for receipts + QBO).
+ */
+export async function updateCustomerEmail(
+  customerId: string,
+  email: string,
+): Promise<void> {
+  await db
+    .update(customers)
+    .set({ email })
+    .where(eq(customers.id, customerId));
+
+  logger.info({ customerId }, 'Customer email updated');
+}
+
+/**
  * Update the lastOrderAt timestamp.
  * Called when an order is confirmed.
  */

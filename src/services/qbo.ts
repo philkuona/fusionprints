@@ -261,6 +261,50 @@ async function findOrCreateCustomer(displayName: string): Promise<string> {
   return created.Customer.Id;
 }
 
+export interface QboCustomerInfo {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
+/**
+ * Find-or-create a QBO Customer for a real buyer, carrying their name, email,
+ * and phone. QBO requires DisplayName to be unique, so we reuse by exact
+ * DisplayName; on a duplicate-name collision (a different person, same name) we
+ * retry with a disambiguated name. Falls back to a generic name if we have none.
+ */
+export async function findOrCreateQboCustomer(info: QboCustomerInfo): Promise<string> {
+  const esc = (s: string) => s.replace(/'/g, "\\'");
+  const displayName = (info.name?.trim() || info.email?.trim() || info.phone?.trim() || 'FusionPrints Customer');
+
+  const q = encodeURIComponent(`SELECT Id FROM Customer WHERE DisplayName = '${esc(displayName)}' MAXRESULTS 1`);
+  const found = await qboRequest('GET', `query?query=${q}`) as {
+    QueryResponse: { Customer?: Array<{ Id: string }> };
+  };
+  if (found.QueryResponse?.Customer?.length) return found.QueryResponse.Customer[0].Id;
+
+  const body: Record<string, unknown> = { DisplayName: displayName };
+  if (info.email) body.PrimaryEmailAddr = { Address: info.email };
+  if (info.phone) body.PrimaryPhone = { FreeFormNumber: info.phone };
+  if (info.name) {
+    const parts = info.name.trim().split(/\s+/);
+    body.GivenName = parts[0];
+    if (parts.length > 1) body.FamilyName = parts.slice(1).join(' ');
+  }
+
+  try {
+    const created = await qboRequest('POST', 'customer', body) as { Customer: { Id: string } };
+    return created.Customer.Id;
+  } catch {
+    // Duplicate DisplayName for a different person — disambiguate with the
+    // phone/email tail (always present now that all three are required) and retry.
+    const tail = (info.phone ?? info.email ?? 'alt').replace(/[^a-zA-Z0-9]/g, '').slice(-6);
+    body.DisplayName = `${displayName} (${tail})`;
+    const created = await qboRequest('POST', 'customer', body) as { Customer: { Id: string } };
+    return created.Customer.Id;
+  }
+}
+
 /**
  * Run once after OAuth connect.
  * Finds the Chart of Accounts entries, creates QBO Service items for each
@@ -365,9 +409,16 @@ export async function createSalesReceipt(
   order: OrderForQbo,
   items: OrderItemForQbo[],
   paymentMethod: string | null,
+  customer: QboCustomerInfo | null = null,
 ): Promise<string> {
   const tokens = await getValidTokens();
   if (!tokens.accounts) throw new Error('QBO setup not complete — run setup first');
+
+  // Post under the real buyer (name/email/phone) when we have them; otherwise
+  // fall back to the generic "FusionPrints Customer".
+  const customerId = customer
+    ? await findOrCreateQboCustomer(customer)
+    : tokens.accounts.defaultCustomerId;
 
   const lines = buildLines(items, tokens.accounts);
 
@@ -388,7 +439,7 @@ export async function createSalesReceipt(
   const receipt = {
     DocNumber:            order.orderNumber,
     TxnDate:              (order.fulfilledAt ?? order.createdAt).toISOString().slice(0, 10),
-    CustomerRef:          { value: tokens.accounts.defaultCustomerId },
+    CustomerRef:          { value: customerId },
     DepositToAccountRef:  { value: depositAccountId(paymentMethod, tokens.accounts) },
     Line:                 lines,
     PrivateNote:          `FusionPrints ${order.orderNumber} | ${paymentMethod ?? 'cash'}`,

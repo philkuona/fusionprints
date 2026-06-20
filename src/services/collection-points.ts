@@ -29,6 +29,21 @@ export async function getPrimaryCollectionPoint(): Promise<CollectionPoint | nul
   return p ?? null;
 }
 
+/** A specific point by id (any active state). Null if not found. */
+export async function getCollectionPointById(id: string): Promise<CollectionPoint | null> {
+  const [p] = await db.select().from(collectionPoints).where(eq(collectionPoints.id, id)).limit(1);
+  return p ?? null;
+}
+
+/** The order's chosen point if set + still resolvable, else the primary. */
+export async function getOrderCollectionPoint(collectionPointId: string | null): Promise<CollectionPoint | null> {
+  if (collectionPointId) {
+    const p = await getCollectionPointById(collectionPointId);
+    if (p) return p;
+  }
+  return getPrimaryCollectionPoint();
+}
+
 /** Every point (active or not), primary order — for the admin list. */
 export async function listCollectionPoints(): Promise<CollectionPoint[]> {
   return db

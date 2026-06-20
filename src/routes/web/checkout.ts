@@ -63,6 +63,8 @@ const checkoutSchema = z.object({
   fulfillmentMethod: z.enum(['collection', 'delivery']),
   deliveryZone: z.string().optional(),
   addressId: z.string().uuid().optional().nullable(),
+  // Chosen pickup location for collection orders (from GET /web/api/collection-points).
+  collectionPointId: z.string().uuid().optional().nullable(),
   // Required: a contact number so we can reach the customer about the order
   // (and send the "ready for pickup" WhatsApp). E.164-ish.
   phone: z
@@ -106,7 +108,7 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
         issues: parsed.error.flatten().fieldErrors,
       });
     }
-    const { items, fulfillmentMethod, addressId, phone, fullName } = parsed.data;
+    const { items, fulfillmentMethod, addressId, phone, fullName, collectionPointId } = parsed.data;
     // Store the contact number in E.164 (any country, default Zimbabwe) so
     // WhatsApp notifications work for local and international customers alike.
     const contactPhone = normalizePhone(phone) ?? phone;
@@ -216,6 +218,7 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
       fulfillmentMethod,
       deliveryZone,
       deliveryAddress,
+      collectionPointId: fulfillmentMethod === 'collection' ? collectionPointId ?? null : null,
       contactPhone,
       contactName: fullName,
     });

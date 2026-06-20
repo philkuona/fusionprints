@@ -20,9 +20,10 @@ import { PHOTO_PRODUCTS, POSTER_PRODUCTS, getProduct } from '@/config/catalog.js
 import { calculateQuote } from '@/services/pricing.js';
 import { validateImage } from '@/services/image-validation.js';
 import { isEcocashCapable } from '@/utils/phone.js';
-import { MSG } from './messages.js';
+import { MSG, formatCollectionPoint } from './messages.js';
 import type { BotStep, BotContext, CartItem } from './types.js';
 import { emptyContext } from './types.js';
+import type { CollectionPoint } from '@/db/schema.js';
 
 // ===== Types =====
 
@@ -96,6 +97,9 @@ export function handleMessage(
   context: BotContext,
   message: IncomingMessage,
   customer: { name: string | null; email: string | null } | null,
+  // Live active collection points, injected by the handler (the state machine is
+  // pure). Empty/one → pickup auto-resolves; 2+ → the customer picks one.
+  collectionPoints: CollectionPoint[] = [],
 ): BotResponse {
   const text = message.text.trim().toUpperCase();
 
@@ -196,7 +200,10 @@ export function handleMessage(
       return handleCollectingEmail(text, context, customer);
 
     case 'choosing_fulfillment':
-      return handleChoosingFulfillment(text, context);
+      return handleChoosingFulfillment(text, context, collectionPoints);
+
+    case 'choosing_collection_point':
+      return handleChoosingCollectionPoint(text, context, collectionPoints);
 
     case 'collecting_address':
       return handleCollectingAddress(message.text.trim(), context);
@@ -344,12 +351,13 @@ function handleBack(
       );
     }
 
+    case 'choosing_collection_point':
     case 'collecting_address':
       // Back to fulfillment options
       return reply(
         MSG.chooseFulfillmentInteractive(customer?.name ?? 'there'),
         'choosing_fulfillment',
-        { ...context, fulfillmentMethod: undefined, deliveryAddress: undefined },
+        { ...context, fulfillmentMethod: undefined, deliveryAddress: undefined, selectedCollectionPointId: undefined },
       );
 
     case 'confirming_order':
@@ -1103,14 +1111,23 @@ function handleCollectingEmail(
   );
 }
 
-function handleChoosingFulfillment(text: string, context: BotContext): BotResponse {
+function handleChoosingFulfillment(
+  text: string,
+  context: BotContext,
+  collectionPoints: CollectionPoint[],
+): BotResponse {
   if (text === '1' || text === 'COLLECT' || text === 'COLLECTION') {
-    const newContext: BotContext = {
+    const collectCtx: BotContext = {
       ...context,
       fulfillmentMethod: 'collection',
       deliveryZone: 'collection',
     };
-    return buildOrderSummary(newContext);
+    // 2+ active points → let the customer choose. 0/1 → auto-resolve to the
+    // primary (or none) and go straight to the summary.
+    if (collectionPoints.length > 1) {
+      return reply(MSG.chooseCollectionPointInteractive(collectionPoints), 'choosing_collection_point', collectCtx);
+    }
+    return buildOrderSummary({ ...collectCtx, selectedCollectionPointId: collectionPoints[0]?.id }, collectionPoints);
   }
 
   if (text === '2' || text === 'DELIVER' || text === 'DELIVERY' || text === 'HARARE') {
@@ -1142,6 +1159,27 @@ function handleChoosingFulfillment(text: string, context: BotContext): BotRespon
   };
 }
 
+/** Customer tapped a pickup location from the list (1-based index). */
+function handleChoosingCollectionPoint(
+  text: string,
+  context: BotContext,
+  collectionPoints: CollectionPoint[],
+): BotResponse {
+  const idx = parseInt(text, 10);
+  const point = Number.isInteger(idx) && idx >= 1 && idx <= collectionPoints.length
+    ? collectionPoints[idx - 1]
+    : null;
+  if (!point) {
+    return {
+      replies: [MSG.invalidCollectionPointChoice(), MSG.chooseCollectionPointInteractive(collectionPoints)],
+      nextStep: 'choosing_collection_point',
+      nextContext: context,
+      effects: [],
+    };
+  }
+  return buildOrderSummary({ ...context, selectedCollectionPointId: point.id }, collectionPoints);
+}
+
 function handleCollectingAddress(address: string, context: BotContext): BotResponse {
   if (!address || address.length < 5) {
     return reply(MSG.askDeliveryAddress(), 'collecting_address', context);
@@ -1151,7 +1189,7 @@ function handleCollectingAddress(address: string, context: BotContext): BotRespo
   return buildOrderSummary(newContext);
 }
 
-function buildOrderSummary(context: BotContext): BotResponse {
+function buildOrderSummary(context: BotContext, collectionPoints: CollectionPoint[] = []): BotResponse {
   const fulfillmentMethod = context.fulfillmentMethod ?? 'collection';
   const deliveryZone = context.deliveryZone ?? 'collection';
 
@@ -1166,11 +1204,15 @@ function buildOrderSummary(context: BotContext): BotResponse {
     return reply(MSG.somethingWentWrong(), 'idle', emptyContext());
   }
 
-  return reply(
-    MSG.confirmOrderInteractive(quoteResult.quote.summary),
-    'confirming_order',
-    context,
-  );
+  // For collection, show the chosen (or only) pickup location in the summary.
+  let summary = quoteResult.quote.summary;
+  if (fulfillmentMethod === 'collection') {
+    const point =
+      collectionPoints.find((p) => p.id === context.selectedCollectionPointId) ?? collectionPoints[0];
+    if (point) summary += `\n\n📍 Collect from: ${formatCollectionPoint(point)}`;
+  }
+
+  return reply(MSG.confirmOrderInteractive(summary), 'confirming_order', context);
 }
 
 function handleConfirmingOrder(text: string, context: BotContext): BotResponse {

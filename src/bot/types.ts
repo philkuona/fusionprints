@@ -27,6 +27,7 @@ export type BotStep =
   | 'collecting_name'
   | 'collecting_email'
   | 'choosing_fulfillment'
+  | 'choosing_collection_point'
   | 'collecting_address'
   | 'confirming_order'
   | 'choosing_payment_method'
@@ -83,6 +84,8 @@ export interface BotContext {
   cart: CartItem[];
   /** Customer's chosen fulfillment method */
   fulfillmentMethod?: FulfillmentMethod;
+  /** Chosen collection point id (when there are multiple active points). */
+  selectedCollectionPointId?: string;
   /** Delivery zone if delivery chosen */
   deliveryZone?: string;
   /** Delivery address if delivery chosen */

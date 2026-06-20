@@ -20,6 +20,7 @@ import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
 import { findOrCreateCustomer, updateCustomerName, updateCustomerEmail, touchCustomerLastOrder } from '@/services/customer.js';
 import { loadConversationState, saveConversationState } from '@/services/conversation-state.js';
+import { getActiveCollectionPoints } from '@/services/collection-points.js';
 import { createOrder, cancelOrder, getRecentOrders } from '@/services/order.js';
 import { initiateEcocashPayment } from '@/services/payment.js';
 import { createUploadSession, getSessionImages, completeSession } from '@/routes/upload.js';
@@ -61,11 +62,18 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
     );
 
     // ── Step 3: Run the state machine ─────────────────────────────────────
+    // The state machine is pure, so inject the live collection points it needs
+    // for the pickup steps (only fetched there to avoid a query per message).
+    const collectionPoints =
+      currentStep === 'choosing_fulfillment' || currentStep === 'choosing_collection_point'
+        ? await getActiveCollectionPoints()
+        : [];
     const response = handleMessage(
       currentStep,
       context,
       message,
       { name: customer.name, email: customer.email },
+      collectionPoints,
     );
 
     // ── Step 4: Handle side effects ───────────────────────────────────────

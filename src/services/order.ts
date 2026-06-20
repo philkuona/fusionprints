@@ -19,7 +19,7 @@ import { randomBytes } from 'crypto';
 import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getOrderMinimums } from '@/services/store-settings.js';
-import { getPrimaryCollectionPoint, pointHours } from '@/services/collection-points.js';
+import { getOrderCollectionPoint, pointHours } from '@/services/collection-points.js';
 import { getProduct } from '@/config/catalog.js';
 import { getProductCost } from '@/services/cost-overrides.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
@@ -155,6 +155,7 @@ export async function createOrder(
           totalUsd: String(quote.totalUsd),
           fulfillmentMethod,
           deliveryAddress: context.deliveryAddress ?? null,
+          collectionPointId: context.selectedCollectionPointId ?? null,
         })
         .returning();
 
@@ -248,6 +249,8 @@ export interface CreateWebOrderInput {
   /** Delivery zone for the fee calc; 'collection' when picking up. */
   deliveryZone?: string;
   deliveryAddress?: string | null;
+  /** Chosen pickup location (collection orders); null = primary point. */
+  collectionPointId?: string | null;
   /** Contact phone captured at checkout (required for web orders). */
   contactPhone?: string | null;
   /** Full name captured at checkout (required for web orders) — for QBO. */
@@ -268,7 +271,7 @@ export interface CreateWebOrderInput {
 export async function createWebOrder(
   input: CreateWebOrderInput,
 ): Promise<CreateOrderResult | CreateOrderError> {
-  const { webUserId, items, deliveryAddress, contactPhone, contactName, notes } = input;
+  const { webUserId, items, deliveryAddress, collectionPointId, contactPhone, contactName, notes } = input;
 
   if (!items || items.length === 0) {
     return { ok: false, reason: 'Cart is empty' };
@@ -304,6 +307,7 @@ export async function createWebOrder(
           totalUsd: String(quote.totalUsd),
           fulfillmentMethod,
           deliveryAddress: deliveryAddress ?? null,
+          collectionPointId: collectionPointId ?? null,
           contactPhone: contactPhone ?? null,
           contactName: contactName ?? null,
           notes: notes ?? null,
@@ -852,8 +856,8 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
   const firstName = contact.name.split(/\s+/)[0] ?? contact.name;
   const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
 
-  // Use the admin-managed primary collection point (falls back to env if none).
-  const point = await getPrimaryCollectionPoint();
+  // Use the order's chosen collection point (falls back to primary, then env).
+  const point = await getOrderCollectionPoint(order.collectionPointId);
   const locName = point?.name ?? env.BUSINESS_NAME;
   const locAddress = point?.addressLine ?? env.BUSINESS_ADDRESS;
   const locHours = point ? pointHours(point) : env.BUSINESS_HOURS;

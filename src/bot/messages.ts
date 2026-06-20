@@ -13,6 +13,12 @@
 
 import { PHOTO_PRODUCTS, POSTER_PRODUCTS } from '@/config/catalog.js';
 import type { CartItem } from './types.js';
+import type { CollectionPoint } from '@/db/schema.js';
+
+/** "Name — Address (Hours)" one-liner for a collection point. */
+export function formatCollectionPoint(p: Pick<CollectionPoint, 'name' | 'addressLine' | 'hours'>): string {
+  return `${p.name} — ${p.addressLine}${p.hours ? ` (${p.hours})` : ''}`;
+}
 
 const BUSINESS_NAME = process.env.BUSINESS_NAME ?? 'FusionPrints';
 const COLLECTION_ADDRESS =
@@ -274,17 +280,37 @@ export const MSG = {
   // ===== Fulfillment =====
 
   chooseFulfillment: (name: string) =>
-    `Thanks *${name}*! How would you like to receive your prints?\n\n1️⃣ *Collect*: ${COLLECTION_ADDRESS} _(free)_\n2️⃣ *Deliver* in ${DELIVERY_ZONE}: $3.00\n3️⃣ *Deliver* outside ${DELIVERY_ZONE}: _(quote first)_`,
+    `Thanks *${name}*! How would you like to receive your prints?\n\n1️⃣ *Collect* _(free)_\n2️⃣ *Deliver* in ${DELIVERY_ZONE}: $3.00\n3️⃣ *Deliver* outside ${DELIVERY_ZONE}: _(quote first)_`,
 
   /** Interactive variant: 3 buttons for fulfillment choice. */
   chooseFulfillmentInteractive: (name: string) => ({
-    text: `Thanks *${name}*! How would you like to receive your prints?\n\n• Collect: ${COLLECTION_ADDRESS} (free)\n• Deliver in ${DELIVERY_ZONE}: $3.00\n• Outside ${DELIVERY_ZONE}: quote first`,
+    text: `Thanks *${name}*! How would you like to receive your prints?\n\n• Collect (free)\n• Deliver in ${DELIVERY_ZONE}: $3.00\n• Outside ${DELIVERY_ZONE}: quote first`,
     buttons: [
       { id: '1', title: '🏪 Collect' },
       { id: '2', title: '🚚 Local delivery' },
       { id: '3', title: 'Outside zone' },
     ],
   }),
+
+  /** Pick a pickup location (shown only when there are 2+ active points). */
+  chooseCollectionPointInteractive: (points: CollectionPoint[]) => ({
+    text: 'Which location would you like to collect from?',
+    list: {
+      buttonText: 'Choose location',
+      sections: [
+        {
+          title: 'Pickup locations',
+          rows: points.slice(0, 10).map((p, i) => ({
+            id: String(i + 1),
+            title: p.name.slice(0, 24),
+            description: `${p.addressLine}${p.hours ? ` · ${p.hours}` : ''}`.slice(0, 72),
+          })),
+        },
+      ],
+    },
+  }),
+
+  invalidCollectionPointChoice: () => `Please tap a location from the list above.`,
 
   askDeliveryAddress: () => `Please send your delivery address in ${DELIVERY_ZONE}.`,
 
@@ -386,8 +412,11 @@ export const MSG = {
 
   // ===== Ready for collection / delivery =====
 
-  orderReady: (orderNumber: string) =>
-    `🎉 *Your prints are ready!*\n\nOrder *${orderNumber}*\n📍 ${COLLECTION_ADDRESS}\n🕒 ${BUSINESS_HOURS}\n\nBring your phone. Show this message when you collect.`,
+  orderReady: (orderNumber: string, where?: { name: string; address: string; hours: string | null }) => {
+    const place = where ? `${where.name}\n📍 ${where.address}` : COLLECTION_ADDRESS;
+    const hours = where?.hours ?? BUSINESS_HOURS;
+    return `🎉 *Your prints are ready!*\n\nOrder *${orderNumber}*\n📍 ${place}\n🕒 ${hours}\n\nBring your phone. Show this message when you collect.`;
+  },
 
   orderReadyDelivery: (orderNumber: string) =>
     `🎉 *Your prints are on their way!*\n\nOrder *${orderNumber}* has been handed to our courier. Expect delivery within 2–4 hours.`,

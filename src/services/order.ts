@@ -19,6 +19,7 @@ import { randomBytes } from 'crypto';
 import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getOrderMinimums } from '@/services/store-settings.js';
+import { getPrimaryCollectionPoint, pointHours } from '@/services/collection-points.js';
 import { getProduct } from '@/config/catalog.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import { sendFiveBySevenOperatorEmail } from '@/services/operator-email.js';
@@ -846,6 +847,12 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
   const firstName = contact.name.split(/\s+/)[0] ?? contact.name;
   const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
 
+  // Use the admin-managed primary collection point (falls back to env if none).
+  const point = await getPrimaryCollectionPoint();
+  const locName = point?.name ?? env.BUSINESS_NAME;
+  const locAddress = point?.addressLine ?? env.BUSINESS_ADDRESS;
+  const locHours = point ? pointHours(point) : env.BUSINESS_HOURS;
+
   // Prefer the approved template (delivers outside the 24h window — e.g. web
   // orders); fall back to free-form text when no template is configured.
   if (env.WHATSAPP_TEMPLATE_PICKUP) {
@@ -853,11 +860,11 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
     await sendWhatsAppTemplate(contact.phone, env.WHATSAPP_TEMPLATE_PICKUP, [
       firstName,
       orderNumber,
-      env.BUSINESS_HOURS,
-      env.BUSINESS_ADDRESS,
+      locHours,
+      `${locName}, ${locAddress}`,
     ]);
   } else {
-    const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${env.BUSINESS_NAME}* during business hours (${env.BUSINESS_HOURS}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${env.BUSINESS_ADDRESS}`;
+    const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}`;
     await sendWhatsAppMessage(contact.phone, message);
   }
   logger.info({ orderNumber, phone: contact.phone, template: !!env.WHATSAPP_TEMPLATE_PICKUP }, 'Sent ready-for-pickup notification');

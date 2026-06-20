@@ -18,6 +18,7 @@ import { registerAdminDashboard } from '@/routes/admin-dashboard.js';
 import { registerAdminOps } from '@/routes/admin-ops.js';
 import { registerAdminPromos } from '@/routes/admin-promos.js';
 import { registerAdminPricing } from '@/routes/admin-pricing.js';
+import { registerAdminLocations } from '@/routes/admin-locations.js';
 import { loadAndApplyPriceOverrides } from '@/services/price-overrides.js';
 import { startVirtualPrinters } from '@/services/virtual-printer.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
@@ -207,6 +208,7 @@ async function main(): Promise<void> {
   await registerAdminOps(app);
   await registerAdminPromos(app);
   await registerAdminPricing(app);
+  await registerAdminLocations(app);
   await registerPaymentWebhooks(app);
 
   // Register print agent API routes

@@ -233,6 +233,7 @@ function pageHtml(
       ${isOperator ? '' : `<a href="/admin/metrics" class="nav-tab ${active === 'metrics' ? 'active' : ''}">Key Metrics</a>`}
       ${isOperator ? '' : `<a href="/admin/promos" class="nav-tab">Promos</a>`}
       ${isOperator ? '' : `<a href="/admin/pricing" class="nav-tab">Pricing</a>`}
+      ${isOperator ? '' : `<a href="/admin/locations" class="nav-tab">Locations</a>`}
       ${isOperator ? '' : `<a href="/admin/qbo" class="nav-tab">QuickBooks</a>`}
       <a href="/admin/logout" class="nav-tab nav-logout">Logout</a>
     </nav>

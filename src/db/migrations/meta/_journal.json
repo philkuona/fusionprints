@@ -183,6 +183,13 @@
       "when": 1781935774358,
       "tag": "0025_order_minimums",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781937257541,
+      "tag": "0026_collection_points",
+      "breakpoints": true
     }
   ]
 }

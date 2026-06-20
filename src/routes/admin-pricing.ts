@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
 import { PRODUCTS } from '@/config/catalog.js';
 import { setProductPrice } from '@/services/price-overrides.js';
+import { setProductCost } from '@/services/cost-overrides.js';
 import { getOrderMinimums, setOrderMinimums, type OrderMinimums } from '@/services/store-settings.js';
 import { logger } from '@/utils/logger.js';
 import { requireFullAdmin, requireFullAdminPage } from '@/utils/auth.js';
@@ -25,27 +26,35 @@ function esc(s: string): string {
 function pageHtml(notice?: string, minimums?: OrderMinimums): string {
   const group = (type: 'photo_print' | 'poster', title: string) => {
     const rows = PRODUCTS.filter((p) => p.productType === type)
-      .map(
-        (p) => `<tr>
+      .map((p) => {
+        const cost = p.costUsd ?? 0;
+        const margin = p.unitPriceUsd > 0 ? Math.round(((p.unitPriceUsd - cost) / p.unitPriceUsd) * 100) : 0;
+        const marginClass = cost > 0 ? (margin < 40 ? 'lo' : '') : 'na';
+        return `<tr>
           <td>${esc(p.displayLabel)}</td>
           <td class="code">${esc(p.sizeCode)}</td>
           <td><span class="cur">$</span><input type="number" name="price_${esc(p.sizeCode)}" value="${p.unitPriceUsd.toFixed(2)}" step="0.01" min="0" required></td>
-        </tr>`,
-      )
+          <td><span class="cur">$</span><input type="number" name="cost_${esc(p.sizeCode)}" value="${cost.toFixed(2)}" step="0.01" min="0"></td>
+          <td class="margin ${marginClass}">${cost > 0 ? margin + '%' : '—'}</td>
+        </tr>`;
+      })
       .join('');
-    return `<h2>${title}</h2><table><thead><tr><th>Size</th><th>Code</th><th>Price (USD)</th></tr></thead><tbody>${rows}</tbody></table>`;
+    return `<h2>${title}</h2><table><thead><tr><th>Size</th><th>Code</th><th>Price</th><th>Cost</th><th>Margin</th></tr></thead><tbody>${rows}</tbody></table>`;
   };
 
   const extraCss = `
-    main table { max-width:560px; margin-bottom:8px; }
+    main table { max-width:680px; margin-bottom:8px; }
     td.code { color:var(--text2); font-family:'DM Mono',monospace; font-size:13px; }
     .cur { color:var(--text2); margin-right:4px; }
-    main input[type=number] { width:120px; }`;
+    main input[type=number] { width:96px; }
+    td.margin { font-family:'DM Mono',monospace; font-size:13px; color:var(--text2); text-align:right; }
+    td.margin.lo { color:#C0392B; font-weight:600; }
+    td.margin.na { color:var(--border); }`;
 
   const body = `
   <div class="page-header">
     <h1>Product pricing</h1>
-    <div class="sub">USD per single print. Saving updates the live price everywhere immediately (website, WhatsApp, checkout totals).</div>
+    <div class="sub">USD per single print. Price updates everywhere live (website, WhatsApp, checkout). Cost is your consumable cost (ribbon/ink + paper) — it drives margin in Key Metrics and is snapshotted onto each order.</div>
   </div>
   ${notice ? `<div class="notice">${esc(notice)}</div>` : ''}
   <form method="post" action="/admin/pricing" enctype="multipart/form-data">
@@ -80,6 +89,7 @@ export async function registerAdminPricing(app: FastifyInstance): Promise<void> 
     if (!requireFullAdmin(request, reply)) return;
     try {
       const updates: Array<{ sizeCode: string; price: number }> = [];
+      const costUpdates: Array<{ sizeCode: string; cost: number }> = [];
       let minPickup: number | undefined;
       let minDelivery: number | undefined;
       for await (const part of (request as any).parts()) {
@@ -88,6 +98,10 @@ export async function registerAdminPricing(app: FastifyInstance): Promise<void> 
           const sizeCode = part.fieldname.slice('price_'.length);
           const price = Number(part.value);
           if (Number.isFinite(price) && price >= 0) updates.push({ sizeCode, price });
+        } else if (part.fieldname.startsWith('cost_')) {
+          const sizeCode = part.fieldname.slice('cost_'.length);
+          const cost = Number(part.value);
+          if (Number.isFinite(cost) && cost >= 0) costUpdates.push({ sizeCode, cost });
         } else if (part.fieldname === 'min_pickup') {
           const v = Number(part.value);
           if (Number.isFinite(v) && v >= 0) minPickup = v;
@@ -103,6 +117,13 @@ export async function registerAdminPricing(app: FastifyInstance): Promise<void> 
           saved++;
         } catch (err) {
           logger.warn({ err, ...u }, 'Skipped invalid price update');
+        }
+      }
+      for (const u of costUpdates) {
+        try {
+          await setProductCost(u.sizeCode, u.cost);
+        } catch (err) {
+          logger.warn({ err, ...u }, 'Skipped invalid cost update');
         }
       }
       if (minPickup !== undefined && minDelivery !== undefined) {

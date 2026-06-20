@@ -1,13 +1,12 @@
 /**
  * Web payment provider seam.
  *
- * Until a real Zimbabwean gateway is wired up (EcoCash via Magetsi/Paynow, card
- * via Paynow/Flutterwave — see env PAYMENT_PROVIDER), the web checkout runs
- * against a SERVICE-VIRTUALISED provider: initiate returns a synthetic
+ * The live gateway is Payonify (EcoCash / OneMoney / ZimSwitch / card), selected
+ * by PAYMENT_PROVIDER=payonify. In dev (PAYMENT_PROVIDER=stub) the web checkout
+ * runs against a SERVICE-VIRTUALISED provider: initiate returns a synthetic
  * reference + 'pending', and the customer confirms via a mock step that mimics
- * the async gateway callback (EcoCash PIN / card 3DS). A real provider only has
- * to replace initiateWebPayment() + swap the confirm step for a real webhook —
- * order creation, payment records, and fulfilment stay unchanged.
+ * the async gateway callback (EcoCash PIN / card 3DS). Either way, order
+ * creation, payment records, and fulfilment stay unchanged.
  */
 import { env } from '@/config/env.js';
 import { createCheckoutSession } from '@/services/payonify.js';

@@ -203,7 +203,7 @@ function qboPageHtml(status: ReturnType<typeof getStatus>): string {
     <div class="meta-row"><span class="meta-label">Order fulfilled</span><span class="meta-value">Sales Receipt posted to QBO</span></div>
     <div class="meta-row"><span class="meta-label">Paid order cancelled</span><span class="meta-value">Refund Receipt posted to QBO</span></div>
     <div class="meta-row"><span class="meta-label">Failed post</span><span class="meta-value">Logged, order not affected — manual entry needed</span></div>
-    <div class="meta-row"><span class="meta-label">Payment method</span><span class="meta-value">EcoCash / Stripe / Cash mapped to correct QBO account</span></div>
+    <div class="meta-row"><span class="meta-label">Payment method</span><span class="meta-value">EcoCash / Payonify / Cash mapped to correct QBO account</span></div>
     <div class="meta-row"><span class="meta-label">Customer in QBO</span><span class="meta-value">Generic "FusionPrints Customer" (not per-customer)</span></div>
   </div>
 </main>

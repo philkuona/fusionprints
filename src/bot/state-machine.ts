@@ -75,7 +75,6 @@ export interface BotResponse {
 export type BotEffect =
   | { type: 'CREATE_ORDER'; quote: ReturnType<typeof calculateQuote> }
   | { type: 'INITIATE_PAYMENT'; orderNumber: string }
-  | { type: 'INITIATE_CARD_PAYMENT'; orderNumber: string }
   | { type: 'INITIATE_ECOCASH_PAYMENT'; orderNumber: string; ecocashNumber: string }
   | { type: 'CANCEL_ORDER'; orderNumber: string | undefined }
   | { type: 'LOOKUP_ORDER_STATUS'; phone: string }

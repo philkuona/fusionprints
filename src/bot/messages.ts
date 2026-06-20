@@ -354,10 +354,6 @@ export const MSG = {
   ecocashTimeout: (orderNumber: string) =>
     `⏰ Didn't receive your EcoCash PIN.\n\nOrder *${orderNumber}* is still saved. Want to:\n\n1. Try EcoCash again\n2. Cancel order`,
 
-  /** Card payment link */
-  cardPaymentLink: (orderNumber: string, paymentUrl: string, totalUsd: string) =>
-    `💳 Tap to pay $${totalUsd} for order *${orderNumber}*:\n\n🔗 ${paymentUrl}\n\nYou'll be confirmed automatically once payment is complete.\n\n_Link expires in 60 minutes._`,
-
   /** Generic — kept for backwards compatibility (unused now) */
   paymentLinkSent: (orderNumber: string, paymentUrl: string, totalUsd: string) =>
     `Here's your payment link:\n🔗 ${paymentUrl}\n\nPays via card or EcoCash. You'll get a confirmation here once payment goes through.\n\n*Order #:* ${orderNumber}\n*Amount:* $${totalUsd}\n\n_Link expires in 60 minutes._`,

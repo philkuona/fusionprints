@@ -1,42 +1,21 @@
 /**
- * Payment provider webhooks.
+ * Payment-related routes.
  *
- * Two endpoints:
- *
- *   POST /webhook/payment/ecocash
- *     Magetsi calls this when the customer enters their EcoCash PIN.
- *     We verify the signature, look up the order, mark it paid, release print jobs.
- *
- *   POST /webhook/payment/stripe
- *     Stripe calls this on completed checkout sessions.
- *     We verify with Stripe's signature header, look up the order, mark paid.
- *
- * The bot then sends a confirmation message to the customer via WhatsApp.
- *
- * Both endpoints are stubbed for now — once Magetsi/Stripe API specs are in
- * place we'll fill them in. The shape of this file is the placeholder so
- * the integration can land later without restructuring.
+ * Live payment confirmation runs through Payonify's signed webhook
+ * (routes/web/payonify-webhook.ts), which marks orders paid for both web and
+ * bot channels. This file holds the shared customer-notification helper and the
+ * admin manual mark-paid fallback (for when an automatic confirmation is missed).
  */
 
 import type { FastifyInstance } from 'fastify';
 import { markOrderPaid, getOrderByNumber } from '@/services/order.js';
 import { logger } from '@/utils/logger.js';
-import { env } from '@/config/env.js';
 import { sendWhatsAppMessage } from '@/services/whatsapp.js';
 import { db } from '@/db/client.js';
 import { customers, orders, orderItems } from '@/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { MSG } from '@/bot/messages.js';
 import { requireFullAdmin } from '@/utils/auth.js';
-
-interface MagetsiCallback {
-  reference: string;       // Order number we sent
-  status: 'success' | 'failed' | 'cancelled' | 'timeout';
-  msisdn: string;          // EcoCash number paid from
-  amount_usd: number;
-  transaction_id: string;
-  // signature check field — TBD with Magetsi spec
-}
 
 export async function notifyCustomerOfPayment(orderNumber: string): Promise<void> {
   // Look up the customer to send them a confirmation
@@ -75,59 +54,6 @@ export async function notifyCustomerOfPayment(orderNumber: string): Promise<void
 }
 
 export async function registerPaymentWebhooks(app: FastifyInstance): Promise<void> {
-
-  // ===== EcoCash callback (Magetsi) =====
-  app.post('/webhook/payment/ecocash', async (request, reply) => {
-    // SECURITY: this endpoint has NO signature verification (Magetsi spec pending).
-    // It is inert unless Magetsi is the configured, credentialed provider — so it
-    // cannot be used to mark arbitrary orders paid. Re-enable only WITH signature
-    // verification when integrating Magetsi.
-    if (env.PAYMENT_PROVIDER !== 'magetsi' || !env.MAGETSI_API_KEY) {
-      reply.status(404).send({ error: 'not_found' });
-      return;
-    }
-
-    const body = request.body as MagetsiCallback;
-
-    logger.info({ body }, 'EcoCash webhook received');
-
-    // TODO: verify Magetsi signature here once we have the spec.
-    logger.warn('Magetsi signature verification not implemented — DO NOT use in production yet');
-
-    if (!body || !body.reference) {
-      reply.status(400).send({ error: 'Missing reference' });
-      return;
-    }
-
-    if (body.status === 'success') {
-      try {
-        await markOrderPaid(body.reference, body.transaction_id ?? body.reference);
-        await notifyCustomerOfPayment(body.reference);
-        logger.info({ orderNumber: body.reference }, 'EcoCash payment confirmed');
-        return { ok: true };
-      } catch (err) {
-        logger.error({ err, body }, 'Failed to process EcoCash payment');
-        reply.status(500).send({ error: 'Failed to process payment' });
-        return;
-      }
-    }
-
-    // Failed/cancelled/timeout — log but don't error
-    logger.info({ orderNumber: body.reference, status: body.status }, 'EcoCash payment did not complete');
-    return { ok: true, action: 'noted' };
-  });
-
-  // ===== Stripe webhook (cards) =====
-  app.post('/webhook/payment/stripe', async () => {
-    logger.info('Stripe webhook received');
-
-    // TODO: verify Stripe signature with stripe.webhooks.constructEvent
-    // const sig = request.headers['stripe-signature'];
-    // const event = stripe.webhooks.constructEvent(rawBody, sig, env.STRIPE_WEBHOOK_SECRET);
-
-    // For now stub
-    return { ok: true };
-  });
 
   // ===== Manual confirmation endpoint (admin only) =====
   // Used when payment confirmation didn't come through automatically — e.g.

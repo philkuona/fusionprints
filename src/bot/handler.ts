@@ -20,7 +20,7 @@ import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
 import { findOrCreateCustomer, updateCustomerName, touchCustomerLastOrder } from '@/services/customer.js';
 import { loadConversationState, saveConversationState } from '@/services/conversation-state.js';
-import { createOrder, cancelOrder, getRecentOrders, getOrderByNumber } from '@/services/order.js';
+import { createOrder, cancelOrder, getRecentOrders } from '@/services/order.js';
 import { initiateEcocashPayment } from '@/services/payment.js';
 import { createUploadSession, getSessionImages, completeSession } from '@/routes/upload.js';
 import { getProduct } from '@/config/catalog.js';
@@ -158,26 +158,10 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
           break;
         }
 
-        case 'INITIATE_CARD_PAYMENT': {
-          // Get the order total for the message
-          const order = await getOrderByNumber(effect.orderNumber);
-          const total = order ? String(order.totalUsd) : '0.00';
-
-          // Generate a card payment link.
-          // TODO: replace with real Stripe Checkout session creation
-          const paymentUrl = `https://pay.fusionprints.co.zw/p/${generatePaymentRef()}`;
-
-          extraReplies.push(
-            MSG.cardPaymentLink(effect.orderNumber, paymentUrl, total),
-          );
-          break;
-        }
-
         case 'INITIATE_ECOCASH_PAYMENT': {
-          // Initiate the EcoCash USSD push via the payment provider (Magetsi).
-          // For now this is a stub — once Magetsi API details are available we
-          // POST to their endpoint here. The customer's PIN entry is confirmed
-          // via the /webhook/payment/ecocash callback, which calls markOrderPaid.
+          // Send the EcoCash USSD push via Payonify (stubbed in dev). The
+          // customer's PIN approval is confirmed asynchronously via the signed
+          // Payonify webhook, which calls markOrderPaid.
           const success = await initiateEcocashPayment({
             orderNumber: effect.orderNumber,
             ecocashNumber: effect.ecocashNumber,
@@ -185,7 +169,7 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
 
           if (!success) {
             extraReplies.push(
-              `⚠️ Couldn't reach EcoCash right now. Reply *1* to try again, *2* to switch to card, or *3* to cancel.`,
+              `⚠️ Couldn't reach EcoCash right now. Reply *1* to try again or *2* to cancel.`,
             );
           }
           // On success, the bot already showed "waiting" message; nothing to add

@@ -34,7 +34,7 @@ interface QboAccounts {
   wallArtItemId:     string;
   deliveryItemId:    string;
   ecocashAccountId:  string;
-  stripeAccountId:   string;
+  payonifyAccountId: string;
   cashAccountId:     string;
   defaultCustomerId: string;
 }
@@ -281,9 +281,9 @@ export async function runSetup(): Promise<void> {
     );
   }
 
-  const ecocashAccountId = await findAccountId('EcoCash Business');
-  const stripeAccountId  = await findAccountId('Stripe');
-  const cashAccountId    = await findAccountId('Cash on Hand');
+  const ecocashAccountId  = await findAccountId('EcoCash Business');
+  const payonifyAccountId = await findAccountId('Payonify');
+  const cashAccountId     = await findAccountId('Cash on Hand');
 
   if (!ecocashAccountId || !cashAccountId) {
     throw new Error(
@@ -307,7 +307,7 @@ export async function runSetup(): Promise<void> {
     wallArtItemId,
     deliveryItemId,
     ecocashAccountId,
-    stripeAccountId:  stripeAccountId ?? cashAccountId, // fallback if Stripe not yet in COA
+    payonifyAccountId: payonifyAccountId ?? cashAccountId, // fallback if Payonify not yet in COA
     cashAccountId,
     defaultCustomerId,
   };
@@ -335,8 +335,8 @@ export interface OrderItemForQbo {
 }
 
 function depositAccountId(paymentMethod: string | null, accounts: QboAccounts): string {
-  if (paymentMethod === 'ecocash')              return accounts.ecocashAccountId;
-  if (paymentMethod === 'stripe' || paymentMethod === 'card') return accounts.stripeAccountId;
+  if (paymentMethod === 'ecocash') return accounts.ecocashAccountId;
+  if (paymentMethod === 'card')    return accounts.payonifyAccountId;
   return accounts.cashAccountId;
 }
 

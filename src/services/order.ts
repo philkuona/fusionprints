@@ -587,6 +587,11 @@ export async function postSalesReceiptForOrder(orderId: string): Promise<void> {
     if (c) customer = { name: c.name, email: c.email, phone: c.phone };
   }
 
+  // WhatsApp orders are always EcoCash and don't create a payments row, so fall
+  // back to the channel when the method wasn't recorded — keeps the QBO deposit
+  // routing correct (EcoCash Business rather than Cash on Hand).
+  const method = payment?.paymentMethod ?? (order.channel === 'whatsapp' ? 'ecocash' : null);
+
   await createSalesReceipt(
     {
       orderNumber:    order.orderNumber,
@@ -603,7 +608,7 @@ export async function postSalesReceiptForOrder(orderId: string): Promise<void> {
       lineTotalUsd: i.lineTotalUsd,
       productType:  i.productType,
     })),
-    payment?.paymentMethod ?? null,
+    method,
     customer,
   );
 }

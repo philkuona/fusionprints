@@ -579,7 +579,11 @@ function printersPageHtml(role: AdminRole = 'full'): string {
         : 'Switch DNP back to 6×8 mode?\\n\\nReload 6×8 media. Regular prints resume; any remaining 5×7 jobs are held again.';
       if (!confirm(msg)) return;
       const r = await fetch('/admin/api/dnp-media-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: mode }) });
-      if (!r.ok) { alert('Failed to change DNP media mode'); return; }
+      if (!r.ok) {
+        const d = await r.json().catch(function(){ return {}; });
+        alert(d.error || 'Failed to change DNP media mode');
+        return;
+      }
       loadMediaBar();
     }
 

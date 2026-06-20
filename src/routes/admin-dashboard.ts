@@ -17,14 +17,14 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { isEnabled as qboEnabled, isSetupComplete, createSalesReceipt, createRefundReceipt } from '@/services/qbo.js';
+import { isEnabled as qboEnabled, isSetupComplete, createRefundReceipt } from '@/services/qbo.js';
 import { payments } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
-import { releaseOrderForPickup } from '@/services/order.js';
+import { releaseOrderForPickup, postSalesReceiptForOrder } from '@/services/order.js';
 import { getDnpMediaMode, setDnpMediaMode, type DnpMediaMode } from '@/services/store-settings.js';
 import { eq, desc, and, gte, sql, count } from 'drizzle-orm';
 
@@ -256,36 +256,8 @@ async function getOrderDetails(orderId: string) {
 
 
 // ===== QBO hook helpers =====
-
-async function postQboSalesReceipt(orderId: string): Promise<void> {
-  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-  if (!order) return;
-  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-  const [payment] = await db
-    .select({ paymentMethod: payments.paymentMethod })
-    .from(payments)
-    .where(eq(payments.orderId, orderId))
-    .orderBy(desc(payments.completedAt))
-    .limit(1);
-  await createSalesReceipt(
-    {
-      orderNumber:    order.orderNumber,
-      subtotalUsd:    order.subtotalUsd,
-      deliveryFeeUsd: order.deliveryFeeUsd,
-      totalUsd:       order.totalUsd,
-      fulfilledAt:    order.fulfilledAt,
-      createdAt:      order.createdAt,
-    },
-    items.map(i => ({
-      sizeCode:     i.sizeCode,
-      quantity:     i.quantity,
-      unitPriceUsd: i.unitPriceUsd,
-      lineTotalUsd: i.lineTotalUsd,
-      productType:  i.productType,
-    })),
-    payment?.paymentMethod ?? null,
-  );
-}
+// Sales receipts post at markOrderPaid (services/order.ts postSalesReceiptForOrder),
+// with the fulfil action as an idempotent fallback. Refunds post on cancel below.
 
 async function postQboRefundIfPaid(orderId: string): Promise<void> {
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
@@ -491,12 +463,12 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
         .set({ status: 'fulfilled', fulfilledAt: new Date() })
         .where(eq(orders.id, id));
       logger.info({ orderId: id }, 'Order fulfilled');
-      // Fire-and-forget QBO Sales Receipt
-      if (qboEnabled() && isSetupComplete()) {
-        void postQboSalesReceipt(id).catch(err =>
-          logger.error({ err, orderId: id }, 'QBO Sales Receipt failed — manual entry needed')
-        );
-      }
+      // Fallback QBO sales receipt — the primary post happens at markOrderPaid.
+      // Idempotent + self-guarded, so this only catches orders whose paid-time
+      // post hadn't run (e.g. predating the change) and never double-posts.
+      void postSalesReceiptForOrder(id).catch(err =>
+        logger.error({ err, orderId: id }, 'QBO Sales Receipt failed — manual entry needed')
+      );
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to fulfil order');

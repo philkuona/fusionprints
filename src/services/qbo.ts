@@ -402,6 +402,19 @@ export async function createSalesReceipt(
 }
 
 /**
+ * Look up an existing QBO Sales Receipt by its DocNumber (= our order number).
+ * Used as an idempotency guard so retries / re-entrant posts don't double-post.
+ * Returns the QBO Id if one exists, else null.
+ */
+export async function findSalesReceiptId(orderNumber: string): Promise<string | null> {
+  const q = encodeURIComponent(`SELECT Id FROM SalesReceipt WHERE DocNumber = '${orderNumber}' MAXRESULTS 1`);
+  const res = await qboRequest('GET', `query?query=${q}`) as {
+    QueryResponse: { SalesReceipt?: Array<{ Id: string }> };
+  };
+  return res.QueryResponse?.SalesReceipt?.[0]?.Id ?? null;
+}
+
+/**
  * Post a Refund Receipt to QBO when a paid order is cancelled.
  * Non-blocking — caller should fire-and-forget with void + .catch.
  */

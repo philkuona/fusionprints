@@ -21,6 +21,7 @@ import { calculateQuote } from '@/services/pricing.js';
 import { getProduct } from '@/config/catalog.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import { sendFiveBySevenOperatorEmail } from '@/services/operator-email.js';
+import { isEnabled as qboEnabled, isSetupComplete, createSalesReceipt, findSalesReceiptId } from '@/services/qbo.js';
 import {
   renderOrderInfoSlip,
   renderEndSeparatorSlip,
@@ -533,7 +534,53 @@ export async function markOrderPaid(
   // 5×7 special handling — next-working-day date + operator alert. Idempotent
   // and self-guarded; runs for whichever channel just got paid.
   const placedOrder = await getOrderByNumber(orderNumber);
-  if (placedOrder) await applyFiveBySevenHandling(placedOrder.id);
+  if (placedOrder) {
+    await applyFiveBySevenHandling(placedOrder.id);
+    // Post the QBO sales receipt as soon as payment is confirmed (the sale is
+    // recognised at payment, not collection). Idempotent + fire-and-forget — a
+    // QBO failure must never roll back or block a paid order.
+    void postSalesReceiptForOrder(placedOrder.id).catch((err) =>
+      logger.error({ orderNumber, err }, 'QBO sales receipt failed — manual entry may be needed'),
+    );
+  }
+}
+
+/**
+ * Post a QBO sales receipt for an order. Idempotent: no-ops if QBO isn't set up,
+ * or if QBO already has a receipt for this order's DocNumber (guards against
+ * webhook retries / the paid + fulfil paths both firing). Used at markOrderPaid
+ * (primary) and as a fallback on fulfil.
+ */
+export async function postSalesReceiptForOrder(orderId: string): Promise<void> {
+  if (!qboEnabled() || !isSetupComplete()) return;
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) return;
+  if (await findSalesReceiptId(order.orderNumber)) return; // already posted
+  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const [payment] = await db
+    .select({ paymentMethod: payments.paymentMethod })
+    .from(payments)
+    .where(eq(payments.orderId, orderId))
+    .orderBy(desc(payments.completedAt))
+    .limit(1);
+  await createSalesReceipt(
+    {
+      orderNumber:    order.orderNumber,
+      subtotalUsd:    order.subtotalUsd,
+      deliveryFeeUsd: order.deliveryFeeUsd,
+      totalUsd:       order.totalUsd,
+      fulfilledAt:    order.fulfilledAt,
+      createdAt:      order.createdAt,
+    },
+    items.map((i) => ({
+      sizeCode:     i.sizeCode,
+      quantity:     i.quantity,
+      unitPriceUsd: i.unitPriceUsd,
+      lineTotalUsd: i.lineTotalUsd,
+      productType:  i.productType,
+    })),
+    payment?.paymentMethod ?? null,
+  );
 }
 
 /**

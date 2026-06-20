@@ -1,0 +1,1 @@
+ALTER TABLE "printers" ADD COLUMN "ink_levels" jsonb;

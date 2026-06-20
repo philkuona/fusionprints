@@ -18,6 +18,7 @@ import {
   printers,
   customers,
   webUsers,
+  type InkLevel,
 } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
@@ -179,6 +180,8 @@ export interface PrinterStatusInfo {
   staleness: 'online' | 'stale' | 'offline';
   mediaRemaining: number | null;
   errorMessage: string | null;
+  currentMedia: string | null;
+  inkLevels: InkLevel[] | null;
 }
 
 export async function getPrinterStatus(): Promise<PrinterStatusInfo[]> {
@@ -202,6 +205,8 @@ export async function getPrinterStatus(): Promise<PrinterStatusInfo[]> {
       staleness,
       mediaRemaining: null, // not tracked in current schema
       errorMessage: null,
+      currentMedia: p.currentMedia,
+      inkLevels: p.inkLevels ?? null,
     };
   });
 }

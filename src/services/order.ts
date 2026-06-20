@@ -155,12 +155,9 @@ export async function createOrder(
         })
         .returning();
 
-      // Find the printers for job assignment
-      const allPrinters = await tx.select().from(printers);
-      const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
-      const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
-
-      // Create order items and print jobs. quote.items is index-aligned with
+      // Create order items only. Print jobs are NOT created here — they're
+      // enqueued at markOrderPaid (like web orders), so an unpaid order is never
+      // dispatchable to a printer. quote.items is index-aligned with
       // context.cart (calculateQuote prices each cart item in order, no
       // aggregation), so match by index — this is correct even when two items
       // share a sizeCode (e.g. two different wallet sets) where find-by-sizeCode
@@ -187,8 +184,8 @@ export async function createOrder(
             }
           : null;
 
-        // Create the order item
-        const [orderItem] = await tx
+        // Create the order item. Print jobs are enqueued later, at markOrderPaid.
+        await tx
           .insert(orderItems)
           .values({
             orderId: order.id,
@@ -200,32 +197,7 @@ export async function createOrder(
             unitPriceUsd: String(pricedItem.unitPriceUsd),
             lineTotalUsd: String(pricedItem.lineTotalUsd),
             requiresManualReview: pricedItem.requiresManualReview,
-          })
-          .returning();
-
-        // Determine which printer handles this item
-        const product = getProduct(pricedItem.sizeCode);
-        const isLargeFormat = ['8x10', '11x14', '12x18', '16x20'].includes(
-          pricedItem.sizeCode,
-        );
-        const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;
-
-        // Phase D.1: tag the print job with its target printer type for routing
-        const targetPrinterType = product
-          ? (product.printer === 'dnp_ds620a_4x6' ? 'dye_sub_4x6' as const
-            : product.printer === 'dnp_ds620a_5x7' ? 'dye_sub_5x7' as const
-            : 'inkjet' as const)
-          : null;
-
-        // Create the print job
-        const jobStatus = pricedItem.requiresManualReview ? 'awaiting_approval' : 'queued';
-
-        await tx.insert(printJobs).values({
-          orderItemId: orderItem.id,
-          printerId: assignedPrinter?.id ?? null,
-          targetPrinterType,
-          status: jobStatus,
-        });
+          });
       }
 
       logger.info(
@@ -333,9 +305,9 @@ export async function createWebOrder(
         })
         .returning();
 
-      // Web orders insert only the line items here. Print jobs are NOT created
-      // until payment is confirmed (see enqueueWebPrintJobs in markOrderPaid),
-      // so the print agent can never pick up an unpaid web order.
+      // Insert only the line items here. Print jobs are NOT created until payment
+      // is confirmed (see enqueuePrintJobsForOrder in markOrderPaid), so the print
+      // agent can never pick up an unpaid order.
       for (let i = 0; i < quote.items.length; i++) {
         const priced = quote.items[i];
         const src = items[i];
@@ -367,11 +339,11 @@ export async function createWebOrder(
 }
 
 /**
- * Create print jobs for every item in an order, with the same printer routing
- * as the WhatsApp flow. Called once a web order's payment is confirmed. Safe to
+ * Create print jobs for every item in an order. Called once an order's payment
+ * is confirmed (any channel), so unpaid orders are never dispatchable. Safe to
  * skip if jobs already exist (idempotent guard against double webhooks).
  */
-export async function enqueueWebPrintJobs(orderId: string): Promise<void> {
+export async function enqueuePrintJobsForOrder(orderId: string): Promise<void> {
   const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
   if (items.length === 0) return;
 
@@ -403,7 +375,7 @@ export async function enqueueWebPrintJobs(orderId: string): Promise<void> {
       status: jobStatus,
     });
   }
-  logger.info({ orderId, jobs: items.length }, 'Enqueued web print jobs after payment');
+  logger.info({ orderId, jobs: items.length }, 'Enqueued print jobs after payment');
 }
 
 /**
@@ -512,15 +484,15 @@ export async function markOrderPaid(
 
   logger.info({ orderNumber, paymentReference }, 'Order marked as paid');
 
-  // Web orders create their print jobs now (not at order time), so an unpaid
-  // web order is never dispatchable. WhatsApp orders already have their jobs.
+  // Print jobs are created now (at payment) for ALL channels, so an unpaid order
+  // is never dispatchable to a printer. Idempotent — skips if jobs already exist.
   try {
     const paidOrder = await getOrderByNumber(orderNumber);
-    if (paidOrder?.channel === 'web') {
-      await enqueueWebPrintJobs(paidOrder.id);
+    if (paidOrder) {
+      await enqueuePrintJobsForOrder(paidOrder.id);
     }
   } catch (err) {
-    logger.error({ orderNumber, err }, 'Failed to enqueue web print jobs after payment');
+    logger.error({ orderNumber, err }, 'Failed to enqueue print jobs after payment');
   }
 
   // Queue slips alongside customer prints.

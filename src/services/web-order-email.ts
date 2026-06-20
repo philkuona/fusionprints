@@ -13,7 +13,7 @@ import { orders, orderItems, webUsers, customers } from '@/db/schema.js';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { getProduct } from '@/config/catalog.js';
-import { getPrimaryCollectionPoint } from '@/services/collection-points.js';
+import { getOrderCollectionPoint } from '@/services/collection-points.js';
 
 function money(v: string | number): string {
   return `$${Number(v).toFixed(2)}`;
@@ -130,7 +130,7 @@ export async function sendOrderReceipt(orderNumber: string): Promise<void> {
   if (isDelivery) {
     fulfilmentLine = "<strong>Delivery.</strong> We'll be in touch with delivery details.";
   } else {
-    const point = await getPrimaryCollectionPoint();
+    const point = await getOrderCollectionPoint(order.collectionPointId);
     const where = point ? `${point.name}, ${point.addressLine}` : env.BUSINESS_NAME;
     fulfilmentLine = `<strong>Collection.</strong> We'll let you know the moment it's ready to collect at <strong>${where}</strong>.`;
   }

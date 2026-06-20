@@ -340,3 +340,35 @@ function cartItem() {
     imageRef: 'img-x',
   };
 }
+
+describe('collection point selection (PR-2b)', () => {
+  const point = (id: string, name: string) =>
+    ({ id, name, addressLine: `${name} Rd`, hours: 'Mon–Sat', active: true, sortOrder: 0, createdAt: new Date() }) as never;
+  const ctx = () => ({ ...emptyContext(), cart: [cartItem()] });
+
+  it('single (or no) point: collect goes straight to summary, no choice asked', () => {
+    const r = handleMessage('choosing_fulfillment', ctx(), text('1'), NAMED, [point('p1', 'Lab')]);
+    expect(r.nextStep).toBe('confirming_order');
+    expect(r.nextContext.fulfillmentMethod).toBe('collection');
+    expect(r.nextContext.selectedCollectionPointId).toBe('p1');
+  });
+
+  it('multiple points: collect asks the customer to pick one', () => {
+    const points = [point('p1', 'Lab'), point('p2', 'Mall')];
+    let r = handleMessage('choosing_fulfillment', ctx(), text('1'), NAMED, points);
+    expect(r.nextStep).toBe('choosing_collection_point');
+    expect(r.nextContext.selectedCollectionPointId).toBeUndefined();
+
+    // pick #2 → summary with that point stored
+    r = handleMessage('choosing_collection_point', r.nextContext, text('2'), NAMED, points);
+    expect(r.nextStep).toBe('confirming_order');
+    expect(r.nextContext.selectedCollectionPointId).toBe('p2');
+  });
+
+  it('multiple points: invalid pick re-prompts without losing state', () => {
+    const points = [point('p1', 'Lab'), point('p2', 'Mall')];
+    const r = handleMessage('choosing_collection_point', { ...ctx(), fulfillmentMethod: 'collection' }, text('9'), NAMED, points);
+    expect(r.nextStep).toBe('choosing_collection_point');
+    expect(r.nextContext.selectedCollectionPointId).toBeUndefined();
+  });
+});

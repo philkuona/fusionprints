@@ -251,6 +251,11 @@ export const orders = pgTable(
     // Full name captured at web checkout (required there) for the QBO customer.
     // WhatsApp orders use the customer's name instead, so this stays nullable.
     contactName: text('contact_name'),
+    // Order placed on behalf of someone else (R2-13). When set, the recipient is
+    // notified alongside the buyer when the order is ready/fulfilled. recipient_name
+    // is optional (Stage 2 / web); recipient_phone (E.164) drives the WhatsApp notice.
+    recipientName: text('recipient_name'),
+    recipientPhone: text('recipient_phone'),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),

@@ -168,6 +168,7 @@ export async function createOrder(
           fulfillmentMethod,
           deliveryAddress: context.deliveryAddress ?? null,
           collectionPointId: context.selectedCollectionPointId ?? null,
+          recipientPhone: context.recipientPhone ?? null,
         })
         .returning();
 
@@ -983,22 +984,35 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
   const locAddress = point?.addressLine ?? env.BUSINESS_ADDRESS;
   const locHours = point ? pointHours(point) : env.BUSINESS_HOURS;
 
-  // Prefer the approved template (delivers outside the 24h window — e.g. web
-  // orders); fall back to free-form text when no template is configured.
-  if (env.WHATSAPP_TEMPLATE_PICKUP) {
-    // {{1}} name, {{2}} order, {{3}} hours, {{4}} address
-    await sendWhatsAppTemplate(contact.phone, env.WHATSAPP_TEMPLATE_PICKUP, [
-      firstName,
-      orderNumber,
-      locHours,
-      `${locName}, ${locAddress}`,
-    ]);
-  } else {
-    const navLine = point?.mapsUrl ? `\n\n🧭 Navigate: ${point.mapsUrl}` : '';
-    const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}${navLine}`;
-    await sendWhatsAppMessage(contact.phone, message);
+  // Notify the buyer, plus the gift recipient if this order is for someone else
+  // (R2-13). Each send is best-effort so one failure doesn't block the other.
+  const phones = recipientPhones(contact.phone, order.recipientPhone);
+  for (const phone of phones) {
+    // Prefer the approved template (delivers outside the 24h window — e.g. web
+    // orders); fall back to free-form text when no template is configured.
+    if (env.WHATSAPP_TEMPLATE_PICKUP) {
+      // {{1}} name, {{2}} order, {{3}} hours, {{4}} address
+      await sendWhatsAppTemplate(phone, env.WHATSAPP_TEMPLATE_PICKUP, [
+        firstName,
+        orderNumber,
+        locHours,
+        `${locName}, ${locAddress}`,
+      ]).catch((err) => logger.error({ orderNumber, phone, err }, 'Pickup notify failed for a recipient'));
+    } else {
+      const navLine = point?.mapsUrl ? `\n\n🧭 Navigate: ${point.mapsUrl}` : '';
+      const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}${navLine}`;
+      await sendWhatsAppMessage(phone, message).catch((err) => logger.error({ orderNumber, phone, err }, 'Pickup notify failed for a recipient'));
+    }
   }
-  logger.info({ orderNumber, phone: contact.phone, template: !!env.WHATSAPP_TEMPLATE_PICKUP }, 'Sent ready-for-pickup notification');
+  logger.info({ orderNumber, recipients: phones.length, template: !!env.WHATSAPP_TEMPLATE_PICKUP }, 'Sent ready-for-pickup notification');
+}
+
+/** The distinct phones to notify for an order: the buyer plus the gift recipient
+ * (R2-13), if set and different. Normalised + deduped. */
+function recipientPhones(buyerPhone: string, recipientPhone: string | null): string[] {
+  const out = [buyerPhone];
+  if (recipientPhone && recipientPhone !== buyerPhone) out.push(recipientPhone);
+  return out;
 }
 
 /**
@@ -1043,9 +1057,12 @@ export async function notifyOrderFulfilled(orderNumber: string): Promise<void> {
   if (!order) return;
   const contact = await resolveOrderContact(order);
   if (contact) {
-    await sendWhatsAppMessage(contact.phone, MSG.orderFulfilled(orderNumber)).catch((err) =>
-      logger.error({ orderNumber, err }, 'Failed to send fulfilled WhatsApp'),
-    );
+    // Thank both the buyer and the gift recipient if set (R2-13).
+    for (const phone of recipientPhones(contact.phone, order.recipientPhone)) {
+      await sendWhatsAppMessage(phone, MSG.orderFulfilled(orderNumber)).catch((err) =>
+        logger.error({ orderNumber, phone, err }, 'Failed to send fulfilled WhatsApp'),
+      );
+    }
   }
   await sendOrderFulfilledEmail(orderNumber).catch((err) =>
     logger.error({ orderNumber, err }, 'Failed to send fulfilled email'),
@@ -1066,8 +1083,13 @@ async function sendOutForDeliveryNotification(orderNumber: string): Promise<void
 
   const message = `🚚 Your order is on its way!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nYour prints have left *${env.BUSINESS_NAME}* and are out for delivery. Our driver will be in touch shortly.\n\nQuestions? Just reply to this message.`;
 
-  await sendWhatsAppMessage(contact.phone, message);
-  logger.info({ orderNumber, phone: contact.phone }, 'Sent out-for-delivery notification');
+  // Notify the buyer + the gift recipient if set (R2-13). Best-effort each.
+  for (const phone of recipientPhones(contact.phone, order.recipientPhone)) {
+    await sendWhatsAppMessage(phone, message).catch((err) =>
+      logger.error({ orderNumber, phone, err }, 'Out-for-delivery notify failed for a recipient'),
+    );
+  }
+  logger.info({ orderNumber }, 'Sent out-for-delivery notification');
 }
 
 /**

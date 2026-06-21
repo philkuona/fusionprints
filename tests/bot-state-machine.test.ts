@@ -59,10 +59,12 @@ describe('happy path: greeting to EcoCash push', () => {
     r = run('adding_more_or_checkout', ctx, text('2'));
     expect(r.nextStep).toBe('choosing_fulfillment');
 
-    // collection → order summary
+    // collection → "who's this for?" (R2-13) → skip → order summary
     r = run(r.nextStep, r.nextContext, text('1'));
-    expect(r.nextStep).toBe('confirming_order');
+    expect(r.nextStep).toBe('collecting_recipient');
     expect(r.nextContext.fulfillmentMethod).toBe('collection');
+    r = run(r.nextStep, r.nextContext, text('SKIP'));
+    expect(r.nextStep).toBe('confirming_order');
 
     // PAY → CREATE_ORDER effect, on to payment method
     r = run(r.nextStep, r.nextContext, text('PAY'));
@@ -139,9 +141,20 @@ describe('happy path: greeting to EcoCash push', () => {
     expect(r.nextContext.fulfillmentMethod).toBe('delivery');
 
     r = run(r.nextStep, r.nextContext, text('12 Example Street, Suburbia'));
-    expect(r.nextStep).toBe('confirming_order');
+    // After the address, the recipient question (R2-13) precedes the summary.
+    expect(r.nextStep).toBe('collecting_recipient');
     // The address keeps the customer's casing (raw text, not the uppercased command).
     expect(r.nextContext.deliveryAddress).toBe('12 Example Street, Suburbia');
+    r = run(r.nextStep, r.nextContext, text('SKIP'));
+    expect(r.nextStep).toBe('confirming_order');
+  });
+
+  it('captures a gift recipient number and notifies them too (R2-13)', () => {
+    const ctx = { ...emptyContext(), cart: [cartItem()], fulfillmentMethod: 'collection' as const };
+    // At the recipient step, a valid number is stored on the order context.
+    const r = run('collecting_recipient', ctx, text('0772123456'));
+    expect(r.nextStep).toBe('confirming_order');
+    expect(r.nextContext.recipientPhone).toBe('+263772123456');
   });
 });
 
@@ -358,9 +371,10 @@ describe('collection point selection (PR-2b)', () => {
     ({ id, name, addressLine: `${name} Rd`, hours: 'Mon–Sat', active: true, sortOrder: 0, createdAt: new Date() }) as never;
   const ctx = () => ({ ...emptyContext(), cart: [cartItem()] });
 
-  it('single (or no) point: collect goes straight to summary, no choice asked', () => {
+  it('single (or no) point: collect goes to the recipient question, no choice asked', () => {
     const r = handleMessage('choosing_fulfillment', ctx(), text('1'), NAMED, [point('p1', 'Lab')]);
-    expect(r.nextStep).toBe('confirming_order');
+    // Recipient question (R2-13) precedes the summary; point is already resolved.
+    expect(r.nextStep).toBe('collecting_recipient');
     expect(r.nextContext.fulfillmentMethod).toBe('collection');
     expect(r.nextContext.selectedCollectionPointId).toBe('p1');
   });
@@ -371,10 +385,12 @@ describe('collection point selection (PR-2b)', () => {
     expect(r.nextStep).toBe('choosing_collection_point');
     expect(r.nextContext.selectedCollectionPointId).toBeUndefined();
 
-    // pick #2 → summary with that point stored
+    // pick #2 → recipient question, then summary, with that point stored
     r = handleMessage('choosing_collection_point', r.nextContext, text('2'), NAMED, points);
-    expect(r.nextStep).toBe('confirming_order');
+    expect(r.nextStep).toBe('collecting_recipient');
     expect(r.nextContext.selectedCollectionPointId).toBe('p2');
+    r = handleMessage('collecting_recipient', r.nextContext, text('SKIP'), NAMED, points);
+    expect(r.nextStep).toBe('confirming_order');
   });
 
   it('multiple points: invalid pick re-prompts without losing state', () => {

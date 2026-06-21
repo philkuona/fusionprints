@@ -246,6 +246,13 @@
       "when": 1782030107162,
       "tag": "0034_collection_point_maps_url",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1782068829612,
+      "tag": "0035_order_recipient",
+      "breakpoints": true
     }
   ]
 }

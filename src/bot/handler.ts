@@ -95,7 +95,9 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
     // The state machine is pure, so inject the live collection points it needs
     // for the pickup steps (only fetched there to avoid a query per message).
     const collectionPoints =
-      currentStep === 'choosing_fulfillment' || currentStep === 'choosing_collection_point'
+      currentStep === 'choosing_fulfillment' ||
+      currentStep === 'choosing_collection_point' ||
+      currentStep === 'collecting_recipient'
         ? await getActiveCollectionPoints()
         : [];
     const response = handleMessage(

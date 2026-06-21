@@ -29,6 +29,7 @@ export type BotStep =
   | 'choosing_fulfillment'
   | 'choosing_collection_point'
   | 'collecting_address'
+  | 'collecting_recipient'
   | 'confirming_order'
   | 'choosing_payment_method'
   | 'entering_ecocash_number'
@@ -90,6 +91,10 @@ export interface BotContext {
   deliveryZone?: string;
   /** Delivery address if delivery chosen */
   deliveryAddress?: string;
+  /** Recipient's WhatsApp number when the order is for someone else (R2-13). */
+  recipientPhone?: string;
+  /** Guard so the "who's this for?" question is asked exactly once per checkout. */
+  _recipientAsked?: boolean;
   /** Order number once created */
   orderNumber?: string;
   /** Payment method chosen at checkout */

@@ -318,6 +318,18 @@ export const MSG = {
 
   askDeliveryAddress: () => `Please send your delivery address in ${DELIVERY_ZONE}.`,
 
+  /** Ask whether the order is for someone else (R2-13). Skippable. A reply with a
+      number captures the recipient so they're notified alongside the buyer. */
+  askRecipient: () => ({
+    text: `🎁 Is this order for someone else?\n\nReply with their WhatsApp number and we'll keep them posted when it's ready — or tap Skip.`,
+    buttons: [{ id: 'SKIP', title: '⏭️ Skip' }],
+  }),
+
+  recipientNoted: (number: string) => `Lovely — we'll notify *${number}* too when it's ready. 🎁`,
+
+  invalidRecipientNumber: () =>
+    `That doesn't look like a valid number. Send it as \`0771234567\` or \`+263771234567\`, or tap Skip.`,
+
   outsideHarare: () => `For deliveries outside ${DELIVERY_ZONE}, please send us your address and we'll quote you a delivery fee before confirming the order.`,
 
   invalidFulfillmentChoice: () => `Please reply with *1*, *2*, or *3*.`,

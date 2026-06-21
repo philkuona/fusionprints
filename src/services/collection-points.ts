@@ -90,6 +90,19 @@ export async function deleteCollectionPoint(id: string): Promise<void> {
   await db.delete(collectionPoints).where(and(eq(collectionPoints.id, id)));
 }
 
+/**
+ * Turn a collection point's saved `maps_url` into a valid, tappable Google Maps
+ * link (R2-11). The admin may paste a full URL, a Plus Code ("53G3+M5 Harare"),
+ * or a plain address — only a real http(s) URL is safe to drop into an href or a
+ * chat, so anything else is wrapped as a Maps search query. Null if unset.
+ */
+export function toMapsUrl(raw: string | null | undefined): string | null {
+  const v = raw?.trim();
+  if (!v) return null;
+  if (/^https?:\/\//i.test(v)) return v;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v)}`;
+}
+
 /** Hours for a point, falling back to the configured business hours. */
 export function pointHours(p: CollectionPoint): string {
   return p.hours ?? env.BUSINESS_HOURS;

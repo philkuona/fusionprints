@@ -13,7 +13,7 @@ import { orders, orderItems, webUsers, customers } from '@/db/schema.js';
 import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { getProduct } from '@/config/catalog.js';
-import { getOrderCollectionPoint } from '@/services/collection-points.js';
+import { getOrderCollectionPoint, toMapsUrl } from '@/services/collection-points.js';
 import { renderReceiptPdfBytes, receiptPdfFilename } from '@/services/receipt-pdf.js';
 
 function money(v: string | number): string {
@@ -238,8 +238,9 @@ export async function sendOrderReadyEmail(orderNumber: string, kind: 'pickup' | 
   if (kind === 'pickup') {
     const point = await getOrderCollectionPoint(order.collectionPointId);
     const where = point ? `${point.name}, ${point.addressLine}` : env.BUSINESS_NAME;
-    const navBtn = point?.mapsUrl
-      ? `<a href="${point.mapsUrl}" style="display:inline-block;margin-top:16px;background:#1f1b16;color:#fbf7f0;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:999px;">🧭 Navigate to collect</a>`
+    const mapsLink = toMapsUrl(point?.mapsUrl);
+    const navBtn = mapsLink
+      ? `<a href="${mapsLink}" style="display:inline-block;margin-top:16px;background:#1f1b16;color:#fbf7f0;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:999px;">🧭 Navigate to collect</a>`
       : '';
     const body = `
       <p style="color:#4a3f32;margin:0 0 16px;">Great news — your order <strong>${orderNumber}</strong> is printed and ready to collect at <strong>${where}</strong>.</p>

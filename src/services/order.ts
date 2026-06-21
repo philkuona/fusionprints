@@ -18,14 +18,14 @@ import { nextWorkingDay } from '@/utils/working-days.js';
 import { randomBytes } from 'crypto';
 import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
-import { getOrderMinimums } from '@/services/store-settings.js';
+import { getOrderMinimums, getDnpMediaMode } from '@/services/store-settings.js';
 import { getOrderCollectionPoint, pointHours } from '@/services/collection-points.js';
 import { getProduct } from '@/config/catalog.js';
 import { getProductCost } from '@/services/cost-overrides.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import { sendOrderReadyEmail, sendOrderFulfilledEmail } from '@/services/web-order-email.js';
 import { MSG } from '@/bot/messages.js';
-import { sendFiveBySevenOperatorEmail } from '@/services/operator-email.js';
+import { sendFiveBySevenOperatorEmail, sendApprovalNeededAlert, sendMediaSwitchAlert } from '@/services/operator-email.js';
 import {
   isEnabled as qboEnabled,
   isSetupComplete,
@@ -417,7 +417,17 @@ export async function enqueuePrintJobsForOrder(orderId: string): Promise<void> {
   // the order only completes once the approved poster prints too.
   const needsApproval = items.some((i) => i.requiresManualReview);
   if (needsApproval) {
-    await db.update(orders).set({ status: 'awaiting_approval' }).where(eq(orders.id, orderId));
+    const [o] = await db
+      .update(orders)
+      .set({ status: 'awaiting_approval' })
+      .where(eq(orders.id, orderId))
+      .returning({ orderNumber: orders.orderNumber });
+    // Alert ops by email so the order doesn't sit unapproved (R2-8). Best-effort.
+    if (o) {
+      void sendApprovalNeededAlert(o.orderNumber).catch((err) =>
+        logger.error({ orderId, err }, 'Failed to send approval-needed alert'),
+      );
+    }
   }
 
   logger.info({ orderId, jobs: items.length, needsApproval }, 'Enqueued print jobs after payment');
@@ -1088,6 +1098,45 @@ export async function cancelOrder(orderNumber: string): Promise<void> {
  * the dev mock confirm. Their still-pending payments rows are cancelled too;
  * success/failed payment rows are left untouched as history.
  */
+// Media-switch alert guard — don't re-email every sweep tick while the backlog
+// persists; re-arms once it clears (single backend instance, so module state ok).
+let lastMediaAlertAt = 0;
+const MEDIA_ALERT_COOLDOWN_MS = 30 * 60 * 1000;
+
+/**
+ * Alert ops when dye-sub jobs are stuck on the wrong loaded media (R2-9). The DNP
+ * serves only jobs whose media matches the current mode, so if it's left on 5×7
+ * while 4×6 orders arrive (or vice-versa) those jobs wait. When any has waited
+ * past maxWaitMs, email once (cooldown-guarded); re-arms when the backlog clears.
+ */
+export async function checkMediaSwitchNeeded(maxWaitMs = 10 * 60 * 1000): Promise<void> {
+  try {
+    const mode = await getDnpMediaMode();
+    const waitingType: 'dye_sub_5x7' | 'dye_sub_4x6' = mode === '6x8' ? 'dye_sub_5x7' : 'dye_sub_4x6';
+    const cutoff = new Date(Date.now() - maxWaitMs);
+    const waiting = await db
+      .select({ id: printJobs.id })
+      .from(printJobs)
+      .where(
+        and(
+          eq(printJobs.status, 'queued'),
+          eq(printJobs.targetPrinterType, waitingType),
+          lt(printJobs.queuedAt, cutoff),
+        ),
+      );
+    if (waiting.length === 0) {
+      lastMediaAlertAt = 0; // backlog cleared — re-arm
+      return;
+    }
+    if (Date.now() - lastMediaAlertAt < MEDIA_ALERT_COOLDOWN_MS) return;
+    lastMediaAlertAt = Date.now();
+    const neededMedia = mode === '6x8' ? '5x7' : '6x8';
+    await sendMediaSwitchAlert(mode, neededMedia, waiting.length);
+  } catch (err) {
+    logger.error({ err }, 'checkMediaSwitchNeeded failed');
+  }
+}
+
 export async function expireStalePendingOrders(maxAgeHours = 24): Promise<number> {
   try {
     const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);

@@ -24,7 +24,7 @@ import { loadAndApplyCostOverrides } from '@/services/cost-overrides.js';
 import { startVirtualPrinters } from '@/services/virtual-printer.js';
 import { registerPaymentWebhooks } from '@/routes/payment-webhooks.js';
 import { registerAgentRoutes, reclaimStaleAgentJobs } from '@/routes/agent-api.js';
-import { expireStalePendingOrders } from '@/services/order.js';
+import { expireStalePendingOrders, checkMediaSwitchNeeded } from '@/services/order.js';
 import { sweepOldSiteVisits, sweepExpiredUploadSessions } from '@/services/data-retention.js';
 import { registerUploadRoutes } from '@/routes/upload.js';
 import { registerQboRoutes } from '@/routes/qbo-auth.js';
@@ -139,6 +139,10 @@ async function main(): Promise<void> {
   // run at boot to clear any backlog accumulated while the server was down.
   void expireStalePendingOrders();
   setInterval(() => void expireStalePendingOrders(), 1000 * 60 * 60).unref();
+
+  // Alert ops when dye-sub jobs are stuck on the wrong loaded media (R2-9).
+  // Every 5 min; self-cooldowns so it emails once per backlog, not per tick.
+  setInterval(() => void checkMediaSwitchNeeded(), 1000 * 60 * 5).unref();
 
   // Data-retention sweeps: site_visits (180d), expired upload sessions. Daily,
   // plus one run at boot.

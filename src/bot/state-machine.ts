@@ -19,7 +19,7 @@
 import { PHOTO_PRODUCTS, POSTER_PRODUCTS, getProduct } from '@/config/catalog.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { validateImage } from '@/services/image-validation.js';
-import { isEcocashCapable } from '@/utils/phone.js';
+import { isEcocashCapable, normalizeZimMobile } from '@/utils/phone.js';
 import { MSG, formatCollectionPoint } from './messages.js';
 import type { BotStep, BotContext, CartItem } from './types.js';
 import { emptyContext } from './types.js';
@@ -222,6 +222,9 @@ export function handleMessage(
     case 'collecting_address':
       return handleCollectingAddress(message.text.trim(), context);
 
+    case 'collecting_recipient':
+      return handleCollectingRecipient(message.text.trim(), context, collectionPoints);
+
     case 'confirming_order':
       return handleConfirmingOrder(text, context);
 
@@ -367,11 +370,12 @@ function handleBack(
 
     case 'choosing_collection_point':
     case 'collecting_address':
+    case 'collecting_recipient':
       // Back to fulfillment options
       return reply(
         MSG.chooseFulfillmentInteractive(customer?.name ?? 'there'),
         'choosing_fulfillment',
-        { ...context, fulfillmentMethod: undefined, deliveryAddress: undefined, selectedCollectionPointId: undefined },
+        { ...context, fulfillmentMethod: undefined, deliveryAddress: undefined, selectedCollectionPointId: undefined, _recipientAsked: undefined, recipientPhone: undefined },
       );
 
     case 'confirming_order':
@@ -1210,7 +1214,38 @@ function handleCollectingAddress(address: string, context: BotContext): BotRespo
   return buildOrderSummary(newContext);
 }
 
+/** "Who's this order for?" — a number captures a gift recipient to notify
+ * alongside the buyer; SKIP continues. Either way we proceed to the summary.
+ * Needs the live collection points to render the summary on the way through. */
+function handleCollectingRecipient(
+  text: string,
+  context: BotContext,
+  collectionPoints: CollectionPoint[],
+): BotResponse {
+  const raw = text.trim();
+  const asked: BotContext = { ...context, _recipientAsked: true };
+
+  if (/^(skip|no|none|n\/a|-)$/i.test(raw)) {
+    return buildOrderSummary(asked, collectionPoints);
+  }
+
+  const phone = normalizeZimMobile(raw);
+  if (!phone) {
+    return reply(MSG.invalidRecipientNumber(), 'collecting_recipient', context);
+  }
+
+  const summaryResp = buildOrderSummary({ ...asked, recipientPhone: phone }, collectionPoints);
+  return { ...summaryResp, replies: [MSG.recipientNoted(phone), ...summaryResp.replies] };
+}
+
 function buildOrderSummary(context: BotContext, collectionPoints: CollectionPoint[] = []): BotResponse {
+  // Ask once whether the order is for someone else (R2-13) — this is the single
+  // convergence point for all fulfilment paths, so gating here covers them all.
+  // The recipient handler sets _recipientAsked and re-calls this to proceed.
+  if (!context._recipientAsked) {
+    return reply(MSG.askRecipient(), 'collecting_recipient', context);
+  }
+
   const fulfillmentMethod = context.fulfillmentMethod ?? 'collection';
   const deliveryZone = context.deliveryZone ?? 'collection';
 

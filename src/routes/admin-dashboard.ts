@@ -355,6 +355,12 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
             SELECT id FROM order_items WHERE order_id = ${id}
           ) AND ${printJobs.status} = 'awaiting_approval'`,
         );
+      // Release the slips held with the poster (poster-only orders gate all slips
+      // — incl. promo — so nothing printed before approval). Mixed orders never
+      // held their slips, so there's nothing to release there.
+      await db.update(slipJobs)
+        .set({ status: 'queued' })
+        .where(and(eq(slipJobs.orderId, id), eq(slipJobs.status, 'awaiting_approval')));
       logger.info({ orderId: id }, 'Order approved for printing');
       return { ok: true };
     } catch (err) {

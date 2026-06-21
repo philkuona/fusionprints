@@ -716,6 +716,15 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
     return;
   }
 
+  // Poster-only orders are gated: hold ALL slips (incl. promo) at
+  // 'awaiting_approval' so nothing auto-prints until the operator approves the
+  // poster. If the order ALSO has non-poster prints, those + the slips run now
+  // and only the poster waits. slip_jobs reuses print_job_status, so
+  // 'awaiting_approval' is a valid slip status. Released by the approve endpoint.
+  const needsApproval = items.some((i) => i.requiresManualReview);
+  const hasOtherPrints = items.some((i) => !i.requiresManualReview);
+  const slipStatus = needsApproval && !hasOtherPrints ? ('awaiting_approval' as const) : ('queued' as const);
+
   // Resolve the recipient from either the WhatsApp customer or the web user.
   let customerName = 'Customer';
   let customerPhone = '';
@@ -770,7 +779,7 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
       targetPrinterType: 'dye_sub_4x6',
       sequencePosition: 0,
       printReadyFileUrl: url,
-      status: 'queued',
+      status: slipStatus,
     });
     logger.info({ orderNumber }, 'Queued end_separator slip');
   } catch (err) {
@@ -795,7 +804,7 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
       targetPrinterType: 'dye_sub_4x6',
       sequencePosition: 100,
       printReadyFileUrl: url,
-      status: 'queued',
+      status: slipStatus,
     });
     logger.info({ orderNumber }, 'Queued order_info slip');
   } catch (err) {
@@ -828,7 +837,7 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
           sequencePosition: seq,
           printReadyFileUrl: url,
           campaignId: campaign.id,
-          status: 'queued',
+          status: slipStatus,
         });
       }
       logger.info({ orderNumber, campaign: campaign.name }, 'Queued promo slips');
@@ -857,7 +866,7 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
       targetPrinterType: 'thermal_label',
       sequencePosition: 0,
       payloadJson: { zpl },
-      status: 'queued',
+      status: slipStatus,
     });
     logger.info({ orderNumber }, 'Queued envelope_label slip');
   } catch (err) {

@@ -328,6 +328,15 @@ export async function getDashboardMetrics(daysBack = 30) {
     .from(printJobs)
     .where(eq(printJobs.status, 'failed'));
 
+  // Cancelled orders in the period (count + value) — audit metric (R2-10 #25).
+  const [cancelledAgg] = await db
+    .select({
+      count: sql<string>`COUNT(*)::text`,
+      valueUsd: sql<string>`COALESCE(SUM(${orders.totalUsd}), 0)::text`,
+    })
+    .from(orders)
+    .where(and(gte(orders.createdAt, cutoff), eq(orders.status, 'cancelled')));
+
   const totalRevenue = parseFloat(revenue?.totalRevenue ?? '0');
   const totalCost = parseFloat(costAgg?.totalCost ?? '0');
   const marginUsd = totalRevenue - totalCost;
@@ -372,6 +381,10 @@ export async function getDashboardMetrics(daysBack = 30) {
     },
     operational: {
       failedJobs: parseInt(failedJobs?.count ?? '0', 10),
+    },
+    cancellations: {
+      count: parseInt(cancelledAgg?.count ?? '0', 10),
+      valueUsd: parseFloat(cancelledAgg?.valueUsd ?? '0'),
     },
   };
 }
@@ -630,6 +643,30 @@ export async function getCompletedOrdersList() {
     .leftJoin(customers, eq(orders.customerId, customers.id))
     .leftJoin(webUsers, eq(orders.webUserId, webUsers.id))
     .where(inArray(orders.status, [...COMPLETED_STATUSES]))
+    .orderBy(desc(orders.createdAt))
+    .limit(100);
+}
+
+/**
+ * Cancelled orders — retained for audit (R2-10 #25). They appear in neither the
+ * Active nor Completed lists, so without this a cancellation vanishes from the
+ * dashboard. Includes the refund status so the operator sees where money stands.
+ */
+export async function getCancelledOrdersList() {
+  return db
+    .select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      createdAt: orders.createdAt,
+      totalUsd: orders.totalUsd,
+      fulfillmentMethod: orders.fulfillmentMethod,
+      refundStatus: orders.refundStatus,
+      name: nameExpr,
+    })
+    .from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .leftJoin(webUsers, eq(orders.webUserId, webUsers.id))
+    .where(eq(orders.status, 'cancelled'))
     .orderBy(desc(orders.createdAt))
     .limit(100);
 }

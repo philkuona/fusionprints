@@ -35,6 +35,7 @@ import {
   resendReceipt,
   getActiveOrders,
   getCompletedOrdersList,
+  getCancelledOrdersList,
   type Tally,
 } from '@/services/admin-ops.js';
 
@@ -145,6 +146,11 @@ function metricsPageHtml(): string {
             <div class="muted">Failed print jobs</div>
             <div style="font-size:26px;font-weight:600;margin-top:4px;color:\${d.operational.failedJobs > 0 ? 'var(--red)' : 'var(--text)'}">\${fmtInt(d.operational.failedJobs)}</div>
             <div class="muted">requires attention</div>
+          </div>
+          <div class="card">
+            <div class="muted">Cancelled orders</div>
+            <div style="font-size:26px;font-weight:600;margin-top:4px;">\${fmtInt(d.cancellations.count)}</div>
+            <div class="muted">\${fmtMoney(d.cancellations.valueUsd)} value</div>
           </div>
         </div>
 
@@ -495,16 +501,40 @@ function omDate(d: Date): string {
   return new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminRole): Promise<string> {
+async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled', role: AdminRole): Promise<string> {
   const tabBar = `
     <div class="om-tabs">
       <a href="/admin/jobs?tab=active" class="om-tab ${tab === 'active' ? 'active' : ''}">Active</a>
       <a href="/admin/jobs?tab=completed" class="om-tab ${tab === 'completed' ? 'active' : ''}">Completed</a>
+      <a href="/admin/jobs?tab=cancelled" class="om-tab ${tab === 'cancelled' ? 'active' : ''}">Cancelled</a>
       ${tab === 'active' ? '<span class="om-live"><span class="dot"></span>Live</span>' : ''}
     </div>`;
 
   let table: string;
-  if (tab === 'completed') {
+  if (tab === 'cancelled') {
+    const rows = await getCancelledOrdersList();
+    const showTotal = role !== 'operator';
+    table = `<table class="om">
+      <thead><tr><th>Date</th><th>Order #</th><th>Name</th>${showTotal ? '<th>Total</th>' : ''}<th>Refund</th><th>Fulfilment</th><th></th></tr></thead>
+      <tbody>${
+        rows.length === 0
+          ? `<tr><td colspan="${showTotal ? 7 : 6}" class="om-empty">No cancelled orders.</td></tr>`
+          : rows
+              .map(
+                (o) => `<tr>
+        <td>${omDate(o.createdAt)}</td>
+        <td class="om-mono">${o.orderNumber}</td>
+        <td>${o.name ?? '<span style="color:#8a7b66">—</span>'}</td>
+        ${showTotal ? `<td class="om-mono">$${parseFloat(o.totalUsd).toFixed(2)}</td>` : ''}
+        <td><span class="om-badge">${o.refundStatus ? o.refundStatus.replace(/_/g, ' ') : '—'}</span></td>
+        <td>${o.fulfillmentMethod === 'delivery' ? '🚚 Delivery' : '🏪 Collection'}</td>
+        <td><a class="om-link" href="#" onclick="showOrder('${o.id}');return false;">View</a></td>
+      </tr>`,
+              )
+              .join('')
+      }</tbody>
+    </table>`;
+  } else if (tab === 'completed') {
     const rows = await getCompletedOrdersList();
     // Operators don't see order amounts (consistent with the hidden Total in the
     // detail modal + the redacted revenue stats).
@@ -787,7 +817,8 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
   app.get('/admin/jobs', async (request, reply) => {
     const role = authenticatePage(request, reply);
     if (role === null) return;
-    const tab = (request.query as { tab?: string }).tab === 'completed' ? 'completed' : 'active';
+    const tabRaw = (request.query as { tab?: string }).tab;
+    const tab = tabRaw === 'completed' ? 'completed' : tabRaw === 'cancelled' ? 'cancelled' : 'active';
     reply.type('text/html').send(await orderManagementPageHtml(tab, role));
   });
 

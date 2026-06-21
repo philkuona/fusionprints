@@ -90,9 +90,21 @@ describe('happy path: greeting to EcoCash push', () => {
     expect(r.nextStep).toBe('collecting_name');
   });
 
-  it('a named customer goes straight to fulfillment at checkout (email not required)', () => {
+  it('a named customer WITH an email goes straight to fulfillment at checkout', () => {
+    const ctx = { ...emptyContext(), cart: [cartItem()] };
+    const r = run('adding_more_or_checkout', ctx, text('2'), { name: 'Rudo', email: 'rudo@example.com' });
+    expect(r.nextStep).toBe('choosing_fulfillment');
+  });
+
+  it('a named customer with no email is asked for it each order (R2-6 #20)', () => {
     const ctx = { ...emptyContext(), cart: [cartItem()] };
     const r = run('adding_more_or_checkout', ctx, text('2'), { name: 'Rudo', email: null });
+    expect(r.nextStep).toBe('collecting_email');
+  });
+
+  it('stops asking for email after 3 declines', () => {
+    const ctx = { ...emptyContext(), cart: [cartItem()] };
+    const r = run('adding_more_or_checkout', ctx, text('2'), { name: 'Rudo', email: null, emailDeclineCount: 3 });
     expect(r.nextStep).toBe('choosing_fulfillment');
   });
 

@@ -1309,8 +1309,10 @@ function handleEnteringEcocashNumber(text: string, context: BotContext): BotResp
 }
 
 function handleAwaitingEcocashPin(text: string, context: BotContext): BotResponse {
-  // Customer responded to timeout prompt
-  if (text === '1') {
+  // Customer responded to timeout prompt — '1' typed, or the "Try again" button
+  // (id RETRY_ECOCASH) from the payment-failure notification. (CANCEL is handled
+  // by the global command above, for both the typed word and the Cancel button.)
+  if (text === '1' || text === 'RETRY_ECOCASH') {
     // Try EcoCash again with same number
     if (!context.orderNumber || !context.ecocashNumber) {
       return reply(MSG.somethingWentWrong(), 'idle', emptyContext());

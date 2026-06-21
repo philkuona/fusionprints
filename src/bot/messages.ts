@@ -399,9 +399,15 @@ export const MSG = {
 
   /** Payment gateway reported the charge failed/timed out (async, via webhook).
       Pushed proactively so the customer isn't left on "Waiting for confirmation".
-      Options match the awaiting_ecocash_pin handler (1 = retry, 2 = cancel). */
-  paymentFailed: (orderNumber: string) =>
-    `❌ That payment didn't go through — it may have timed out or been declined.\n\nOrder *${orderNumber}* is still saved. Want to:\n\n1. Try EcoCash again\n2. Cancel order`,
+      Interactive buttons: RETRY_ECOCASH (handled in awaiting_ecocash_pin) and
+      CANCEL (global cancel). Typed 1/2 still work as a fallback. */
+  paymentFailedButtons: (orderNumber: string) => ({
+    text: `❌ That payment didn't go through — it may have timed out or been declined.\n\nOrder *${orderNumber}* is still saved.`,
+    buttons: [
+      { id: 'RETRY_ECOCASH', title: '🔄 Try again' },
+      { id: 'CANCEL', title: '❌ Cancel order' },
+    ],
+  }),
 
   /** Generic — kept for backwards compatibility (unused now) */
   paymentLinkSent: (orderNumber: string, paymentUrl: string, totalUsd: string) =>

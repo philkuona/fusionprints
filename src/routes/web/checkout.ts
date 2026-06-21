@@ -73,6 +73,17 @@ const checkoutSchema = z.object({
     .regex(/^\+?[1-9]\d{7,14}$/, 'Enter a valid phone number, e.g. +263771234567.'),
   // Required: the buyer's full name, for their QBO customer record + receipt.
   fullName: z.string().trim().min(1, 'Enter your full name.').max(120),
+  // Optional gift recipient (R2-13): notify them alongside the buyer. Name is
+  // for the records; the number drives the WhatsApp notice.
+  recipientName: z.string().trim().max(120).optional().nullable(),
+  recipientPhone: z
+    .string()
+    .trim()
+    .regex(/^\+?[1-9]\d{7,14}$/, 'Enter a valid recipient phone number.')
+    .optional()
+    .nullable(),
+  // Optional billing address (card payments) when it differs from delivery.
+  billingAddress: z.string().trim().max(400).optional().nullable(),
 });
 
 const confirmSchema = z.object({ outcome: z.enum(['success', 'fail']) });
@@ -108,10 +119,12 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
         issues: parsed.error.flatten().fieldErrors,
       });
     }
-    const { items, fulfillmentMethod, addressId, phone, fullName, collectionPointId } = parsed.data;
+    const { items, fulfillmentMethod, addressId, phone, fullName, collectionPointId, recipientName, recipientPhone, billingAddress } = parsed.data;
     // Store the contact number in E.164 (any country, default Zimbabwe) so
     // WhatsApp notifications work for local and international customers alike.
     const contactPhone = normalizePhone(phone) ?? phone;
+    // Gift recipient (R2-13): normalise their number too so notify-both works.
+    const recipientPhoneE164 = recipientPhone ? (normalizePhone(recipientPhone) ?? recipientPhone) : null;
 
     const standardItems = items.filter((i) => i.productType !== 'composite');
     const compositeItems = items.filter((i) => i.productType === 'composite');
@@ -221,6 +234,9 @@ export async function registerWebCheckoutRoutes(app: FastifyInstance): Promise<v
       collectionPointId: fulfillmentMethod === 'collection' ? collectionPointId ?? null : null,
       contactPhone,
       contactName: fullName,
+      recipientName: recipientName ?? null,
+      recipientPhone: recipientPhoneE164,
+      billingAddress: billingAddress ?? null,
     });
     if (!res.ok) {
       return reply.status(400).send({ error: 'order_failed', message: res.reason });

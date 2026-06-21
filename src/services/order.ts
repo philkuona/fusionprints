@@ -274,6 +274,11 @@ export interface CreateWebOrderInput {
   contactPhone?: string | null;
   /** Full name captured at checkout (required for web orders) — for QBO. */
   contactName?: string | null;
+  /** Gift recipient (R2-13): name + WhatsApp number to notify alongside buyer. */
+  recipientName?: string | null;
+  recipientPhone?: string | null;
+  /** Billing address when it differs from delivery (R2-13 Stage 2). Free-text. */
+  billingAddress?: string | null;
   notes?: string | null;
 }
 
@@ -290,7 +295,7 @@ export interface CreateWebOrderInput {
 export async function createWebOrder(
   input: CreateWebOrderInput,
 ): Promise<CreateOrderResult | CreateOrderError> {
-  const { webUserId, items, deliveryAddress, collectionPointId, contactPhone, contactName, notes } = input;
+  const { webUserId, items, deliveryAddress, collectionPointId, contactPhone, contactName, recipientName, recipientPhone, billingAddress, notes } = input;
 
   if (!items || items.length === 0) {
     return { ok: false, reason: 'Cart is empty' };
@@ -329,6 +334,9 @@ export async function createWebOrder(
           collectionPointId: collectionPointId ?? null,
           contactPhone: contactPhone ?? null,
           contactName: contactName ?? null,
+          recipientName: recipientName ?? null,
+          recipientPhone: recipientPhone ?? null,
+          billingAddress: billingAddress ?? null,
           notes: notes ?? null,
         })
         .returning();

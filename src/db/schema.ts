@@ -256,6 +256,10 @@ export const orders = pgTable(
     // is optional (Stage 2 / web); recipient_phone (E.164) drives the WhatsApp notice.
     recipientName: text('recipient_name'),
     recipientPhone: text('recipient_phone'),
+    // Billing address for card payments when it differs from the delivery address
+    // (R2-13 Stage 2). Stored for records/receipts; card-AVS use is gated on
+    // Payonify vaulting. Free-text formatted at checkout.
+    billingAddress: text('billing_address'),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),

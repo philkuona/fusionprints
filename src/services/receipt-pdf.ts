@@ -8,7 +8,8 @@
  * receipt problem can't affect a paid order.
  */
 import sharp from 'sharp';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import { PDFDocument } from 'pdf-lib';
 import { eq } from 'drizzle-orm';
@@ -214,7 +215,10 @@ export async function generateReceiptPdf(orderNumber: string): Promise<string | 
     await s3.send(
       new PutObjectCommand({ Bucket: env.B2_BUCKET_NAME, Key: key, Body: pdfBytes, ContentType: 'application/pdf' }),
     );
-    return `https://${env.B2_BUCKET_NAME}.${env.B2_ENDPOINT}/${key}`;
+    // 360dialog fetches this URL to deliver the document, so it must be publicly
+    // reachable — the raw bucket URL is private (401), which silently drops the
+    // WhatsApp receipt. Return a presigned GET URL (1h; the fetch is immediate).
+    return getSignedUrl(s3, new GetObjectCommand({ Bucket: env.B2_BUCKET_NAME, Key: key }), { expiresIn: 3600 });
   } catch (err) {
     logger.error({ orderNumber, err }, 'Failed to upload receipt PDF');
     return null;

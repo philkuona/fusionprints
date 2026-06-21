@@ -386,7 +386,17 @@ export async function enqueuePrintJobsForOrder(orderId: string): Promise<void> {
       status: jobStatus,
     });
   }
-  logger.info({ orderId, jobs: items.length }, 'Enqueued print jobs after payment');
+
+  // If any item needs a human quality-check (posters), surface the whole order as
+  // 'awaiting_approval' so the operator gets the Approve button. Non-review items
+  // still print in parallel (the agent claims by job status, not order status);
+  // the order only completes once the approved poster prints too.
+  const needsApproval = items.some((i) => i.requiresManualReview);
+  if (needsApproval) {
+    await db.update(orders).set({ status: 'awaiting_approval' }).where(eq(orders.id, orderId));
+  }
+
+  logger.info({ orderId, jobs: items.length, needsApproval }, 'Enqueued print jobs after payment');
 }
 
 /**

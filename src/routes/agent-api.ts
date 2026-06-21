@@ -13,7 +13,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { eq, and, desc, sql, lt } from 'drizzle-orm';
+import { eq, and, desc, sql, lt, notInArray } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { orders, orderItems, printJobs, printers, images, customers, conversationState, slipJobs, processedImages, type InkLevel } from '@/db/schema.js';
 import { env } from '@/config/env.js';
@@ -508,6 +508,9 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
 
       // Check if all jobs (print + slip) for this order are done
       if (orderId) {
+        // A job is still "pending" unless it's terminal (done/failed). Counting
+        // only 'queued' wrongly let 'awaiting_approval' (posters) and in-flight
+        // 'printing' jobs slip through, advancing the order to 'printed' early.
         const [pendingPrints] = await db
           .select({ count: sql<number>`count(*)::int` })
           .from(printJobs)
@@ -515,7 +518,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
           .where(
             and(
               eq(orderItems.orderId, orderId),
-              eq(printJobs.status, 'queued'),
+              notInArray(printJobs.status, ['done', 'failed']),
             ),
           );
 
@@ -525,7 +528,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
           .where(
             and(
               eq(slipJobs.orderId, orderId),
-              eq(slipJobs.status, 'queued'),
+              notInArray(slipJobs.status, ['done', 'failed']),
             ),
           );
 

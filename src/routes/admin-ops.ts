@@ -32,6 +32,7 @@ import {
   getDashboardMetrics,
   generateReceiptText,
   sendReceiptViaWhatsApp,
+  resendReceipt,
   getActiveOrders,
   getCompletedOrdersList,
   type Tally,
@@ -691,7 +692,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
             \${order.status === 'ready_for_collection' && order.fulfillmentMethod === 'delivery' ? \`<button class="action-btn ready" onclick="doOpsAction('\${order.id}', 'shipped'); closeModal()">🚚 Mark out for delivery</button>\` : ''}
             \${(order.status === 'ready_for_collection' || order.status === 'ready_for_pickup' || order.status === 'shipped') ? \`<button class="action-btn fulfil" onclick="doAction('\${order.id}', 'fulfil'); closeModal()">✓ Mark fulfilled</button>\` : ''}
             \${jobs.some(j => j.status === 'failed') ? \`<button class="action-btn approve" onclick="reprintOrder('\${order.id}')">↻ Reprint failed jobs</button>\` : ''}
-            <button class="action-btn ready" onclick="previewReceipt('\${order.id}')">📄 Receipt</button>
+            <button class="action-btn ready" onclick="resendReceipt('\${order.id}')">🔁 Resend receipt</button>
             \${(!IS_OPERATOR && !['fulfilled','cancelled','failed'].includes(order.status)) ? \`<button class="action-btn cancel" onclick="doAction('\${order.id}', 'cancel'); closeModal()">Cancel order</button>\` : ''}
           </div>\`;
       }
@@ -735,14 +736,13 @@ async function orderManagementPageHtml(tab: 'active' | 'completed', role: AdminR
         if (!confirm('Requeue all failed jobs in this order?')) return;
         try { const r = await fetch('/admin/api/ops/orders/' + orderId + '/reprint', { method: 'POST' }); const data = await r.json(); if (!r.ok) throw new Error(); alert('Requeued ' + data.count + ' job(s). The agent will pick them up.'); closeModal(); omRefresh(); } catch (e) { alert('Reprint failed'); }
       }
-      async function previewReceipt(orderId) {
+      async function resendReceipt(orderId) {
+        if (!confirm('Resend the branded receipt to the customer (email + WhatsApp, whichever the order has)?')) return;
         try {
-          const r = await fetch('/admin/api/ops/orders/' + orderId + '/receipt-preview');
-          const data = await r.json();
-          if (!r.ok) throw new Error();
-          const send = confirm('Receipt preview:\\n\\n' + data.text + '\\n\\n\\nSend this to the customer via WhatsApp?');
-          if (send) { const r2 = await fetch('/admin/api/ops/orders/' + orderId + '/send-receipt', { method: 'POST' }); const d2 = await r2.json(); alert(d2.ok ? 'Receipt sent ✓' : 'Failed to send receipt'); }
-        } catch (e) { alert('Failed to preview receipt'); }
+          const r = await fetch('/admin/api/ops/orders/' + orderId + '/resend-receipt', { method: 'POST' });
+          const d = await r.json();
+          alert(d.ok ? 'Receipt resent ✓' : 'Failed to resend receipt');
+        } catch (e) { alert('Failed to resend receipt'); }
       }
       function closeModal(event) {
         if (event && event.target !== document.getElementById('modal-overlay')) return;
@@ -842,6 +842,23 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error({ err }, 'Failed to send receipt');
       return reply.status(500).send({ error: 'Failed to send receipt' });
+    }
+  });
+
+  // Resend the branded receipt to BOTH channels (R2-2) — full admin only.
+  app.post('/admin/api/ops/orders/:id/resend-receipt', async (request, reply) => {
+    if (!requireFullAdmin(request, reply)) return;
+    try {
+      const { id } = request.params as { id: string };
+      const ok = await resendReceipt(id);
+      if (!ok) {
+        reply.status(404).send({ error: 'Order not found' });
+        return;
+      }
+      return { ok: true };
+    } catch (err) {
+      logger.error({ err }, 'Failed to resend receipt');
+      return reply.status(500).send({ error: 'Failed to resend receipt' });
     }
   });
 

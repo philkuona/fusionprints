@@ -100,7 +100,7 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
     try {
       const resend = new Resend(env.RESEND_API_KEY);
       await resend.emails.send({
-        from: 'FusionPrints <noreply@fusionprints.co.zw>',
+        from: 'FusionPrints Lab <noreply@fusionprints.co.zw>',
         to: normalizedEmail,
         subject: 'Verify your FusionPrints account',
         html: `

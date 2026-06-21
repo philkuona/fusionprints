@@ -201,9 +201,10 @@ export async function renderReceiptPdfBytes(orderNumber: string): Promise<Buffer
   }
 }
 
-/** Receipt PDF filename for an order (used as the email attachment + WhatsApp doc name). */
+/** Receipt PDF filename for an order (used as the email attachment + WhatsApp doc
+ * name). Just the order number, per ops — e.g. "FP-2026-0010.pdf". */
 export function receiptPdfFilename(orderNumber: string): string {
-  return `FusionPrints Receipt ${orderNumber}.pdf`;
+  return `${orderNumber}.pdf`;
 }
 
 /** Render the receipt PDF and upload it to B2. Returns the URL or null. */
@@ -240,7 +241,7 @@ export async function sendWhatsAppReceipt(orderNumber: string): Promise<void> {
 
   const to = customer.phoneNumber.replace(/^\+/, '');
   try {
-    await sendWhatsAppDocument(to, url, `FusionPrints Receipt ${orderNumber}.pdf`, `Receipt for ${orderNumber} — thank you! 🧾`);
+    await sendWhatsAppDocument(to, url, receiptPdfFilename(orderNumber), `Receipt for ${orderNumber} — thank you! 🧾`);
     logger.info({ orderNumber }, 'Sent in-chat WhatsApp receipt');
   } catch (err) {
     logger.error({ orderNumber, err }, 'Failed to send WhatsApp receipt document');

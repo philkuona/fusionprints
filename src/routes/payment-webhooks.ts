@@ -77,7 +77,7 @@ export async function notifyCustomerOfPaymentFailure(orderNumber: string): Promi
 
   const to = customer.phoneNumber.replace(/^\+/, '');
   try {
-    await sendWhatsAppMessage(to, MSG.paymentFailed(orderNumber));
+    await sendWhatsAppMessage(to, MSG.paymentFailedButtons(orderNumber));
     logger.info({ orderNumber }, 'Notified WhatsApp customer of payment failure');
   } catch (err) {
     logger.error({ err, orderNumber }, 'Failed to send payment-failure notification');

@@ -23,6 +23,8 @@ import {
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
 import { markOrderShipped } from '@/services/order.js';
+import { sendOrderReceipt } from '@/services/web-order-email.js';
+import { sendWhatsAppReceipt } from '@/services/receipt-pdf.js';
 import { getProduct } from '@/config/catalog.js';
 
 // ===== Order status transitions =====
@@ -433,6 +435,25 @@ export async function generateReceiptText(orderId: string): Promise<string | nul
   lines.push(`_Save this receipt for your records._`);
 
   return lines.join('\n');
+}
+
+/**
+ * Resend the branded receipt to the customer on BOTH channels the order has
+ * (R2-2). The primary receipt fires automatically on payment; this is the
+ * admin "Resend Receipt" action. Email is forced past the once-only guard;
+ * each channel self-guards (email: no-op without an address; WhatsApp PDF:
+ * no-op for web orders). Best-effort.
+ */
+export async function resendReceipt(orderId: string): Promise<boolean> {
+  const [order] = await db.select({ orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) return false;
+  await sendOrderReceipt(order.orderNumber, { force: true }).catch((err) =>
+    logger.error({ err, orderId }, 'Resend receipt email failed'),
+  );
+  await sendWhatsAppReceipt(order.orderNumber).catch((err) =>
+    logger.error({ err, orderId }, 'Resend receipt WhatsApp failed'),
+  );
+  return true;
 }
 
 /**

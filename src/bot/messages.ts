@@ -433,6 +433,10 @@ export const MSG = {
   orderReadyDelivery: (orderNumber: string) =>
     `🎉 *Your prints are on their way!*\n\nOrder *${orderNumber}* has been handed to our courier. Expect delivery within 2–4 hours.`,
 
+  /** Thank-you when an order is marked collected/delivered (R2-4 #6). */
+  orderFulfilled: (orderNumber: string) =>
+    `🎉 Thank you! Order *${orderNumber}* is complete.\n\nThanks for printing with *${BUSINESS_NAME}* — we'd love to print for you again. Just send a photo whenever you're ready. 💚`,
+
   // ===== Order status =====
 
   orderStatus: (orderNumber: string, status: string) =>

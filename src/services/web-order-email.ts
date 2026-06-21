@@ -223,3 +223,45 @@ export async function sendCancellationDeclinedEmail(orderNumber: string): Promis
     <p style="color:#4a3f32;margin:0 0 4px;">If you think this is a mistake, just reply to this email or message us and we'll sort it out together.</p>`;
   await sendBrandEmail(email, `About your cancellation request — ${orderNumber}`, brandEmail(`Hi ${firstName}, about that cancellation`, body), orderNumber);
 }
+
+/**
+ * Order-ready email — sent when an order is released for pickup or marked out for
+ * delivery (R2-4 #4/#7). Reaches customers who aren't on WhatsApp (web orders
+ * with no number). Best-effort; no-ops without a recipient email.
+ */
+export async function sendOrderReadyEmail(orderNumber: string, kind: 'pickup' | 'delivery'): Promise<void> {
+  const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
+  if (!order) return;
+  const { email, firstName } = await resolveOrderRecipient(order);
+  if (!email) return;
+
+  if (kind === 'pickup') {
+    const point = await getOrderCollectionPoint(order.collectionPointId);
+    const where = point ? `${point.name}, ${point.addressLine}` : env.BUSINESS_NAME;
+    const body = `
+      <p style="color:#4a3f32;margin:0 0 16px;">Great news — your order <strong>${orderNumber}</strong> is printed and ready to collect at <strong>${where}</strong>.</p>
+      <p style="color:#4a3f32;margin:0 0 4px;">Bring your phone — just show this email or give your order number at the counter.</p>`;
+    await sendBrandEmail(email, `Order ${orderNumber} is ready to collect`, brandEmail(`Your prints are ready, ${firstName}!`, body), orderNumber);
+  } else {
+    const body = `
+      <p style="color:#4a3f32;margin:0 0 16px;">Your order <strong>${orderNumber}</strong> has left our studio and is out for delivery. Our driver will be in touch shortly.</p>
+      <p style="color:#4a3f32;margin:0 0 4px;">Questions? Just reply to this email and we'll help.</p>`;
+    await sendBrandEmail(email, `Order ${orderNumber} is out for delivery`, brandEmail(`On its way, ${firstName}!`, body), orderNumber);
+  }
+}
+
+/**
+ * Order-fulfilled thank-you email — sent when an order is marked collected/
+ * delivered (R2-4 #6). Best-effort; no-ops without a recipient email.
+ */
+export async function sendOrderFulfilledEmail(orderNumber: string): Promise<void> {
+  const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
+  if (!order) return;
+  const { email, firstName } = await resolveOrderRecipient(order);
+  if (!email) return;
+
+  const body = `
+    <p style="color:#4a3f32;margin:0 0 16px;">That's order <strong>${orderNumber}</strong> all wrapped up — thanks for printing with us.</p>
+    <p style="color:#4a3f32;margin:0 0 4px;">We'd love to print for you again. Hold the moment. 💚</p>`;
+  await sendBrandEmail(email, `Thanks from FusionPrints Lab — ${orderNumber}`, brandEmail(`Thank you, ${firstName}!`, body), orderNumber);
+}

@@ -95,8 +95,9 @@ export async function registerWebAuthRoutes(app: FastifyInstance): Promise<void>
       })
       .returning({ id: webUsers.id, email: webUsers.email });
 
-    // Send verification email
-    const verifyUrl = `${env.WEB_URL}/auth/verify?token=${emailVerificationToken}`;
+    // Send verification email. The page lives at /verify (the Next.js (auth)
+    // route group adds no path segment) — linking to /auth/verify 404s.
+    const verifyUrl = `${env.WEB_URL}/verify?token=${emailVerificationToken}`;
     try {
       const resend = new Resend(env.RESEND_API_KEY);
       await resend.emails.send({

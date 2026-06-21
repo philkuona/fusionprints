@@ -78,6 +78,7 @@ export type BotEffect =
   | { type: 'INITIATE_PAYMENT'; orderNumber: string }
   | { type: 'INITIATE_ECOCASH_PAYMENT'; orderNumber: string; ecocashNumber: string }
   | { type: 'CANCEL_ORDER'; orderNumber: string | undefined }
+  | { type: 'REQUEST_CANCELLATION'; orderNumber: string }
   | { type: 'LOOKUP_ORDER_STATUS'; phone: string }
   | { type: 'create_upload_link'; sizeCode: string; displayLabel: string }
   | { type: 'resolve_web_upload' };
@@ -135,6 +136,19 @@ export function handleMessage(
       effects: context.orderNumber
         ? [{ type: 'CANCEL_ORDER', orderNumber: context.orderNumber }]
         : [],
+    };
+  }
+
+  // Cancel a specific past order by number, e.g. "CANCEL FP-2026-0010" (R2-12).
+  // The handler verifies ownership, then cancels (if unpaid) or files a
+  // cancellation request for admin review (if paid). text is already uppercased.
+  const cancelOrderMatch = text.match(/^CANCEL\s+(FP-\d{4}-\d+)$/);
+  if (cancelOrderMatch) {
+    return {
+      replies: [],
+      nextStep: step,
+      nextContext: context,
+      effects: [{ type: 'REQUEST_CANCELLATION', orderNumber: cancelOrderMatch[1] }],
     };
   }
 

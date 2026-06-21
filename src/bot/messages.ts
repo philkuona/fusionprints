@@ -437,6 +437,24 @@ export const MSG = {
   orderReadyDelivery: (orderNumber: string) =>
     `🎉 *Your prints are on their way!*\n\nOrder *${orderNumber}* has been handed to our courier. Expect delivery within 2–4 hours.`,
 
+  // ===== Order cancellation by number (R2-12) =====
+
+  cancelOrderNotFound: (orderNumber: string) =>
+    `Hmm, I couldn't find order *${orderNumber}* on your account.\n\nReply *STATUS* to see your recent orders.`,
+
+  cancelOrderDone: (orderNumber: string) =>
+    `Order *${orderNumber}* has been cancelled. If you'd already paid, your refund is on its way — it can take a few business days.`,
+
+  cancelOrderRequested: (orderNumber: string) =>
+    `Got it — we've received your request to cancel *${orderNumber}*. Our team will review it and refund you if it's not too far along. We'll message you here. 🙏`,
+
+  cancelOrderTooLate: (orderNumber: string) =>
+    `Sorry, *${orderNumber}* is already too far along to cancel. Reply *HELP* if you'd like to talk to someone.`,
+
+  /** Hint shown under the order-status list so customers know how to cancel. */
+  cancelHint: () =>
+    `_To cancel an order, reply *CANCEL* followed by its number — e.g. CANCEL FP-2026-0010._`,
+
   /** Thank-you when an order is marked collected/delivered (R2-4 #6). */
   orderFulfilled: (orderNumber: string) =>
     `🎉 Thank you! Order *${orderNumber}* is complete.\n\nThanks for printing with *${BUSINESS_NAME}* — we'd love to print for you again. Just send a photo whenever you're ready. 💚`,

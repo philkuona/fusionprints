@@ -22,6 +22,7 @@ import { findOrCreateCustomer, updateCustomerName, updateCustomerEmail, incremen
 import { loadConversationState, saveConversationState } from '@/services/conversation-state.js';
 import { getActiveCollectionPoints } from '@/services/collection-points.js';
 import { createOrder, cancelOrder, getRecentOrders, getOrderByNumber } from '@/services/order.js';
+import { requestOrderCancellation } from '@/services/refund.js';
 import { initiateEcocashPayment } from '@/services/payment.js';
 import { createUploadSession, getSessionImages, completeSession } from '@/routes/upload.js';
 import { getProduct } from '@/config/catalog.js';
@@ -184,6 +185,30 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
             });
 
             extraReplies.push(statusMessages.join('\n\n'));
+            extraReplies.push(MSG.cancelHint());
+          }
+          break;
+        }
+
+        case 'REQUEST_CANCELLATION': {
+          const ord = await getOrderByNumber(effect.orderNumber);
+          // Must exist and belong to this customer.
+          if (!ord || ord.customerId !== customer.id) {
+            extraReplies.push(MSG.cancelOrderNotFound(effect.orderNumber));
+            break;
+          }
+          if (ord.status === 'pending_payment') {
+            // Unpaid — cancel outright (also voids any QBO invoice).
+            await cancelOrder(ord.orderNumber);
+            extraReplies.push(MSG.cancelOrderDone(ord.orderNumber));
+          } else if (ord.paidAt) {
+            // Paid — file a request for admin review (approve → Payonify refund).
+            const res = await requestOrderCancellation({ orderId: ord.id });
+            extraReplies.push(
+              res.ok ? MSG.cancelOrderRequested(ord.orderNumber) : MSG.cancelOrderTooLate(ord.orderNumber),
+            );
+          } else {
+            extraReplies.push(MSG.cancelOrderTooLate(ord.orderNumber));
           }
           break;
         }

@@ -107,3 +107,87 @@ export async function sendCancellationRequestAlert(
     logger.error({ orderNumber, err }, 'Failed to send cancellation alert email');
   }
 }
+
+/**
+ * Alert ops that a paid order is waiting for approval (a poster, or any
+ * manual-review item — the canvas line will use the same gate). Without this the
+ * order can sit in "Awaiting approval" unnoticed, holding its prints + slips.
+ * Best-effort. (R2-8)
+ */
+export async function sendApprovalNeededAlert(orderNumber: string): Promise<void> {
+  if (!env.RESEND_API_KEY) {
+    logger.warn({ orderNumber }, 'Approval alert: RESEND_API_KEY unset, skipping operator email');
+    return;
+  }
+
+  const adminUrl = `${env.PUBLIC_URL}/admin?order=${orderNumber}`;
+  const html = `
+  <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;background:#fbf7f0;padding:32px 24px;color:#1f1b16;">
+    <h1 style="font-size:20px;margin:0 0 4px;">🟣 Approval needed</h1>
+    <p style="color:#4a3f32;margin:0 0 20px;">A paid order needs a quality check before it prints. Review it in the dashboard and approve to release it (its prints + slips are held until you do).</p>
+    <div style="background:#ffffff;border:1px solid #e7ded0;border-radius:14px;padding:20px;">
+      <p style="margin:0;font-family:monospace;color:#8a7b66;">Order ${orderNumber}</p>
+    </div>
+    <a href="${adminUrl}" style="display:inline-block;margin-top:20px;background:#05d668;color:#1f1b16;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:999px;">Review &amp; approve</a>
+    <p style="color:#8a7b66;font-size:12px;margin-top:28px;">FusionPrints operations.</p>
+  </div>`;
+
+  try {
+    const resend = new Resend(env.RESEND_API_KEY);
+    const { error } = await resend.emails.send({
+      from: 'FusionPrints <noreply@fusionprints.co.zw>',
+      to: env.OPERATOR_ALERT_EMAIL,
+      subject: `🟣 Approval needed — Order ${orderNumber}`,
+      html,
+    });
+    if (error) {
+      logger.error({ orderNumber, to: env.OPERATOR_ALERT_EMAIL, error }, 'Resend rejected approval-needed alert email');
+      return;
+    }
+    logger.info({ orderNumber, to: env.OPERATOR_ALERT_EMAIL }, 'Sent approval-needed alert email');
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to send approval-needed alert email');
+  }
+}
+
+/**
+ * Alert ops that dye-sub jobs are stuck waiting because the DNP is loaded with
+ * the wrong media (e.g. left on 5×7 while 4×6 orders pile up). Fired by a sweep
+ * when such jobs have waited past a threshold. Best-effort. (R2-9)
+ */
+export async function sendMediaSwitchAlert(
+  currentMode: string,
+  neededMedia: string,
+  count: number,
+): Promise<void> {
+  if (!env.RESEND_API_KEY) {
+    logger.warn('Media-switch alert: RESEND_API_KEY unset, skipping operator email');
+    return;
+  }
+
+  const adminUrl = `${env.PUBLIC_URL}/admin/jobs`;
+  const html = `
+  <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;background:#fbf7f0;padding:32px 24px;color:#1f1b16;">
+    <h1 style="font-size:20px;margin:0 0 4px;">🟡 Media switch needed</h1>
+    <p style="color:#4a3f32;margin:0 0 20px;"><strong>${count}</strong> print job${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} waiting for <strong>${neededMedia}</strong> media, but the DNP is currently loaded with <strong>${currentMode}</strong>. Swap the media and flip the mode in the dashboard to release ${count === 1 ? 'it' : 'them'}.</p>
+    <a href="${adminUrl}" style="display:inline-block;margin-top:4px;background:#05d668;color:#1f1b16;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:999px;">Open the print queue</a>
+    <p style="color:#8a7b66;font-size:12px;margin-top:28px;">FusionPrints operations.</p>
+  </div>`;
+
+  try {
+    const resend = new Resend(env.RESEND_API_KEY);
+    const { error } = await resend.emails.send({
+      from: 'FusionPrints <noreply@fusionprints.co.zw>',
+      to: env.OPERATOR_ALERT_EMAIL,
+      subject: `🟡 Media switch needed — ${count} job${count === 1 ? '' : 's'} waiting for ${neededMedia}`,
+      html,
+    });
+    if (error) {
+      logger.error({ to: env.OPERATOR_ALERT_EMAIL, error }, 'Resend rejected media-switch alert email');
+      return;
+    }
+    logger.info({ to: env.OPERATOR_ALERT_EMAIL, neededMedia, count }, 'Sent media-switch alert email');
+  } catch (err) {
+    logger.error({ err }, 'Failed to send media-switch alert email');
+  }
+}

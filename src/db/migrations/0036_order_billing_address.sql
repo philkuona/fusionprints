@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "billing_address" text;

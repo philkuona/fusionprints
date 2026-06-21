@@ -191,7 +191,9 @@ th { color: var(--text2); font-size: 11px; text-transform: uppercase; letter-spa
 @media (max-width: 768px) {
   .nav-tabs { display: none !important; }
   .hamburger { display: block; }
-  header { padding: 10px 14px; }
+  /* nav-tabs (the flex spacer) is gone on mobile, so push the logo + hamburger
+     to opposite ends instead of letting them bunch together on the left. */
+  header { padding: 10px 14px; justify-content: space-between; }
   main { padding: 14px 12px; }
   .btn, .action-btn { padding: 8px 14px; }   /* easier tap targets */
 }

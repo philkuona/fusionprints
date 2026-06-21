@@ -21,7 +21,7 @@ import { env } from '@/config/env.js';
 import { findOrCreateCustomer, updateCustomerName, updateCustomerEmail, touchCustomerLastOrder } from '@/services/customer.js';
 import { loadConversationState, saveConversationState } from '@/services/conversation-state.js';
 import { getActiveCollectionPoints } from '@/services/collection-points.js';
-import { createOrder, cancelOrder, getRecentOrders } from '@/services/order.js';
+import { createOrder, cancelOrder, getRecentOrders, getOrderByNumber } from '@/services/order.js';
 import { initiateEcocashPayment } from '@/services/payment.js';
 import { createUploadSession, getSessionImages, completeSession } from '@/routes/upload.js';
 import { getProduct } from '@/config/catalog.js';
@@ -54,7 +54,36 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
     const customer = await findOrCreateCustomer(phoneNumber);
 
     // ── Step 2: Load conversation state ───────────────────────────────────
-    const { currentStep, context } = await loadConversationState(customer.id);
+    const loaded = await loadConversationState(customer.id);
+    let currentStep = loaded.currentStep;
+    const { context } = loaded;
+
+    // Self-heal stale state: an order is only "in progress" for this chat while
+    // it's awaiting payment. Once it's settled (paid via webhook/EcoCash, then
+    // printed/fulfilled/cancelled), a lingering context.orderNumber would make
+    // the reset-guard tell a returning customer they "have an order in progress"
+    // (and trap them on a payment-wait step for a payment that already landed).
+    // Clear it so a greeting starts a fresh order. Only queried when one is set.
+    if (context.orderNumber) {
+      const settled = await getOrderByNumber(context.orderNumber);
+      if (settled && settled.status !== 'pending_payment') {
+        logger.info(
+          { orderNumber: context.orderNumber, status: settled.status },
+          'Clearing settled order from conversation context',
+        );
+        delete context.orderNumber;
+        const PAYMENT_WAIT_STEPS = [
+          'choosing_payment_method',
+          'entering_ecocash_number',
+          'awaiting_ecocash_pin',
+          'awaiting_payment',
+        ];
+        if (PAYMENT_WAIT_STEPS.includes(currentStep)) {
+          currentStep = 'idle';
+          context.cart = [];
+        }
+      }
+    }
 
     logger.debug(
       { phoneNumber, currentStep, cartSize: context.cart?.length ?? 0 },

@@ -23,6 +23,8 @@ import { getOrderCollectionPoint, pointHours } from '@/services/collection-point
 import { getProduct } from '@/config/catalog.js';
 import { getProductCost } from '@/services/cost-overrides.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
+import { sendOrderReadyEmail, sendOrderFulfilledEmail } from '@/services/web-order-email.js';
+import { MSG } from '@/bot/messages.js';
 import { sendFiveBySevenOperatorEmail } from '@/services/operator-email.js';
 import {
   isEnabled as qboEnabled,
@@ -899,6 +901,10 @@ export async function releaseOrderForPickup(orderNumber: string): Promise<void> 
   } catch (err) {
     logger.error({ orderNumber, err }, 'Failed to send ready-for-pickup notification');
   }
+  // Email too — reaches customers who aren't on WhatsApp (R2-4 #4). Best-effort.
+  await sendOrderReadyEmail(orderNumber, 'pickup').catch((err) =>
+    logger.error({ orderNumber, err }, 'Failed to send ready-for-pickup email'),
+  );
 }
 
 /**
@@ -1010,6 +1016,29 @@ export async function markOrderShipped(orderId: string): Promise<void> {
   } catch (err) {
     logger.error({ orderId, err }, 'Failed to send out-for-delivery notification');
   }
+  // Email too — reaches customers who aren't on WhatsApp (R2-4 #4/#7). Best-effort.
+  await sendOrderReadyEmail(order.orderNumber, 'delivery').catch((err) =>
+    logger.error({ orderId, err }, 'Failed to send out-for-delivery email'),
+  );
+}
+
+/**
+ * Notify the customer their order is complete (collected/delivered) — thank-you
+ * on WhatsApp AND email (R2-4 #6). Best-effort; called from the admin fulfil
+ * action. The status update is the caller's responsibility.
+ */
+export async function notifyOrderFulfilled(orderNumber: string): Promise<void> {
+  const order = await getOrderByNumber(orderNumber);
+  if (!order) return;
+  const contact = await resolveOrderContact(order);
+  if (contact) {
+    await sendWhatsAppMessage(contact.phone, MSG.orderFulfilled(orderNumber)).catch((err) =>
+      logger.error({ orderNumber, err }, 'Failed to send fulfilled WhatsApp'),
+    );
+  }
+  await sendOrderFulfilledEmail(orderNumber).catch((err) =>
+    logger.error({ orderNumber, err }, 'Failed to send fulfilled email'),
+  );
 }
 
 /**

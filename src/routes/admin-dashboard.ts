@@ -22,7 +22,7 @@ import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
-import { releaseOrderForPickup, recordQboSaleForOrder } from '@/services/order.js';
+import { releaseOrderForPickup, recordQboSaleForOrder, notifyOrderFulfilled } from '@/services/order.js';
 import { approveCancellationAndRefund, declineCancellation } from '@/services/refund.js';
 import { getDnpMediaMode, setDnpMediaMode, type DnpMediaMode } from '@/services/store-settings.js';
 import { eq, desc, and, gte, sql, count, inArray } from 'drizzle-orm';
@@ -460,9 +460,10 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
     if (!checkAuth(request, reply)) return;
     try {
       const { id } = request.params as { id: string };
-      await db.update(orders)
+      const [fulfilled] = await db.update(orders)
         .set({ status: 'fulfilled', fulfilledAt: new Date() })
-        .where(eq(orders.id, id));
+        .where(eq(orders.id, id))
+        .returning({ orderNumber: orders.orderNumber });
       logger.info({ orderId: id }, 'Order fulfilled');
       // Fallback QBO sale posting — the primary post happens at markOrderPaid.
       // Idempotent + self-guarded (settles the invoice or posts a receipt), so
@@ -471,6 +472,12 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       void recordQboSaleForOrder(id).catch(err =>
         logger.error({ err, orderId: id }, 'QBO sale posting failed — manual entry needed')
       );
+      // Thank-you to the customer on WhatsApp + email (R2-4 #6). Best-effort.
+      if (fulfilled?.orderNumber) {
+        void notifyOrderFulfilled(fulfilled.orderNumber).catch(err =>
+          logger.error({ err, orderId: id }, 'Fulfilled notification failed')
+        );
+      }
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to fulfil order');

@@ -22,9 +22,16 @@ import { markOrderPaid, getOrderByNumber } from '@/services/order.js';
 import { sendOrderReceipt } from '@/services/web-order-email.js';
 import { notifyCustomerOfPayment } from '@/routes/payment-webhooks.js';
 
+/** The refundable charge id (ch_…): a checkout session exposes it as
+ * `transaction_reference`; a direct charge object IS the ch_ (in `id`). Refunds
+ * MUST target this, not the cs_ session in `id`/providerReference. */
+function chargeIdFromObject(obj?: { id?: string; transaction_reference?: string }): string | null {
+  return obj?.transaction_reference ?? obj?.id ?? null;
+}
+
 interface PayonifyEvent {
   type?: string;
-  data?: { object?: { id?: string; metadata?: Record<string, string>; payment_method?: string } };
+  data?: { object?: { id?: string; transaction_reference?: string; metadata?: Record<string, string>; payment_method?: string } };
 }
 
 /**
@@ -44,6 +51,7 @@ async function fulfilPaidOrder(
   reference: string,
   rawPayload: string,
   paymentMethod: string | null,
+  chargeReference: string | null,
 ): Promise<void> {
   const order = await getOrderByNumber(orderNumber);
   if (!order) {
@@ -76,10 +84,10 @@ async function fulfilPaidOrder(
         status: 'success',
         completedAt: new Date(),
         webhookPayload: payload,
-        // The succeeded event's object id is the refundable charge id (PR-12).
-        // Store it so a later cancellation can refund against the charge, not
-        // the checkout session in providerReference.
-        chargeReference: reference,
+        // The refundable charge id (ch_…) — NOT the cs_ session in `reference`.
+        // For web checkout this is the session's transaction_reference; refunds
+        // against the session id fail ("charge does not exist"). (PR-12)
+        ...(chargeReference ? { chargeReference } : {}),
         // Record the real method so QBO deposits to the right account. Only set
         // when known — don't overwrite an existing value with null.
         ...(paymentMethod ? { paymentMethod } : {}),
@@ -160,20 +168,28 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
       const orderNumber = event.data?.object?.metadata?.order_number;
       logger.info({ type, orderNumber: orderNumber ?? null }, 'Payonify webhook event');
 
-      if (type.endsWith('.succeeded') && orderNumber) {
+      // Scope to PAYMENT lifecycle events only. `endsWith('.succeeded')` also
+      // matched `refund.succeeded` — and our refundPayment() sets the order
+      // number in metadata, so a refund would re-run fulfilment + flip the
+      // payment back to success. Same trap on `.failed` (refund.failed).
+      const isPaymentSucceeded = type === 'checkout.succeeded' || type === 'charge.succeeded';
+      const isPaymentFailed = type === 'checkout.failed' || type === 'charge.failed';
+
+      if (isPaymentSucceeded && orderNumber) {
         try {
           await fulfilPaidOrder(
             orderNumber,
             event.data?.object?.id ?? orderNumber,
             raw,
             mapPayonifyMethod(event.data?.object?.payment_method),
+            chargeIdFromObject(event.data?.object),
           );
         } catch (err) {
           // 500 → Payonify retries. Idempotency guard makes retries safe.
           logger.error({ orderNumber, err }, 'Payonify webhook: fulfilment failed');
           return reply.status(500).send({ error: 'processing_failed' });
         }
-      } else if (type.endsWith('.failed') && orderNumber) {
+      } else if (isPaymentFailed && orderNumber) {
         try {
           await markPaymentFailed(orderNumber, raw);
         } catch (err) {

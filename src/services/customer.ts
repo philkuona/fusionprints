@@ -10,7 +10,7 @@
  *   - Name update: saved when collected during order flow
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { customers, conversationState } from '@/db/schema.js';
 import { emptyContext } from '@/bot/types.js';
@@ -86,6 +86,19 @@ export async function updateCustomerEmail(
     .where(eq(customers.id, customerId));
 
   logger.info({ customerId }, 'Customer email updated');
+}
+
+/**
+ * Record that the customer skipped the email ask. After 3 we stop asking each
+ * order (R2-6 #20). Also reset to a high value implicitly once they give an email
+ * (the ask is gated on email being absent).
+ */
+export async function incrementEmailDecline(customerId: string): Promise<void> {
+  await db
+    .update(customers)
+    .set({ emailDeclineCount: sql`${customers.emailDeclineCount} + 1` })
+    .where(eq(customers.id, customerId));
+  logger.info({ customerId }, 'Customer declined email');
 }
 
 /**

@@ -143,6 +143,9 @@ export const customers = pgTable(
     phoneNumber: text('phone_number').notNull(), // E.164 format: +263771234567
     name: text('name'), // collected on first order
     email: text('email'), // optional
+    // How many times the customer has skipped the email ask. After 3 we stop
+    // asking each order (R2-6 #20) — they clearly don't want to give one.
+    emailDeclineCount: integer('email_decline_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     lastOrderAt: timestamp('last_order_at', { withTimezone: true }),
   },

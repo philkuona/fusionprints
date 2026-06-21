@@ -1,0 +1,1 @@
+ALTER TABLE "customers" ADD COLUMN "email_decline_count" integer DEFAULT 0 NOT NULL;

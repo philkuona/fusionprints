@@ -18,7 +18,7 @@
 
 import { logger } from '@/utils/logger.js';
 import { env } from '@/config/env.js';
-import { findOrCreateCustomer, updateCustomerName, updateCustomerEmail, touchCustomerLastOrder } from '@/services/customer.js';
+import { findOrCreateCustomer, updateCustomerName, updateCustomerEmail, incrementEmailDecline, touchCustomerLastOrder } from '@/services/customer.js';
 import { loadConversationState, saveConversationState } from '@/services/conversation-state.js';
 import { getActiveCollectionPoints } from '@/services/collection-points.js';
 import { createOrder, cancelOrder, getRecentOrders, getOrderByNumber } from '@/services/order.js';
@@ -101,7 +101,7 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
       currentStep,
       context,
       message,
-      { name: customer.name, email: customer.email },
+      { name: customer.name, email: customer.email, emailDeclineCount: customer.emailDeclineCount },
       collectionPoints,
     );
 
@@ -332,6 +332,11 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
         await updateCustomerEmail(customer.id, email);
         logger.info({ customerId: customer.id }, 'Customer email saved');
       }
+    }
+
+    // Record an email decline so we stop asking after 3 (R2-6 #20).
+    if ((response.nextContext as { _emailDeclined?: boolean })._emailDeclined) {
+      await incrementEmailDecline(customer.id);
     }
 
     // ── Step 6: Save new conversation state ───────────────────────────────

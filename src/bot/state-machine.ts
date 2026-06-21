@@ -96,7 +96,7 @@ export function handleMessage(
   step: BotStep,
   context: BotContext,
   message: IncomingMessage,
-  customer: { name: string | null; email: string | null } | null,
+  customer: { name: string | null; email: string | null; emailDeclineCount?: number } | null,
   // Live active collection points, injected by the handler (the state machine is
   // pure). Empty/one → pickup auto-resolves; 2+ → the customer picks one.
   collectionPoints: CollectionPoint[] = [],
@@ -243,7 +243,7 @@ export function handleMessage(
 function handleBack(
   step: BotStep,
   context: BotContext,
-  customer: { name: string | null; email: string | null } | null,
+  customer: { name: string | null; email: string | null; emailDeclineCount?: number } | null,
 ): BotResponse {
   switch (step) {
     case 'idle':
@@ -398,7 +398,7 @@ function handleBack(
 
 function handleIdle(
   _context: BotContext,
-  customer: { name: string | null; email: string | null } | null,
+  customer: { name: string | null; email: string | null; emailDeclineCount?: number } | null,
 ): BotResponse {
   return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', emptyContext());
 }
@@ -406,7 +406,7 @@ function handleIdle(
 function handleChoosingProduct(
   text: string,
   context: BotContext,
-  customer: { name: string | null; email: string | null } | null,
+  customer: { name: string | null; email: string | null; emailDeclineCount?: number } | null,
 ): BotResponse {
   // Accept the interactive list ids, typed numbers (1-6), or natural words.
   if (text === '1' || text === 'PHOTOS' || text === 'PHOTO' || text === 'PHOTO PRINTS') {
@@ -1027,17 +1027,22 @@ function handleChoosingQuantity(text: string, context: BotContext): BotResponse 
 function handleAddMoreOrCheckout(
   text: string,
   context: BotContext,
-  customer: { name: string | null; email: string | null } | null,
+  customer: { name: string | null; email: string | null; emailDeclineCount?: number } | null,
 ): BotResponse {
   if (text === '1' || text === 'ADD' || text === 'MORE' || text === 'ADD MORE') {
     return reply(MSG.greetingInteractive(customer?.name ?? undefined), 'choosing_product', context);
   }
 
   if (text === '2' || text === 'CHECKOUT' || text === 'DONE' || text === 'NEXT') {
-    // Full name is required before fulfillment. Email is OPTIONAL — it's asked
-    // once (right after a new customer's name) and is skippable, never gated here.
+    // Full name is required before fulfillment.
     if (!customer?.name) {
       return reply(MSG.askName(), 'collecting_name', context);
+    }
+    // Email is OPTIONAL but useful (receipts). Ask returning customers who have
+    // no email on file each order, with a Skip button — until they've declined 3
+    // times, then stop pestering them (R2-6 #20).
+    if (!customer.email && (customer.emailDeclineCount ?? 0) < 3) {
+      return reply(MSG.askEmail(), 'collecting_email', context);
     }
     return reply(
       MSG.chooseFulfillmentInteractive(customer.name),
@@ -1052,7 +1057,7 @@ function handleAddMoreOrCheckout(
 function handleCollectingName(
   text: string,
   context: BotContext,
-  customer: { name: string | null; email: string | null } | null,
+  customer: { name: string | null; email: string | null; emailDeclineCount?: number } | null,
 ): BotResponse {
   const name = text.trim();
   if (!name || name.length < 2) {
@@ -1070,8 +1075,8 @@ function handleCollectingName(
     _customerName: string;
   };
 
-  // Still need their email before fulfillment.
-  if (!customer?.email) {
+  // Ask for their email (optional), unless they've already declined 3+ times.
+  if (!customer?.email && (customer?.emailDeclineCount ?? 0) < 3) {
     return reply(MSG.askEmail(), 'collecting_email', newContext);
   }
   return reply(
@@ -1084,15 +1089,17 @@ function handleCollectingName(
 function handleCollectingEmail(
   text: string,
   context: BotContext,
-  customer: { name: string | null; email: string | null } | null,
+  customer: { name: string | null; email: string | null; emailDeclineCount?: number } | null,
 ): BotResponse {
   const raw = text.trim();
   // The name is either already on the customer or was just collected (in context).
   const name = (context as { _customerName?: string })._customerName ?? customer?.name ?? 'there';
 
-  // Email is OPTIONAL — let them skip and continue.
+  // Email is OPTIONAL — let them skip and continue. Record the decline so we
+  // stop asking after 3 (R2-6 #20); the handler persists _emailDeclined.
   if (/^(skip|no|none|n\/a|-)$/i.test(raw)) {
-    return reply(MSG.chooseFulfillmentInteractive(name), 'choosing_fulfillment', context);
+    const skipContext = { ...context, _emailDeclined: true } as BotContext & { _emailDeclined: boolean };
+    return reply(MSG.chooseFulfillmentInteractive(name), 'choosing_fulfillment', skipContext);
   }
 
   // Permissive local@domain.tld check — good enough to catch typos/non-emails.

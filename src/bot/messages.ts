@@ -271,8 +271,12 @@ export const MSG = {
 
   invalidName: () => `Please reply with your name.`,
 
-  askEmail: () =>
-    `Want a receipt by email? Reply with your email, or *SKIP* to continue. _(optional)_`,
+  /** Email ask with an interactive SKIP button (R2-6 #10). Typing an email still
+      works; tapping Skip (id SKIP) is handled the same as typing "skip". */
+  askEmail: () => ({
+    text: `Want a receipt by email? Reply with your email — or tap Skip to continue. _(optional)_`,
+    buttons: [{ id: 'SKIP', title: '⏭️ Skip' }],
+  }),
 
   invalidEmail: () =>
     `Hmm, that doesn't look like an email. Reply with a valid one (e.g. *you@example.com*) or *SKIP*.`,

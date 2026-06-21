@@ -65,6 +65,25 @@ async function claimSlipJob(id: string): Promise<boolean> {
 }
 
 /**
+ * Move an order to 'printing' when one of its jobs starts — UNLESS a print job
+ * is still held at 'awaiting_approval' (a poster awaiting operator sign-off; the
+ * canvas path will be the same later). A slip — or a sibling job — starting must
+ * not pull the order out of the approval gate: the admin approve button is keyed
+ * on order status, so flipping to 'printing' would hide it while the poster still
+ * needs approval. After approval the poster job leaves 'awaiting_approval', so
+ * the next start correctly advances the order.
+ */
+async function advanceOrderToPrinting(orderId: string): Promise<void> {
+  const [gated] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(printJobs)
+    .innerJoin(orderItems, eq(printJobs.orderItemId, orderItems.id))
+    .where(and(eq(orderItems.orderId, orderId), eq(printJobs.status, 'awaiting_approval')));
+  if ((gated?.count ?? 0) > 0) return;
+  await db.update(orders).set({ status: 'printing' }).where(eq(orders.id, orderId));
+}
+
+/**
  * Re-queue jobs stuck in 'printing' past maxAgeMs — recovers work an agent
  * claimed then died mid-print (the previous SELECT-only flow self-healed because
  * it never claimed; the compare-and-swap claim needs this to restore that).
@@ -426,10 +445,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
           .where(eq(orderItems.id, printJobUpdate[0].orderItemId))
           .limit(1);
         if (item) {
-          await db
-            .update(orders)
-            .set({ status: 'printing' })
-            .where(eq(orders.id, item.orderId));
+          await advanceOrderToPrinting(item.orderId);
         }
         return { ok: true };
       }
@@ -442,11 +458,8 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         .returning({ id: slipJobs.id, orderId: slipJobs.orderId });
 
       if (slipJobUpdate.length > 0) {
-        // Update the order status too
-        await db
-          .update(orders)
-          .set({ status: 'printing' })
-          .where(eq(orders.id, slipJobUpdate[0].orderId));
+        // A slip starting must not clear an order's approval gate (see helper).
+        await advanceOrderToPrinting(slipJobUpdate[0].orderId);
         return { ok: true };
       }
 

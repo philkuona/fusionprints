@@ -121,8 +121,9 @@ export function buildReceiptSvg(d: {
   </svg>`;
 }
 
-/** Render the receipt PDF for an order and upload it to B2. Returns the URL or null. */
-export async function generateReceiptPdf(orderNumber: string): Promise<string | null> {
+/** Render the branded receipt PDF for an order → bytes. Null on error. Shared by
+ * the email attachment and the WhatsApp document. */
+export async function renderReceiptPdfBytes(orderNumber: string): Promise<Buffer | null> {
   try {
     const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
     if (!order) return null;
@@ -168,16 +169,31 @@ export async function generateReceiptPdf(orderNumber: string): Promise<string | 
     const page = pdf.addPage([img.width, img.height]);
     page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
     const pdfBytes = await pdf.save();
-
-    const key = `receipts/${orderNumber}-${randomUUID().slice(0, 8)}.pdf`;
-    await s3.send(
-      new PutObjectCommand({ Bucket: env.B2_BUCKET_NAME, Key: key, Body: Buffer.from(pdfBytes), ContentType: 'application/pdf' }),
-    );
-    const url = `https://${env.B2_BUCKET_NAME}.${env.B2_ENDPOINT}/${key}`;
-    logger.info({ orderNumber, key }, 'Receipt PDF rendered');
-    return url;
+    logger.info({ orderNumber }, 'Receipt PDF rendered');
+    return Buffer.from(pdfBytes);
   } catch (err) {
     logger.error({ orderNumber, err }, 'Failed to render receipt PDF');
+    return null;
+  }
+}
+
+/** Receipt PDF filename for an order (used as the email attachment + WhatsApp doc name). */
+export function receiptPdfFilename(orderNumber: string): string {
+  return `FusionPrints Receipt ${orderNumber}.pdf`;
+}
+
+/** Render the receipt PDF and upload it to B2. Returns the URL or null. */
+export async function generateReceiptPdf(orderNumber: string): Promise<string | null> {
+  const pdfBytes = await renderReceiptPdfBytes(orderNumber);
+  if (!pdfBytes) return null;
+  try {
+    const key = `receipts/${orderNumber}-${randomUUID().slice(0, 8)}.pdf`;
+    await s3.send(
+      new PutObjectCommand({ Bucket: env.B2_BUCKET_NAME, Key: key, Body: pdfBytes, ContentType: 'application/pdf' }),
+    );
+    return `https://${env.B2_BUCKET_NAME}.${env.B2_ENDPOINT}/${key}`;
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to upload receipt PDF');
     return null;
   }
 }

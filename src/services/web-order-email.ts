@@ -14,6 +14,7 @@ import { env } from '@/config/env.js';
 import { logger } from '@/utils/logger.js';
 import { getProduct } from '@/config/catalog.js';
 import { getOrderCollectionPoint } from '@/services/collection-points.js';
+import { renderReceiptPdfBytes, receiptPdfFilename } from '@/services/receipt-pdf.js';
 
 function money(v: string | number): string {
   return `$${Number(v).toFixed(2)}`;
@@ -159,6 +160,9 @@ export async function sendOrderReceipt(orderNumber: string): Promise<void> {
     <p style="color:#8a7b66;font-size:12px;margin-top:28px;">FusionPrints. Hold the moment.</p>
   </div>`;
 
+  // Attach the branded PDF receipt (best-effort — send the email regardless).
+  const pdf = await renderReceiptPdfBytes(orderNumber);
+
   try {
     const resend = new Resend(env.RESEND_API_KEY);
     // resend.emails.send() returns { error } instead of throwing on API errors.
@@ -168,6 +172,7 @@ export async function sendOrderReceipt(orderNumber: string): Promise<void> {
       to: email,
       subject: `Order ${orderNumber} confirmed`,
       html,
+      ...(pdf ? { attachments: [{ filename: receiptPdfFilename(orderNumber), content: pdf }] } : {}),
     });
     if (error) {
       logger.error({ orderNumber, to: email, error }, 'Resend rejected order receipt email');

@@ -1,0 +1,1 @@
+ALTER TABLE "collection_points" ADD COLUMN "maps_url" text;

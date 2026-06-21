@@ -818,6 +818,9 @@ export const collectionPoints = pgTable(
     name: text('name').notNull(),
     addressLine: text('address_line').notNull(),
     hours: text('hours'),
+    // Google Maps link (admin pastes a share URL). Powers the customer-facing
+    // "Navigate" button on pickup notifications (R2-11). Null = no button.
+    mapsUrl: text('maps_url'),
     active: boolean('active').notNull().default(true),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

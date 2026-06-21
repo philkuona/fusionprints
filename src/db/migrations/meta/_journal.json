@@ -225,6 +225,13 @@
       "when": 1781990388949,
       "tag": "0031_order_collection_point",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782014316298,
+      "tag": "0032_qbo_invoice_id",
+      "breakpoints": true
     }
   ]
 }

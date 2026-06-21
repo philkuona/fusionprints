@@ -511,3 +511,133 @@ export async function createRefundReceipt(
   logger.info({ orderNumber: order.orderNumber, qboId: res.RefundReceipt.Id }, 'QBO Refund Receipt created');
   return res.RefundReceipt.Id;
 }
+
+// ── Invoice → Payment (customer-facing PDFs) ───────────────────────────────
+//
+// Accounting model: the sale is recorded ONCE as an Invoice at order-create
+// (AR). At payment we post a Payment linked to that invoice — clearing the
+// balance and flipping the rendered PDF to "PAID" — rather than a second
+// posting document, so revenue isn't double-counted. An abandoned/cancelled
+// checkout voids its invoice (zeroed, doc number kept for audit). This replaces
+// the SalesReceipt path for new orders.
+
+/** GET request that returns the QBO-rendered PDF bytes for a transaction. */
+async function qboRequestPdf(path: string): Promise<Buffer> {
+  const tokens = await getValidTokens();
+  const url = `${QBO_API_BASE}/${tokens.realmId}/${path}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${tokens.accessToken}`, Accept: 'application/pdf' },
+  });
+  if (!res.ok) throw new Error(`QBO PDF ${res.status}: ${await res.text()}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+/** Fetch a transaction's QBO-rendered PDF. Null on any failure so callers can
+ * fall back to the local renderer — a PDF problem never blocks an order. */
+export async function fetchTxnPdf(txnType: 'invoice' | 'salesreceipt' | 'payment', id: string): Promise<Buffer | null> {
+  try {
+    return await qboRequestPdf(`${txnType}/${id}/pdf`);
+  } catch (err) {
+    logger.error({ txnType, id, err }, 'QBO PDF fetch failed');
+    return null;
+  }
+}
+
+/** Look up an Invoice by DocNumber (= our order number). Returns id + current
+ * SyncToken + open balance, or null. Idempotency + void guard. */
+export async function findInvoice(
+  orderNumber: string,
+): Promise<{ id: string; syncToken: string; balance: number } | null> {
+  const q = encodeURIComponent(`SELECT Id, SyncToken, Balance FROM Invoice WHERE DocNumber = '${orderNumber}' MAXRESULTS 1`);
+  const res = await qboRequest('GET', `query?query=${q}`) as {
+    QueryResponse: { Invoice?: Array<{ Id: string; SyncToken: string; Balance: number }> };
+  };
+  const inv = res.QueryResponse?.Invoice?.[0];
+  return inv ? { id: inv.Id, syncToken: inv.SyncToken, balance: inv.Balance } : null;
+}
+
+/** Create a QBO Invoice for an order (records the sale as AR). Returns the QBO
+ * invoice Id. Reuses an existing invoice for the same DocNumber (idempotent). */
+export async function createInvoice(
+  order: OrderForQbo,
+  items: OrderItemForQbo[],
+  customer: QboCustomerInfo | null = null,
+): Promise<string> {
+  const tokens = await getValidTokens();
+  if (!tokens.accounts) throw new Error('QBO setup not complete — run setup first');
+
+  const existing = await findInvoice(order.orderNumber);
+  if (existing) return existing.id; // already created (retry / re-entrant)
+
+  const customerId = customer
+    ? await findOrCreateQboCustomer(customer)
+    : tokens.accounts.defaultCustomerId;
+
+  const lines = buildLines(items, tokens.accounts);
+  const deliveryFee = parseFloat(order.deliveryFeeUsd);
+  if (deliveryFee > 0) {
+    lines.push({
+      Amount:     deliveryFee,
+      DetailType: 'SalesItemLineDetail',
+      Description: 'Delivery fee',
+      SalesItemLineDetail: {
+        ItemRef:  { value: tokens.accounts.deliveryItemId },
+        Qty:      1,
+        UnitPrice: deliveryFee,
+      },
+    });
+  }
+
+  const invoice = {
+    DocNumber:   order.orderNumber,
+    TxnDate:     order.createdAt.toISOString().slice(0, 10),
+    CustomerRef: { value: customerId },
+    Line:        lines,
+    PrivateNote: `FusionPrints ${order.orderNumber}`,
+  };
+
+  const res = await qboRequest('POST', 'invoice', invoice) as { Invoice: { Id: string } };
+  logger.info({ orderNumber: order.orderNumber, qboId: res.Invoice.Id }, 'QBO Invoice created');
+  return res.Invoice.Id;
+}
+
+/** Record a Payment against an order's invoice, depositing to the account that
+ * matches the method. Clears the balance → the invoice PDF renders "PAID".
+ * Idempotent: no-ops if the invoice is already settled (balance 0). */
+export async function recordInvoicePayment(
+  invoiceId: string,
+  amountUsd: string,
+  paymentMethod: string | null,
+): Promise<void> {
+  const tokens = await getValidTokens();
+  if (!tokens.accounts) throw new Error('QBO setup not complete — run setup first');
+
+  const inv = await qboRequest('GET', `invoice/${invoiceId}`) as {
+    Invoice: { Balance: number; CustomerRef: { value: string } };
+  };
+  if (inv.Invoice.Balance === 0) return; // already paid
+
+  const payment = {
+    CustomerRef:         { value: inv.Invoice.CustomerRef.value },
+    TotalAmt:            parseFloat(amountUsd),
+    DepositToAccountRef: { value: depositAccountId(paymentMethod, tokens.accounts) },
+    Line: [{
+      Amount:    parseFloat(amountUsd),
+      LinkedTxn: [{ TxnId: invoiceId, TxnType: 'Invoice' }],
+    }],
+  };
+  const res = await qboRequest('POST', 'payment', payment) as { Payment: { Id: string } };
+  logger.info({ invoiceId, qboId: res.Payment.Id }, 'QBO Payment recorded against invoice');
+}
+
+/** Void an order's QBO invoice (abandoned checkout / cancellation). Zeros the
+ * invoice but keeps the doc number for audit. Fetches the current SyncToken
+ * first (required by the void op). */
+export async function voidInvoice(invoiceId: string): Promise<void> {
+  const inv = await qboRequest('GET', `invoice/${invoiceId}`) as {
+    Invoice: { Id: string; SyncToken: string };
+  };
+  await qboRequest('POST', 'invoice?operation=void', { Id: inv.Invoice.Id, SyncToken: inv.Invoice.SyncToken });
+  logger.info({ invoiceId }, 'QBO Invoice voided');
+}

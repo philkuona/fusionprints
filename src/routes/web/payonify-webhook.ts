@@ -20,7 +20,7 @@ import { logger } from '@/utils/logger.js';
 import { verifyWebhookSignature } from '@/services/payonify.js';
 import { markOrderPaid, getOrderByNumber } from '@/services/order.js';
 import { sendOrderReceipt } from '@/services/web-order-email.js';
-import { notifyCustomerOfPayment } from '@/routes/payment-webhooks.js';
+import { notifyCustomerOfPayment, notifyCustomerOfPaymentFailure } from '@/routes/payment-webhooks.js';
 
 /** The refundable charge id (ch_…): a checkout session exposes it as
  * `transaction_reference`; a direct charge object IS the ch_ (in `id`). Refunds
@@ -117,12 +117,14 @@ async function fulfilPaidOrder(
   logger.info({ orderNumber, reference, channel: order.channel }, 'Payonify webhook: order marked paid');
 }
 
-/** Mark the payment attempt failed (order stays pending so it can be retried). */
-async function markPaymentFailed(orderNumber: string, rawPayload: string): Promise<void> {
+/** Mark the payment attempt failed (order stays pending so it can be retried).
+ * Returns true only when it actually transitioned a pending order to failed —
+ * so the caller notifies the customer once, not on every webhook re-delivery. */
+async function markPaymentFailed(orderNumber: string, rawPayload: string): Promise<boolean> {
   const order = await getOrderByNumber(orderNumber);
   if (!order) {
     logger.warn({ orderNumber }, 'Payonify webhook (failed): no matching order');
-    return;
+    return false;
   }
   let payload: unknown = null;
   try {
@@ -137,7 +139,9 @@ async function markPaymentFailed(orderNumber: string, rawPayload: string): Promi
       .set({ status: 'failed', completedAt: new Date(), webhookPayload: payload })
       .where(eq(payments.orderId, order.id));
     logger.info({ orderNumber }, 'Payonify webhook: payment marked failed');
+    return true;
   }
+  return false;
 }
 
 export async function registerPayonifyWebhook(app: FastifyInstance): Promise<void> {
@@ -191,7 +195,14 @@ export async function registerPayonifyWebhook(app: FastifyInstance): Promise<voi
         }
       } else if (isPaymentFailed && orderNumber) {
         try {
-          await markPaymentFailed(orderNumber, raw);
+          // Only notify when this delivery actually flipped a pending order to
+          // failed — so webhook re-deliveries don't re-message the customer.
+          const transitioned = await markPaymentFailed(orderNumber, raw);
+          if (transitioned) {
+            await notifyCustomerOfPaymentFailure(orderNumber).catch((err: unknown) =>
+              logger.error({ orderNumber, err }, 'Payonify webhook: failure notification errored'),
+            );
+          }
         } catch (err) {
           logger.error({ orderNumber, err }, 'Payonify webhook: marking failed errored');
         }

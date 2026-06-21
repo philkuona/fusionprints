@@ -60,6 +60,31 @@ export async function notifyCustomerOfPayment(orderNumber: string): Promise<void
 }
 
 /**
+ * WhatsApp notification when a payment attempt fails/times out (async, via the
+ * Payonify webhook). Without this the customer is stranded on "Waiting for
+ * confirmation…" after a failed/slow EcoCash auth. The bot is parked in
+ * awaiting_ecocash_pin, which already handles 1 (retry) / 2 (cancel), so the
+ * prompt's options match — no conversation-state surgery needed. The order stays
+ * pending_payment (retryable); if untouched it's auto-cancelled + its QBO invoice
+ * voided by the 24h abandoned-checkout sweep. No-ops for web orders. Best-effort.
+ */
+export async function notifyCustomerOfPaymentFailure(orderNumber: string): Promise<void> {
+  const order = await getOrderByNumber(orderNumber);
+  if (!order || !order.customerId) return; // WhatsApp orders only
+
+  const [customer] = await db.select().from(customers).where(eq(customers.id, order.customerId)).limit(1);
+  if (!customer) return;
+
+  const to = customer.phoneNumber.replace(/^\+/, '');
+  try {
+    await sendWhatsAppMessage(to, MSG.paymentFailed(orderNumber));
+    logger.info({ orderNumber }, 'Notified WhatsApp customer of payment failure');
+  } catch (err) {
+    logger.error({ err, orderNumber }, 'Failed to send payment-failure notification');
+  }
+}
+
+/**
  * WhatsApp notification for a cancellation outcome (PR-12). 'refunded' when an
  * admin approves + the refund succeeds; 'declined' when they decline. No-ops for
  * web orders (no WhatsApp customer) and is best-effort.

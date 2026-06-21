@@ -56,6 +56,7 @@ export interface CollectionPointInput {
   name: string;
   addressLine: string;
   hours?: string | null;
+  mapsUrl?: string | null;
   active?: boolean;
   sortOrder?: number;
 }
@@ -65,6 +66,7 @@ export async function createCollectionPoint(input: CollectionPointInput): Promis
     name: input.name,
     addressLine: input.addressLine,
     hours: input.hours ?? null,
+    mapsUrl: input.mapsUrl ?? null,
     active: input.active ?? true,
     sortOrder: input.sortOrder ?? 0,
   });
@@ -77,6 +79,7 @@ export async function updateCollectionPoint(id: string, input: CollectionPointIn
       name: input.name,
       addressLine: input.addressLine,
       hours: input.hours ?? null,
+      mapsUrl: input.mapsUrl ?? null,
       active: input.active ?? true,
       sortOrder: input.sortOrder ?? 0,
     })

@@ -29,7 +29,7 @@ function run(
   step: BotStep,
   context: BotContext,
   message: IncomingMessage,
-  customer: { name: string | null; email: string | null } | null = NAMED,
+  customer: { name: string | null; email: string | null; emailDeclineCount?: number } | null = NAMED,
 ): BotResponse {
   return handleMessage(step, context, message, customer);
 }

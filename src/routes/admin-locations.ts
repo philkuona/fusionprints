@@ -33,6 +33,7 @@ function row(p?: CollectionPoint): string {
     <input name="name" placeholder="Name (e.g. Fusion Prints Lab)" value="${esc(p?.name ?? '')}" required>
     <input name="address" placeholder="Address" value="${esc(p?.addressLine ?? '')}" required>
     <input name="hours" placeholder="Hours (optional)" value="${esc(p?.hours ?? '')}">
+    <input name="maps" placeholder="Google Maps link (optional)" value="${esc(p?.mapsUrl ?? '')}">
     <input class="num" name="sort" type="number" value="${p?.sortOrder ?? 0}" title="Sort order">
     <label class="chk"><input type="checkbox" name="active" ${checked}> Active</label>
     <button class="btn primary" type="submit">${p ? 'Save' : 'Add'}</button>
@@ -90,6 +91,7 @@ export async function registerAdminLocations(app: FastifyInstance): Promise<void
         name: f.name?.trim(),
         addressLine: f.address?.trim(),
         hours: f.hours?.trim() || null,
+        mapsUrl: f.maps?.trim() || null,
         active: f.active === 'on',
         sortOrder: Number(f.sort) || 0,
       });
@@ -109,6 +111,7 @@ export async function registerAdminLocations(app: FastifyInstance): Promise<void
         name: f.name?.trim(),
         addressLine: f.address?.trim(),
         hours: f.hours?.trim() || null,
+        mapsUrl: f.maps?.trim() || null,
         active: f.active === 'on',
         sortOrder: Number(f.sort) || 0,
       });

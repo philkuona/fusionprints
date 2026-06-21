@@ -239,6 +239,13 @@
       "when": 1782029846686,
       "tag": "0033_email_decline_count",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1782030107162,
+      "tag": "0034_collection_point_maps_url",
+      "breakpoints": true
     }
   ]
 }

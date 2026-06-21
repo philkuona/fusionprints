@@ -994,7 +994,8 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
       `${locName}, ${locAddress}`,
     ]);
   } else {
-    const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}`;
+    const navLine = point?.mapsUrl ? `\n\n🧭 Navigate: ${point.mapsUrl}` : '';
+    const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}${navLine}`;
     await sendWhatsAppMessage(contact.phone, message);
   }
   logger.info({ orderNumber, phone: contact.phone, template: !!env.WHATSAPP_TEMPLATE_PICKUP }, 'Sent ready-for-pickup notification');

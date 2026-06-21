@@ -397,6 +397,12 @@ export const MSG = {
   ecocashTimeout: (orderNumber: string) =>
     `⏰ Didn't receive your EcoCash PIN.\n\nOrder *${orderNumber}* is still saved. Want to:\n\n1. Try EcoCash again\n2. Cancel order`,
 
+  /** Payment gateway reported the charge failed/timed out (async, via webhook).
+      Pushed proactively so the customer isn't left on "Waiting for confirmation".
+      Options match the awaiting_ecocash_pin handler (1 = retry, 2 = cancel). */
+  paymentFailed: (orderNumber: string) =>
+    `❌ That payment didn't go through — it may have timed out or been declined.\n\nOrder *${orderNumber}* is still saved. Want to:\n\n1. Try EcoCash again\n2. Cancel order`,
+
   /** Generic — kept for backwards compatibility (unused now) */
   paymentLinkSent: (orderNumber: string, paymentUrl: string, totalUsd: string) =>
     `Here's your payment link:\n🔗 ${paymentUrl}\n\nPays via card or EcoCash. You'll get a confirmation here once payment goes through.\n\n*Order #:* ${orderNumber}\n*Amount:* $${totalUsd}\n\n_Link expires in 60 minutes._`,

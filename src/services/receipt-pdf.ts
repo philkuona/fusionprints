@@ -20,6 +20,7 @@ import { registerBrandFonts } from '@/utils/fonts.js';
 import { getProduct } from '@/config/catalog.js';
 import { getOrderCollectionPoint } from '@/services/collection-points.js';
 import { sendWhatsAppDocument } from '@/services/whatsapp.js';
+import { isEnabled as qboEnabled, isSetupComplete as qboSetupComplete, fetchTxnPdf } from '@/services/qbo.js';
 
 registerBrandFonts();
 
@@ -121,9 +122,31 @@ export function buildReceiptSvg(d: {
   </svg>`;
 }
 
+/** The QBO-rendered invoice PDF for an order, if available. This is the preferred
+ * receipt: branded via the company's QBO Custom Form Style and showing the
+ * payment + PAID status. Null when QBO is off, the order has no invoice, or the
+ * fetch fails — callers then fall back to the local SVG renderer. The QBO payment
+ * is recorded before receipts are sent (markOrderPaid awaits it), so by the time
+ * this runs the invoice already reads PAID. */
+async function renderQboReceiptPdf(orderNumber: string): Promise<Buffer | null> {
+  if (!qboEnabled() || !qboSetupComplete()) return null;
+  const [order] = await db
+    .select({ qboInvoiceId: orders.qboInvoiceId })
+    .from(orders)
+    .where(eq(orders.orderNumber, orderNumber))
+    .limit(1);
+  if (!order?.qboInvoiceId) return null;
+  const pdf = await fetchTxnPdf('invoice', order.qboInvoiceId);
+  if (pdf) logger.info({ orderNumber }, 'Receipt PDF: using QBO-rendered invoice');
+  return pdf;
+}
+
 /** Render the branded receipt PDF for an order → bytes. Null on error. Shared by
- * the email attachment and the WhatsApp document. */
+ * the email attachment and the WhatsApp document. Prefers the QBO-rendered
+ * invoice PDF; falls back to the local SVG receipt when QBO is unavailable. */
 export async function renderReceiptPdfBytes(orderNumber: string): Promise<Buffer | null> {
+  const qboPdf = await renderQboReceiptPdf(orderNumber).catch(() => null);
+  if (qboPdf) return qboPdf;
   try {
     const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
     if (!order) return null;

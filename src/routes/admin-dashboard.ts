@@ -22,7 +22,7 @@ import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
-import { releaseOrderForPickup, postSalesReceiptForOrder } from '@/services/order.js';
+import { releaseOrderForPickup, recordQboSaleForOrder } from '@/services/order.js';
 import { approveCancellationAndRefund, declineCancellation } from '@/services/refund.js';
 import { getDnpMediaMode, setDnpMediaMode, type DnpMediaMode } from '@/services/store-settings.js';
 import { eq, desc, and, gte, sql, count, inArray } from 'drizzle-orm';
@@ -458,11 +458,12 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
         .set({ status: 'fulfilled', fulfilledAt: new Date() })
         .where(eq(orders.id, id));
       logger.info({ orderId: id }, 'Order fulfilled');
-      // Fallback QBO sales receipt — the primary post happens at markOrderPaid.
-      // Idempotent + self-guarded, so this only catches orders whose paid-time
-      // post hadn't run (e.g. predating the change) and never double-posts.
-      void postSalesReceiptForOrder(id).catch(err =>
-        logger.error({ err, orderId: id }, 'QBO Sales Receipt failed — manual entry needed')
+      // Fallback QBO sale posting — the primary post happens at markOrderPaid.
+      // Idempotent + self-guarded (settles the invoice or posts a receipt), so
+      // this only catches orders whose paid-time post hadn't run and never
+      // double-posts.
+      void recordQboSaleForOrder(id).catch(err =>
+        logger.error({ err, orderId: id }, 'QBO sale posting failed — manual entry needed')
       );
       return { ok: true };
     } catch (err) {

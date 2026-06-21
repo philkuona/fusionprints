@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "qbo_invoice_id" text;

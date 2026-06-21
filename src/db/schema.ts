@@ -238,6 +238,10 @@ export const orders = pgTable(
     // Chosen pickup location for collection orders (admin-managed). Null = the
     // primary point (back-compat) or a delivery order. See collection_points.
     collectionPointId: uuid('collection_point_id').references(() => collectionPoints.id),
+    // QBO Invoice Id, set when the AR invoice is created at order-create. Used to
+    // record the payment against it (→ PAID) at markOrderPaid, fetch the rendered
+    // PDF for the customer, and void it if the checkout is abandoned/cancelled.
+    qboInvoiceId: text('qbo_invoice_id'),
     // Contact phone captured at web checkout (required there). WhatsApp orders
     // use the customer's phone instead, so this stays nullable at the column level.
     contactPhone: text('contact_phone'),

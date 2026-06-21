@@ -24,7 +24,17 @@ import { getProduct } from '@/config/catalog.js';
 import { getProductCost } from '@/services/cost-overrides.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import { sendFiveBySevenOperatorEmail } from '@/services/operator-email.js';
-import { isEnabled as qboEnabled, isSetupComplete, createSalesReceipt, findSalesReceiptId } from '@/services/qbo.js';
+import {
+  isEnabled as qboEnabled,
+  isSetupComplete,
+  createSalesReceipt,
+  findSalesReceiptId,
+  createInvoice,
+  recordInvoicePayment,
+  voidInvoice,
+  type OrderItemForQbo,
+  type QboCustomerInfo,
+} from '@/services/qbo.js';
 import {
   renderOrderInfoSlip,
   renderEndSeparatorSlip,
@@ -218,6 +228,12 @@ export async function createOrder(
     // (post-payment) for ALL channels — bot orders are created at
     // pending_payment here, so firing the operator alert now would be premature.
 
+    // Open the QBO invoice now (AR). Best-effort + fire-and-forget — never block
+    // order creation; voided automatically if the checkout is abandoned.
+    void createQboInvoiceForOrder(result.order.id).catch((err) =>
+      logger.error({ orderNumber: result.orderNumber, err }, 'QBO invoice creation failed'),
+    );
+
     return { ok: true, order: result.order, orderNumber: result.orderNumber };
   } catch (err) {
     logger.error({ err, customerId }, 'Failed to create order');
@@ -341,6 +357,12 @@ export async function createWebOrder(
       logger.info({ orderNumber, webUserId, total: quote.totalUsd }, 'Web order created (pending payment)');
       return { order, orderNumber };
     });
+
+    // Open the QBO invoice now (AR). Best-effort + fire-and-forget — never block
+    // order creation; voided automatically if the checkout is abandoned.
+    void createQboInvoiceForOrder(result.order.id).catch((err) =>
+      logger.error({ orderNumber: result.orderNumber, err }, 'QBO invoice creation failed'),
+    );
 
     return { ok: true, order: result.order, orderNumber: result.orderNumber };
   } catch (err) {
@@ -532,44 +554,40 @@ export async function markOrderPaid(
   const placedOrder = await getOrderByNumber(orderNumber);
   if (placedOrder) {
     await applyFiveBySevenHandling(placedOrder.id);
-    // Post the QBO sales receipt as soon as payment is confirmed (the sale is
-    // recognised at payment, not collection). Idempotent + fire-and-forget — a
-    // QBO failure must never roll back or block a paid order.
-    void postSalesReceiptForOrder(placedOrder.id).catch((err) =>
-      logger.error({ orderNumber, err }, 'QBO sales receipt failed — manual entry may be needed'),
+    // Record the QBO sale as soon as payment is confirmed: settle the order's
+    // invoice with a Payment (→ PAID), or post a SalesReceipt for legacy orders.
+    // Awaited (but error-swallowed, so a QBO failure never rolls back or blocks a
+    // paid order) so the invoice reads PAID before the receipt PDFs — which the
+    // callers render right after this returns — are fetched from QBO. Idempotent.
+    await recordQboSaleForOrder(placedOrder.id).catch((err) =>
+      logger.error({ orderNumber, err }, 'QBO sale posting failed — manual entry may be needed'),
     );
   }
 }
 
 /**
- * Post a QBO sales receipt for an order. Idempotent: no-ops if QBO isn't set up,
- * or if QBO already has a receipt for this order's DocNumber (guards against
- * webhook retries / the paid + fulfil paths both firing). Used at markOrderPaid
- * (primary) and as a fallback on fulfil.
+ * Resolve the QBO context for an order: line items, the real buyer (so docs post
+ * under their QBO customer, not the generic one — web: checkout name + account
+ * email + checkout phone; WhatsApp: the customer's name/email/number), and the
+ * payment method (drives the deposit account). Shared by invoice-create + paid.
  */
-export async function postSalesReceiptForOrder(orderId: string): Promise<void> {
-  if (!qboEnabled() || !isSetupComplete()) return;
-  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-  if (!order) return;
-  if (await findSalesReceiptId(order.orderNumber)) return; // already posted
-  const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
-  const [payment] = await db
-    .select({ paymentMethod: payments.paymentMethod })
-    .from(payments)
-    .where(eq(payments.orderId, orderId))
-    .orderBy(desc(payments.completedAt))
-    .limit(1);
+async function gatherQboOrderContext(order: typeof orders.$inferSelect): Promise<{
+  items: OrderItemForQbo[];
+  customer: QboCustomerInfo | null;
+  method: string | null;
+}> {
+  const rows = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+  const items: OrderItemForQbo[] = rows.map((i) => ({
+    sizeCode:     i.sizeCode,
+    quantity:     i.quantity,
+    unitPriceUsd: i.unitPriceUsd,
+    lineTotalUsd: i.lineTotalUsd,
+    productType:  i.productType,
+  }));
 
-  // Gather the real buyer so the receipt posts under their QBO customer (not the
-  // generic one). Web: checkout full name + account email + checkout phone.
-  // WhatsApp: the customer's name, email, and number.
-  let customer: { name: string | null; email: string | null; phone: string | null } | null = null;
+  let customer: QboCustomerInfo | null = null;
   if (order.channel === 'web' && order.webUserId) {
-    const [wu] = await db
-      .select({ email: webUsers.email })
-      .from(webUsers)
-      .where(eq(webUsers.id, order.webUserId))
-      .limit(1);
+    const [wu] = await db.select({ email: webUsers.email }).from(webUsers).where(eq(webUsers.id, order.webUserId)).limit(1);
     customer = { name: order.contactName, email: wu?.email ?? null, phone: order.contactPhone };
   } else if (order.customerId) {
     const [c] = await db
@@ -580,11 +598,69 @@ export async function postSalesReceiptForOrder(orderId: string): Promise<void> {
     if (c) customer = { name: c.name, email: c.email, phone: c.phone };
   }
 
-  // WhatsApp orders are always EcoCash and don't create a payments row, so fall
+  // WhatsApp orders are always EcoCash and may not create a payments row, so fall
   // back to the channel when the method wasn't recorded — keeps the QBO deposit
   // routing correct (EcoCash Business rather than Cash on Hand).
+  const [payment] = await db
+    .select({ paymentMethod: payments.paymentMethod })
+    .from(payments)
+    .where(eq(payments.orderId, order.id))
+    .orderBy(desc(payments.completedAt))
+    .limit(1);
   const method = payment?.paymentMethod ?? (order.channel === 'whatsapp' ? 'ecocash' : null);
 
+  return { items, customer, method };
+}
+
+/**
+ * Create the QBO Invoice for a freshly-created order and persist its id. The
+ * sale is recognised here (AR); payment is recorded against this invoice at
+ * markOrderPaid. Idempotent (skips if already invoiced; createInvoice also
+ * guards by DocNumber) + best-effort — a QBO failure never blocks an order.
+ */
+export async function createQboInvoiceForOrder(orderId: string): Promise<void> {
+  if (!qboEnabled() || !isSetupComplete()) return;
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order || order.qboInvoiceId) return; // already invoiced
+  const { items, customer } = await gatherQboOrderContext(order);
+  const invoiceId = await createInvoice(
+    {
+      orderNumber:    order.orderNumber,
+      subtotalUsd:    order.subtotalUsd,
+      deliveryFeeUsd: order.deliveryFeeUsd,
+      totalUsd:       order.totalUsd,
+      fulfilledAt:    order.fulfilledAt,
+      createdAt:      order.createdAt,
+    },
+    items,
+    customer,
+  );
+  await db.update(orders).set({ qboInvoiceId: invoiceId }).where(eq(orders.id, orderId));
+}
+
+/**
+ * Record the QBO sale for a paid order. New model: settle the order's invoice
+ * with a Payment (→ PAID). Legacy fallback for orders with no invoice (created
+ * before invoice-at-create, or invoice creation failed): post a SalesReceipt.
+ * Idempotent: no-ops if QBO isn't set up, the invoice is already settled, or a
+ * receipt already exists (guards webhook retries / paid + fulfil both firing).
+ * Used at markOrderPaid (primary) and as a fallback on fulfil.
+ */
+export async function recordQboSaleForOrder(orderId: string): Promise<void> {
+  if (!qboEnabled() || !isSetupComplete()) return;
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) return;
+
+  const { items, customer, method } = await gatherQboOrderContext(order);
+
+  // Preferred path: settle the AR invoice created at order-create.
+  if (order.qboInvoiceId) {
+    await recordInvoicePayment(order.qboInvoiceId, order.totalUsd, method);
+    return;
+  }
+
+  // Legacy fallback: no invoice on this order → post a SalesReceipt as before.
+  if (await findSalesReceiptId(order.orderNumber)) return; // already posted
   await createSalesReceipt(
     {
       orderNumber:    order.orderNumber,
@@ -594,16 +670,26 @@ export async function postSalesReceiptForOrder(orderId: string): Promise<void> {
       fulfilledAt:    order.fulfilledAt,
       createdAt:      order.createdAt,
     },
-    items.map((i) => ({
-      sizeCode:     i.sizeCode,
-      quantity:     i.quantity,
-      unitPriceUsd: i.unitPriceUsd,
-      lineTotalUsd: i.lineTotalUsd,
-      productType:  i.productType,
-    })),
+    items,
     method,
     customer,
   );
+}
+
+/**
+ * Void an order's QBO invoice when an UNPAID checkout is abandoned or cancelled.
+ * Paid orders are reversed via a RefundReceipt instead (the invoice has a linked
+ * payment), so they're deliberately left alone here. Best-effort.
+ */
+export async function voidQboInvoiceForOrder(orderId: string): Promise<void> {
+  if (!qboEnabled() || !isSetupComplete()) return;
+  const [order] = await db
+    .select({ qboInvoiceId: orders.qboInvoiceId })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  if (!order?.qboInvoiceId) return;
+  await voidInvoice(order.qboInvoiceId);
 }
 
 /**
@@ -940,12 +1026,20 @@ async function sendOutForDeliveryNotification(orderNumber: string): Promise<void
  * Called when customer types CANCEL or payment times out.
  */
 export async function cancelOrder(orderNumber: string): Promise<void> {
-  await db
+  const [cancelled] = await db
     .update(orders)
     .set({ status: 'cancelled' })
-    .where(eq(orders.orderNumber, orderNumber));
+    .where(eq(orders.orderNumber, orderNumber))
+    .returning({ id: orders.id });
 
   logger.info({ orderNumber }, 'Order cancelled');
+
+  // Void the AR invoice for this abandoned/cancelled (unpaid) order. Best-effort.
+  if (cancelled) {
+    void voidQboInvoiceForOrder(cancelled.id).catch((err) =>
+      logger.error({ orderNumber, err }, 'QBO invoice void failed on cancel'),
+    );
+  }
 }
 
 /**
@@ -963,8 +1057,17 @@ export async function expireStalePendingOrders(maxAgeHours = 24): Promise<number
       .update(orders)
       .set({ status: 'cancelled' })
       .where(and(eq(orders.status, 'pending_payment'), lt(orders.createdAt, cutoff)))
-      .returning({ id: orders.id, orderNumber: orders.orderNumber });
+      .returning({ id: orders.id, orderNumber: orders.orderNumber, qboInvoiceId: orders.qboInvoiceId });
     if (expired.length === 0) return 0;
+
+    // Void the AR invoice for each abandoned checkout so no open invoice lingers
+    // in QBO. Best-effort, per order — one failure must not abort the sweep.
+    for (const o of expired) {
+      if (!o.qboInvoiceId) continue;
+      await voidQboInvoiceForOrder(o.id).catch((err) =>
+        logger.error({ orderNumber: o.orderNumber, err }, 'QBO invoice void failed on expiry'),
+      );
+    }
 
     await db
       .update(payments)

@@ -19,7 +19,7 @@ import { randomBytes } from 'crypto';
 import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getOrderMinimums, getDnpMediaMode } from '@/services/store-settings.js';
-import { getOrderCollectionPoint, pointHours } from '@/services/collection-points.js';
+import { getOrderCollectionPoint, pointHours, toMapsUrl } from '@/services/collection-points.js';
 import { getProduct } from '@/config/catalog.js';
 import { getProductCost } from '@/services/cost-overrides.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
@@ -992,6 +992,11 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
   const locAddress = point?.addressLine ?? env.BUSINESS_ADDRESS;
   const locHours = point ? pointHours(point) : env.BUSINESS_HOURS;
 
+  // A tappable Maps link (from a saved URL / Plus Code / address). Sent as its
+  // own follow-up message so it works on BOTH the template and free-form paths
+  // (the approved template has no slot for it) and renders a WhatsApp preview.
+  const mapsLink = toMapsUrl(point?.mapsUrl);
+
   // Notify the buyer, plus the gift recipient if this order is for someone else
   // (R2-13). Each send is best-effort so one failure doesn't block the other.
   const phones = recipientPhones(contact.phone, order.recipientPhone);
@@ -1007,9 +1012,13 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
         `${locName}, ${locAddress}`,
       ]).catch((err) => logger.error({ orderNumber, phone, err }, 'Pickup notify failed for a recipient'));
     } else {
-      const navLine = point?.mapsUrl ? `\n\n🧭 Navigate: ${point.mapsUrl}` : '';
-      const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}${navLine}`;
+      const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}`;
       await sendWhatsAppMessage(phone, message).catch((err) => logger.error({ orderNumber, phone, err }, 'Pickup notify failed for a recipient'));
+    }
+    if (mapsLink) {
+      await sendWhatsAppMessage(phone, `🧭 Navigate to *${locName}*:\n${mapsLink}`).catch((err) =>
+        logger.error({ orderNumber, phone, err }, 'Pickup navigate link failed for a recipient'),
+      );
     }
   }
   logger.info({ orderNumber, recipients: phones.length, template: !!env.WHATSAPP_TEMPLATE_PICKUP }, 'Sent ready-for-pickup notification');

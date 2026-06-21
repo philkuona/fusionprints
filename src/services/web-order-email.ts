@@ -61,7 +61,7 @@ async function sendBrandEmail(to: string, subject: string, html: string, orderNu
   }
   try {
     const resend = new Resend(env.RESEND_API_KEY);
-    const { error } = await resend.emails.send({ from: 'FusionPrints <noreply@fusionprints.co.zw>', to, subject, html });
+    const { error } = await resend.emails.send({ from: 'FusionPrints Lab <noreply@fusionprints.co.zw>', to, subject, html });
     if (error) {
       logger.error({ orderNumber, to, error }, 'Resend rejected email');
       return false;
@@ -76,12 +76,13 @@ async function sendBrandEmail(to: string, subject: string, html: string, orderNu
 
 /**
  * Send the branded receipt for a paid order (web or WhatsApp). No-ops if there's
- * no recipient email, no Resend key, or it was already sent.
+ * no recipient email or no Resend key. Sends once automatically (guarded by
+ * receiptSentAt); pass { force: true } for an admin-triggered resend.
  */
-export async function sendOrderReceipt(orderNumber: string): Promise<void> {
+export async function sendOrderReceipt(orderNumber: string, opts: { force?: boolean } = {}): Promise<void> {
   const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
   if (!order) return;
-  if (order.receiptSentAt) return; // already sent
+  if (order.receiptSentAt && !opts.force) return; // already sent (skip unless forced)
 
   // Resolve the recipient email + first name from whichever channel the order
   // came through. WhatsApp customers may have no email (it's optional) — then
@@ -168,7 +169,7 @@ export async function sendOrderReceipt(orderNumber: string): Promise<void> {
     // resend.emails.send() returns { error } instead of throwing on API errors.
     // Only mark the receipt sent when it actually succeeded.
     const { data, error } = await resend.emails.send({
-      from: 'FusionPrints <noreply@fusionprints.co.zw>',
+      from: 'FusionPrints Lab <noreply@fusionprints.co.zw>',
       to: email,
       subject: `Order ${orderNumber} confirmed`,
       html,

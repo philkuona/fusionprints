@@ -346,12 +346,14 @@ export async function registerAdminDashboard(app: FastifyInstance): Promise<void
       await db.update(orders)
         .set({ status: 'queued_for_print' })
         .where(eq(orders.id, id));
+      // Only release the jobs that were awaiting approval — never re-queue jobs
+      // that already printed (done) in a mixed order, or they'd reprint.
       await db.update(printJobs)
         .set({ status: 'queued' })
         .where(
           sql`${printJobs.orderItemId} IN (
             SELECT id FROM order_items WHERE order_id = ${id}
-          )`,
+          ) AND ${printJobs.status} = 'awaiting_approval'`,
         );
       logger.info({ orderId: id }, 'Order approved for printing');
       return { ok: true };

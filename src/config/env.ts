@@ -47,6 +47,7 @@ const envSchema = z.object({
   // text (only delivered if a service window is open). Roll out per template.
   WHATSAPP_TEMPLATE_PICKUP: z.string().default(''),
   WHATSAPP_TEMPLATE_DELIVERY: z.string().default(''),
+  WHATSAPP_TEMPLATE_FULFILLED: z.string().default(''),
   WHATSAPP_TEMPLATE_LANG: z.string().default('en'),
   // Operator alert when an order contains a 5×7 (needs a manual DNP media swap).
   // Emailed via Resend to this address (needs RESEND_API_KEY set).

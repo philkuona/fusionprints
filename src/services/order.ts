@@ -992,10 +992,13 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
   const locAddress = point?.addressLine ?? env.BUSINESS_ADDRESS;
   const locHours = point ? pointHours(point) : env.BUSINESS_HOURS;
 
-  // A tappable Maps link (from a saved URL / Plus Code / address). Sent as its
-  // own follow-up message so it works on BOTH the template and free-form paths
-  // (the approved template has no slot for it) and renders a WhatsApp preview.
+  // Tappable Maps link (from a saved URL / Plus Code / address). It rides INSIDE
+  // the message — appended to the template's address param {{4}} (no re-approval
+  // needed) and inline in the free-form fallback — rather than as a separate
+  // follow-up (which arrived out of order, since template sends lag session ones).
   const mapsLink = toMapsUrl(point?.mapsUrl);
+  const addressParam = mapsLink ? `${locName}, ${locAddress} — Directions: ${mapsLink}` : `${locName}, ${locAddress}`;
+  const navLine = mapsLink ? `\n\n🧭 Navigate: ${mapsLink}` : '';
 
   // Notify the buyer, plus the gift recipient if this order is for someone else
   // (R2-13). Each send is best-effort so one failure doesn't block the other.
@@ -1004,21 +1007,16 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
     // Prefer the approved template (delivers outside the 24h window — e.g. web
     // orders); fall back to free-form text when no template is configured.
     if (env.WHATSAPP_TEMPLATE_PICKUP) {
-      // {{1}} name, {{2}} order, {{3}} hours, {{4}} address
+      // {{1}} name, {{2}} order, {{3}} hours, {{4}} address (+ directions link)
       await sendWhatsAppTemplate(phone, env.WHATSAPP_TEMPLATE_PICKUP, [
         firstName,
         orderNumber,
         locHours,
-        `${locName}, ${locAddress}`,
+        addressParam,
       ]).catch((err) => logger.error({ orderNumber, phone, err }, 'Pickup notify failed for a recipient'));
     } else {
-      const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}`;
+      const message = `✅ Your order is ready!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nPick up at *${locName}* during business hours (${locHours}).\n\nAt the counter, just give your last name or order number.\n\n📍 ${locAddress}${navLine}`;
       await sendWhatsAppMessage(phone, message).catch((err) => logger.error({ orderNumber, phone, err }, 'Pickup notify failed for a recipient'));
-    }
-    if (mapsLink) {
-      await sendWhatsAppMessage(phone, `🧭 Navigate to *${locName}*:\n${mapsLink}`).catch((err) =>
-        logger.error({ orderNumber, phone, err }, 'Pickup navigate link failed for a recipient'),
-      );
     }
   }
   logger.info({ orderNumber, recipients: phones.length, template: !!env.WHATSAPP_TEMPLATE_PICKUP }, 'Sent ready-for-pickup notification');
@@ -1074,11 +1072,22 @@ export async function notifyOrderFulfilled(orderNumber: string): Promise<void> {
   if (!order) return;
   const contact = await resolveOrderContact(order);
   if (contact) {
-    // Thank both the buyer and the gift recipient if set (R2-13).
+    const firstName = contact.name.split(/\s+/)[0] ?? contact.name;
+    // Thank both the buyer and the gift recipient if set (R2-13). Prefer the
+    // approved template (delivers outside the 24h window), else free-form.
     for (const phone of recipientPhones(contact.phone, order.recipientPhone)) {
-      await sendWhatsAppMessage(phone, MSG.orderFulfilled(orderNumber)).catch((err) =>
-        logger.error({ orderNumber, phone, err }, 'Failed to send fulfilled WhatsApp'),
-      );
+      if (env.WHATSAPP_TEMPLATE_FULFILLED) {
+        // {{1}} name, {{2}} order, {{3}} business name
+        await sendWhatsAppTemplate(phone, env.WHATSAPP_TEMPLATE_FULFILLED, [
+          firstName,
+          orderNumber,
+          env.BUSINESS_NAME,
+        ]).catch((err) => logger.error({ orderNumber, phone, err }, 'Failed to send fulfilled WhatsApp'));
+      } else {
+        await sendWhatsAppMessage(phone, MSG.orderFulfilled(orderNumber)).catch((err) =>
+          logger.error({ orderNumber, phone, err }, 'Failed to send fulfilled WhatsApp'),
+        );
+      }
     }
   }
   await sendOrderFulfilledEmail(orderNumber).catch((err) =>
@@ -1096,17 +1105,29 @@ async function sendOutForDeliveryNotification(orderNumber: string): Promise<void
   const contact = await resolveOrderContact(order);
   if (!contact) return;
 
+  const firstName = contact.name.split(/\s+/)[0] ?? contact.name;
   const lastName = contact.name.split(/\s+/).pop() ?? contact.name;
 
   const message = `🚚 Your order is on its way!\n\nOrder: *${orderNumber}*\nName: *${lastName}*\n\nYour prints have left *${env.BUSINESS_NAME}* and are out for delivery. Our driver will be in touch shortly.\n\nQuestions? Just reply to this message.`;
 
-  // Notify the buyer + the gift recipient if set (R2-13). Best-effort each.
+  // Notify the buyer + the gift recipient if set (R2-13). Prefer the approved
+  // template (delivers outside the 24h window — e.g. web orders), else free-form.
+  // Best-effort each. See docs/WHATSAPP-TEMPLATES.md for the template to submit.
   for (const phone of recipientPhones(contact.phone, order.recipientPhone)) {
-    await sendWhatsAppMessage(phone, message).catch((err) =>
-      logger.error({ orderNumber, phone, err }, 'Out-for-delivery notify failed for a recipient'),
-    );
+    if (env.WHATSAPP_TEMPLATE_DELIVERY) {
+      // {{1}} name, {{2}} order, {{3}} business name
+      await sendWhatsAppTemplate(phone, env.WHATSAPP_TEMPLATE_DELIVERY, [
+        firstName,
+        orderNumber,
+        env.BUSINESS_NAME,
+      ]).catch((err) => logger.error({ orderNumber, phone, err }, 'Out-for-delivery notify failed for a recipient'));
+    } else {
+      await sendWhatsAppMessage(phone, message).catch((err) =>
+        logger.error({ orderNumber, phone, err }, 'Out-for-delivery notify failed for a recipient'),
+      );
+    }
   }
-  logger.info({ orderNumber }, 'Sent out-for-delivery notification');
+  logger.info({ orderNumber, template: !!env.WHATSAPP_TEMPLATE_DELIVERY }, 'Sent out-for-delivery notification');
 }
 
 /**

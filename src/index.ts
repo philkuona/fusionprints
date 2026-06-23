@@ -40,6 +40,7 @@ import { registerWebAuthRoutes } from '@/routes/web/auth.js';
 import { registerWebGoogleAuthRoutes } from '@/routes/web/google-auth.js';
 import { registerWebProfileRoutes } from '@/routes/web/profile.js';
 import { registerWebAddressRoutes } from '@/routes/web/addresses.js';
+import { registerWebCartRoutes } from '@/routes/web/cart.js';
 import { registerWebCatalogRoutes } from '@/routes/web/catalog.js';
 import { registerWebPhotoRoutes } from '@/routes/web/photos.js';
 import { registerWebEditorRoutes } from '@/routes/web/editor.js';
@@ -233,6 +234,7 @@ async function main(): Promise<void> {
   await registerWebGoogleAuthRoutes(app);
   await registerWebProfileRoutes(app);
   await registerWebAddressRoutes(app);
+  await registerWebCartRoutes(app);
   await registerWebCatalogRoutes(app);
   await registerWebPhotoRoutes(app);
   await registerWebEditorRoutes(app);

@@ -50,9 +50,8 @@ export const MSG = {
           title: 'Prints',
           rows: [
             { id: 'PHOTOS', title: '📸 Photo prints', description: 'Classic single-photo prints' },
-            { id: 'WALLET', title: '🧾 Wallet prints', description: 'Four 2×3 keepsakes from one photo' },
-            { id: 'PASSPORT', title: '🪪 Passport photos', description: 'Six 2×2 ID photos, one sheet' },
-            { id: 'MINI', title: '🖼 Mini prints', description: 'Two mini prints, side by side' },
+            { id: 'WALLET', title: '🧾 Wallet prints', description: 'Four 2×3 keepsakes — design on web' },
+            { id: 'MINI', title: '🖼 Mini prints', description: 'Two mini prints — design on web' },
             { id: 'POSTERS', title: '🎨 Posters / wall art', description: 'Statement wall pieces' },
           ],
         },
@@ -64,7 +63,15 @@ export const MSG = {
     },
   }),
 
-  invalidMenuChoice: () => `Please pick an option from the menu, or type *photos*, *wallet*, *passport*, *mini*, *posters*, or *status*.`,
+  invalidMenuChoice: () => `Please pick an option from the menu, or type *photos*, *wallet*, *mini*, *posters*, or *status*.`,
+
+  /** Wallet/mini composites are designed in the web editor — hand the link over. */
+  designOnWeb: (productName: string, url: string) =>
+    `*${productName}* are designed on our web app, where you position and preview each print before you order.\n\n👉 ${url}\n\nYou can check out right there on the web. Reply *MENU* anytime to keep going here.`,
+
+  /** Passport photos are temporarily stubbed (sizing varies by country/use). */
+  passportUnavailable: () =>
+    `🪪 Passport photos are temporarily unavailable while we set up the right sizes for each country's requirements.\n\nIn the meantime I can help with *photo prints*, *wallet prints*, *mini prints*, or *posters* — just pick from the menu.`,
 
   // ===== Product selection =====
 
@@ -350,6 +357,13 @@ export const MSG = {
   }),
 
   orderCancelled: () => `Order cancelled. Type anything to start a new order.`,
+
+  /** Bare CANCEL while an order is still being built — just clear the draft. */
+  cartCleared: () => `Okay, I've cleared what you were working on. Type anything to start again. 👍`,
+
+  /** Bare CANCEL with nothing in progress — don't claim a phantom cancellation. */
+  nothingToCancel: () =>
+    `You don't have an order in progress, so there's nothing to cancel right now.\n\n_To cancel a *placed* order, reply *CANCEL* followed by its number — e.g. CANCEL FP-2026-0010._`,
 
   /** A paid order's cancellation was approved + refunded (PR-12). */
   refundIssued: (orderNumber: string) =>

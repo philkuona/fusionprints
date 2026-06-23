@@ -22,7 +22,7 @@ import { findOrCreateCustomer, updateCustomerName, updateCustomerEmail, incremen
 import { loadConversationState, saveConversationState } from '@/services/conversation-state.js';
 import { getActiveCollectionPoints } from '@/services/collection-points.js';
 import { createOrder, cancelOrder, getRecentOrders, getOrderByNumber } from '@/services/order.js';
-import { requestOrderCancellation } from '@/services/refund.js';
+import { requestOrderCancellation, canRequestCancellation } from '@/services/refund.js';
 import { initiateEcocashPayment } from '@/services/payment.js';
 import { createUploadSession, getSessionImages, completeSession } from '@/routes/upload.js';
 import { getProduct } from '@/config/catalog.js';
@@ -203,13 +203,16 @@ export async function handleIncomingMessage(input: HandlerInput): Promise<Handle
             // Unpaid — cancel outright (also voids any QBO invoice).
             await cancelOrder(ord.orderNumber);
             extraReplies.push(MSG.cancelOrderDone(ord.orderNumber));
-          } else if (ord.paidAt) {
-            // Paid — file a request for admin review (approve → Payonify refund).
+          } else if (ord.paidAt && canRequestCancellation(ord)) {
+            // Paid and still early enough — file a request for admin review
+            // (approve → Payonify refund).
             const res = await requestOrderCancellation({ orderId: ord.id });
             extraReplies.push(
               res.ok ? MSG.cancelOrderRequested(ord.orderNumber) : MSG.cancelOrderTooLate(ord.orderNumber),
             );
           } else {
+            // Already fulfilled / collected / delivered (or otherwise past the
+            // cancellable window) — no cancellation.
             extraReplies.push(MSG.cancelOrderTooLate(ord.orderNumber));
           }
           break;

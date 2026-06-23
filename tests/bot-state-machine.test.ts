@@ -271,13 +271,45 @@ describe('image validation outcomes (single print)', () => {
   });
 });
 
-describe('composite flows', () => {
-  it('wallet: one photo duplicates across every layout cell', () => {
-    let r = run('choosing_product', emptyContext(), text('2'));
-    expect(r.nextStep).toBe('choosing_wallet_photo');
-    expect(r.nextContext.pendingSize).toBe('wallet_4up');
+describe('composite products redirect to the web editor', () => {
+  // Wallet & mini are now designed in the web editor (multi-cell positioning),
+  // not built in-chat. Selecting them hands over a deep link and stays at the menu.
+  it('wallet selection hands over the web link, no in-chat flow', () => {
+    const r = run('choosing_product', emptyContext(), text('2'));
+    expect(r.nextStep).toBe('choosing_product');
+    expect(r.nextContext.cart).toEqual([]);
+    expect(r.effects).toEqual([]);
+    expect(JSON.stringify(r.replies)).toContain('/prints/wallet');
+  });
 
-    r = run(r.nextStep, r.nextContext, photo('wallet-img'));
+  it('mini selection hands over the web link, no in-chat flow', () => {
+    const r = run('choosing_product', emptyContext(), text('4'));
+    expect(r.nextStep).toBe('choosing_product');
+    expect(r.nextContext.cart).toEqual([]);
+    expect(r.effects).toEqual([]);
+    expect(JSON.stringify(r.replies)).toContain('/prints/mini');
+  });
+
+  it('passport is stubbed — unavailable, no flow started', () => {
+    const r = run('choosing_product', emptyContext(), text('3'));
+    expect(r.nextStep).toBe('choosing_product');
+    expect(r.nextContext.cart).toEqual([]);
+    expect(r.effects).toEqual([]);
+    expect(JSON.stringify(r.replies).toLowerCase()).toContain('unavailable');
+  });
+});
+
+// The in-chat composite handlers are retained for conversations already mid-flow
+// when the web-redirect change shipped — keep covering the cell-building logic.
+describe('in-flight composite handlers (legacy, mid-conversation only)', () => {
+  it('wallet: one photo duplicates across every layout cell', () => {
+    const ctx = {
+      ...emptyContext(),
+      pendingProductType: 'composite' as const,
+      pendingSize: 'wallet_4up',
+      pendingCompositePhotos: [],
+    };
+    const r = run('choosing_wallet_photo', ctx, photo('wallet-img'));
     expect(r.nextStep).toBe('adding_more_or_checkout');
     const item = r.nextContext.cart[0];
     const layoutCells = getProduct('wallet_4up')!.layout!.cells;
@@ -287,10 +319,13 @@ describe('composite flows', () => {
   });
 
   it('mini pair: two photos land in distinct cells', () => {
-    let r = run('choosing_product', emptyContext(), text('4'));
-    expect(r.nextStep).toBe('choosing_mini_photo_1');
-
-    r = run(r.nextStep, r.nextContext, photo('mini-a'));
+    const ctx = {
+      ...emptyContext(),
+      pendingProductType: 'composite' as const,
+      pendingSize: 'mini_pair',
+      pendingCompositePhotos: [],
+    };
+    let r = run('choosing_mini_photo_1', ctx, photo('mini-a'));
     expect(r.nextStep).toBe('choosing_mini_photo_2');
     expect(r.nextContext.pendingCompositePhotos).toEqual(['mini-a']);
 
@@ -300,17 +335,14 @@ describe('composite flows', () => {
     expect(refs).toEqual(new Set(['mini-a', 'mini-b']));
   });
 
-  it('text instead of a photo re-prompts within the composite step', () => {
-    const start = run('choosing_product', emptyContext(), text('3'));
-    expect(start.nextStep).toBe('choosing_passport_photo');
-    const r = run(start.nextStep, start.nextContext, text('what now?'));
-    expect(r.nextStep).toBe('choosing_passport_photo');
-    expect(r.nextContext.cart).toEqual([]);
-  });
-
   it('a compressed photo is refused for composites (no USE ANYWAY)', () => {
-    const start = run('choosing_product', emptyContext(), text('2'));
-    const r = run(start.nextStep, start.nextContext, photo('w', { wasCompressed: true }));
+    const ctx = {
+      ...emptyContext(),
+      pendingProductType: 'composite' as const,
+      pendingSize: 'wallet_4up',
+      pendingCompositePhotos: [],
+    };
+    const r = run('choosing_wallet_photo', ctx, photo('w', { wasCompressed: true }));
     expect(r.nextStep).toBe('choosing_wallet_photo');
     expect(r.nextContext.cart).toEqual([]);
   });

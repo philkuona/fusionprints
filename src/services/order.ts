@@ -997,7 +997,9 @@ async function sendReadyForPickupNotification(orderNumber: string): Promise<void
   // needed) and inline in the free-form fallback — rather than as a separate
   // follow-up (which arrived out of order, since template sends lag session ones).
   const mapsLink = toMapsUrl(point?.mapsUrl);
-  const addressParam = mapsLink ? `${locName}, ${locAddress} — Directions: ${mapsLink}` : `${locName}, ${locAddress}`;
+  // WhatsApp forbids line breaks inside a template field, so address + directions
+  // stay on one line — but drop the em-dash for a cleaner read.
+  const addressParam = mapsLink ? `${locName}, ${locAddress}. 🧭 Directions: ${mapsLink}` : `${locName}, ${locAddress}`;
   const navLine = mapsLink ? `\n\n🧭 Navigate: ${mapsLink}` : '';
 
   // Notify the buyer, plus the gift recipient if this order is for someone else

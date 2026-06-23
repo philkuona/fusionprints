@@ -539,6 +539,9 @@ const nameExpr = sql<string | null>`COALESCE(${customers.name}, ${webUsers.displ
 type Bucket = 'small' | 'fiveinch' | 'large' | 'poster';
 function bucketFor(productType: string, sizeCode: string): Bucket {
   if (productType === 'poster') return 'poster';
+  // Composite "sets" (wallet/mini) print on the 4×6 DNP, so they consume the
+  // small (4×6) media — count them with small prints, not large.
+  if (productType === 'composite') return 'small';
   if (sizeCode === '4x6') return 'small';
   if (sizeCode === '5x7') return 'fiveinch';
   return 'large'; // 6x6, 6x8, 8x10

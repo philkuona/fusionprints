@@ -378,25 +378,19 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
           }
         | null = null;
       if (item.productType === 'composite') {
-        const product = getProduct(item.sizeCode);
-        const payload = item.layoutPayload as {
-          cells?: { cellIndex: number; imageId: string | null; transform: unknown; border: unknown }[];
-        } | null;
-        const cells = await Promise.all(
-          (payload?.cells ?? []).map(async (c) => {
-            const [img] = c.imageId
-              ? await db.select().from(images).where(eq(images.id, c.imageId)).limit(1)
-              : [null];
-            return {
-              cellIndex: c.cellIndex,
-              imageStorageKey: img?.storageKey ?? '',
-              imageUrl: img?.storageKey ? await getSignedImageUrl(img.storageKey) : '',
-              transform: c.transform ?? null,
-              border: c.border ?? null,
-            };
-          }),
-        );
-        composite = { layout: product?.layout ?? null, cells };
+        // Single-image N-up: wallet/mini are edited like a normal print (one
+        // processed render), and the agent tiles that ONE render across every
+        // cell of the catalog layout (4 for wallet, 8 for mini) with cut guides.
+        // printStorageKey/printUrl (resolved above) is the processed render.
+        const layout = getProduct(item.sizeCode)?.layout ?? null;
+        const cells = (layout?.cells ?? []).map((_, cellIndex) => ({
+          cellIndex,
+          imageStorageKey: printStorageKey,
+          imageUrl: printUrl,
+          transform: null,
+          border: null,
+        }));
+        composite = { layout, cells };
       }
 
       return {

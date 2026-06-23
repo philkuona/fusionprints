@@ -167,7 +167,13 @@ export async function applyEdit(
   if (!isIdentity(M)) img = img.recomb(M);
 
   // ── Resize to print target (+ optional ½" white border) ──
-  const target = orientedTarget(product.recommendedResolution, crop.orientation);
+  // Composites (wallet/mini) are single-image N-up: the render is one CELL at
+  // its stored aspect (wallet 2×3, mini 2×1.5) — no orientation swap — and the
+  // agent tiles it across the sheet. Standard prints orient to the photo.
+  const target =
+    product.productType === 'composite'
+      ? { w: product.recommendedResolution.width, h: product.recommendedResolution.height }
+      : orientedTarget(product.recommendedResolution, crop.orientation);
   const borderInches = borderInchesForSize(payload.sizeCode);
   if (payload.border && borderInches) {
     const [pw] = orientedInches(payload.sizeCode, crop.orientation);

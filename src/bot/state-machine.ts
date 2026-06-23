@@ -17,6 +17,7 @@
  */
 
 import { PHOTO_PRODUCTS, POSTER_PRODUCTS, getProduct } from '@/config/catalog.js';
+import { env } from '@/config/env.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { validateImage } from '@/services/image-validation.js';
 import { isEcocashCapable, normalizeZimMobile } from '@/utils/phone.js';
@@ -129,14 +130,27 @@ export function handleMessage(
   }
 
   if (text === 'CANCEL') {
-    return {
-      replies: [MSG.orderCancelled()],
-      nextStep: 'idle',
-      nextContext: emptyContext(),
-      effects: context.orderNumber
-        ? [{ type: 'CANCEL_ORDER', orderNumber: context.orderNumber }]
-        : [],
-    };
+    // A created (usually pending-payment) order exists in this session — cancel it.
+    if (context.orderNumber) {
+      return {
+        replies: [MSG.orderCancelled()],
+        nextStep: 'idle',
+        nextContext: emptyContext(),
+        effects: [{ type: 'CANCEL_ORDER', orderNumber: context.orderNumber }],
+      };
+    }
+    // An order is being built (mid-flow step, a cart, or a size/product chosen)
+    // but nothing placed — just clear the in-progress session.
+    const atRest =
+      step === 'idle' || step === 'order_complete' || step === 'greeted' || step === 'choosing_product';
+    const hasDraft =
+      (context.cart?.length ?? 0) > 0 || !!context.pendingSize || !!context.pendingProductType;
+    if (!atRest || hasDraft) {
+      return reply(MSG.cartCleared(), 'idle', emptyContext());
+    }
+    // Nothing in progress — a bare CANCEL must NOT claim a phantom cancellation.
+    // Point them at the order-number form for cancelling a *placed* order.
+    return reply(MSG.nothingToCancel(), step, context);
   }
 
   // Cancel a specific past order by number, e.g. "CANCEL FP-2026-0010" (R2-12).
@@ -153,8 +167,11 @@ export function handleMessage(
   }
 
   if (text === 'STATUS' || text === 'WHERE IS MY ORDER' || text === 'WHERE IS MY PRINT') {
+    // The LOOKUP_ORDER_STATUS effect is the single source of truth: it replies
+    // with the order list, or with noRecentOrders() when there are none. Don't
+    // pre-send noRecentOrders() here or it shows even when orders exist.
     return {
-      replies: [MSG.noRecentOrders()],
+      replies: [],
       nextStep: step,
       nextContext: context,
       effects: [{ type: 'LOOKUP_ORDER_STATUS', phone: '' }],
@@ -434,16 +451,19 @@ function handleChoosingProduct(
     });
   }
 
+  // Wallet & mini are multi-cell composites — they're designed in the web editor
+  // (positioning/preview per cell), not built in-chat. Send the customer there.
   if (text === '2' || text === 'WALLET' || text === 'WALLET PRINTS') {
-    return startCompositeFlow('wallet_4up', 'choosing_wallet_photo', context);
-  }
-
-  if (text === '3' || text === 'PASSPORT' || text === 'PASSPORT PHOTOS') {
-    return startCompositeFlow('passport_6up', 'choosing_passport_photo', context);
+    return reply(MSG.designOnWeb('Wallet prints', `${env.WEB_URL}/prints/wallet`), 'choosing_product', context);
   }
 
   if (text === '4' || text === 'MINI' || text === 'MINI PRINTS') {
-    return startCompositeFlow('mini_pair', 'choosing_mini_photo_1', context);
+    return reply(MSG.designOnWeb('Mini prints', `${env.WEB_URL}/prints/mini`), 'choosing_product', context);
+  }
+
+  // Passport photos are stubbed for now (sizing varies by country/use-case).
+  if (text === '3' || text === 'PASSPORT' || text === 'PASSPORT PHOTOS') {
+    return reply(MSG.passportUnavailable(), 'choosing_product', context);
   }
 
   if (text === '5' || text === 'POSTERS' || text === 'POSTER' || text === 'WALL ART') {
@@ -454,8 +474,9 @@ function handleChoosingProduct(
   }
 
   if (text === '6' || text === 'STATUS' || text === 'ORDER') {
+    // Effect replies with the list or noRecentOrders() — see the global STATUS handler.
     return {
-      replies: [MSG.noRecentOrders()],
+      replies: [],
       nextStep: 'choosing_product',
       nextContext: context,
       effects: [{ type: 'LOOKUP_ORDER_STATUS', phone: '' }],

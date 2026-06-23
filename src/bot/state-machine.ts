@@ -473,7 +473,10 @@ function handleChoosingProduct(
     });
   }
 
-  if (text === '6' || text === 'STATUS' || text === 'ORDER') {
+  // NOTE: only '6' / 'STATUS' look up orders here. 'ORDER' is NOT a trigger —
+  // a customer typing "order" (e.g. after "type anything to place a new order")
+  // means they want to START one, so it falls through to the menu below.
+  if (text === '6' || text === 'STATUS') {
     // Effect replies with the list or noRecentOrders() — see the global STATUS handler.
     return {
       replies: [],

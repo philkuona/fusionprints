@@ -67,7 +67,9 @@ describe('editPayloadSchema — rejects', () => {
   it.each<[string, Record<string, unknown>]>([
     ['wrong schemaVersion', { ...VALID, schemaVersion: 2 }],
     ['non-uuid sourceImageId', { ...VALID, sourceImageId: 'not-a-uuid' }],
-    ['malformed sizeCode', { ...VALID, sizeCode: '4by6' }],
+    // sizeCode format is no longer enforced by the schema (composite codes like
+    // "wallet_4up" are valid slugs); the route validates it against the catalog.
+    ['empty sizeCode', { ...VALID, sizeCode: '' }],
     ['crop.x out of range', { ...VALID, crop: { ...VALID.crop, x: 1.5 } }],
     ['negative crop.width', { ...VALID, crop: { ...VALID.crop, width: -0.1 } }],
     ['unknown crop orientation', { ...VALID, crop: { ...VALID.crop, orientation: 'diagonal' } }],

@@ -786,6 +786,22 @@ export type CustomerAddress = typeof customerAddresses.$inferSelect;
 export type NewCustomerAddress = typeof customerAddresses.$inferInsert;
 
 /**
+ * Server-backed cart for web users — so a logged-in customer can pick up the
+ * same cart on another device. One row per user (upserted on every change);
+ * `items` is the cart JSON (the web app's CartItem[]). Image URLs inside are
+ * re-signed on read, since signed URLs expire.
+ */
+export const webCarts = pgTable('web_carts', {
+  webUserId: uuid('web_user_id')
+    .primaryKey()
+    .references(() => webUsers.id, { onDelete: 'cascade' }),
+  items: jsonb('items').notNull().default([]),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type WebCart = typeof webCarts.$inferSelect;
+
+/**
  * Persistent web session store (@fastify/session backend).
  *
  * Sessions were previously kept in the default in-memory store, so every

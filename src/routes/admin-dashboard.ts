@@ -22,6 +22,7 @@ import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from
 import { db } from '@/db/client.js';
 import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
+import { getProduct } from '@/config/catalog.js';
 import { releaseOrderForPickup, recordQboSaleForOrder, notifyOrderFulfilled } from '@/services/order.js';
 import { approveCancellationAndRefund, declineCancellation } from '@/services/refund.js';
 import { getDnpMediaMode, setDnpMediaMode, type DnpMediaMode } from '@/services/store-settings.js';
@@ -192,7 +193,20 @@ async function getOrderDetails(orderId: string) {
       } catch {
         previewUrl = null; // never let a missing image break the detail view
       }
-      return { ...it, previewUrl };
+      // Composite "sets" (wallet/mini) print one photo tiled N-up. Hand the
+      // sheet geometry to the UI so it can preview how the sheet comes out.
+      let composite: { sheetWidth: number; sheetHeight: number; cells: { x: number; y: number; width: number; height: number }[] } | null = null;
+      if (it.productType === 'composite') {
+        const layout = getProduct(it.sizeCode)?.layout;
+        if (layout) {
+          composite = {
+            sheetWidth: layout.sheetWidth,
+            sheetHeight: layout.sheetHeight,
+            cells: layout.cells.map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+          };
+        }
+      }
+      return { ...it, previewUrl, composite };
     }),
   );
 

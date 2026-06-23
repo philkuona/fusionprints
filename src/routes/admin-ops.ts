@@ -673,6 +673,17 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
       }
       function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
+      // Composite "set" preview — the one photo tiled across the sheet (4/8-up),
+      // so the operator sees how the printed sheet comes out.
+      function compositeThumb(item) {
+        var c = item.composite;
+        if (!c || !item.previewUrl) return '';
+        var cells = c.cells.map(function(cell) {
+          return '<div style="position:absolute;left:' + (cell.x / c.sheetWidth * 100) + '%;top:' + (cell.y / c.sheetHeight * 100) + '%;width:' + (cell.width / c.sheetWidth * 100) + '%;height:' + (cell.height / c.sheetHeight * 100) + '%;overflow:hidden;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.3);"><img src="' + item.previewUrl + '" alt="" style="width:100%;height:100%;object-fit:cover;" /></div>';
+        }).join('');
+        return '<a href="' + item.previewUrl + '" target="_blank" rel="noopener" title="How the sheet prints"><div style="position:relative;width:54px;aspect-ratio:' + c.sheetWidth + '/' + c.sheetHeight + ';background:#fff;border-radius:4px;border:1px solid var(--border);overflow:hidden;flex-shrink:0;">' + cells + '</div></a>';
+      }
+
       async function showOrder(orderId) {
         document.getElementById('modal-overlay').classList.add('open');
         document.getElementById('modal-body').innerHTML = '<div class="loading">Loading...</div>';
@@ -693,8 +704,8 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
         const itemsHtml = items.map(item => \`
           <div class="item-row">
             <span style="display:flex;align-items:center;gap:10px;">
-              \${item.previewUrl ? \`<a href="\${item.previewUrl}" target="_blank" rel="noopener"><img src="\${item.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\` : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🖼</span>'}
-              <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})\${item.layoutPayload && item.layoutPayload.cells ? ' · <span style="color:var(--accent)">' + item.layoutPayload.cells.length + '-cell composite</span>' : ''}</span>
+              \${item.composite ? compositeThumb(item) : (item.previewUrl ? \`<a href="\${item.previewUrl}" target="_blank" rel="noopener"><img src="\${item.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\` : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🖼</span>')}
+              <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})\${item.composite ? ' · <span style="color:var(--accent)">' + item.composite.cells.length + ' on one sheet</span>' : ''}</span>
             </span>
             \${IS_OPERATOR ? '' : \`<span>$\${parseFloat(item.lineTotalUsd).toFixed(2)}</span>\`}
           </div>\`).join('');

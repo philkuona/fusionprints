@@ -271,6 +271,22 @@ describe('image validation outcomes (single print)', () => {
   });
 });
 
+describe('status vs "order" keyword (audit follow-up)', () => {
+  it('STATUS looks up orders', () => {
+    const r = run('choosing_product', emptyContext(), text('STATUS'));
+    expect(r.effects).toEqual([{ type: 'LOOKUP_ORDER_STATUS', phone: '' }]);
+  });
+
+  it('"order" starts a NEW order (menu), it does not look up status', () => {
+    // Regression: after "no recent orders … type anything to place a new order",
+    // typing "order" used to re-fire the lookup. It must show the menu instead.
+    const r = run('choosing_product', emptyContext(), text('order'));
+    expect(r.nextStep).toBe('choosing_product');
+    expect(r.effects).toEqual([]);
+    expect(JSON.stringify(r.replies)).toContain('What would you like'); // greeting/menu
+  });
+});
+
 describe('composite products redirect to the web editor', () => {
   // Wallet & mini are now designed in the web editor (multi-cell positioning),
   // not built in-chat. Selecting them hands over a deep link and stays at the menu.

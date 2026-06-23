@@ -612,6 +612,12 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
       /* Order detail modal */
       .modal-overlay { display:none; position:fixed; inset:0; background:rgba(31,27,22,0.45); z-index:200; align-items:center; justify-content:center; padding:24px; }
       .modal-overlay.open { display:flex; }
+      .lb-overlay { display:none; position:fixed; inset:0; background:rgba(31,27,22,0.8); z-index:300; align-items:center; justify-content:center; padding:32px; }
+      .lb-overlay.open { display:flex; }
+      .lb-close { position:absolute; top:18px; right:22px; width:40px; height:40px; border-radius:999px; border:none; background:rgba(255,255,255,0.15); color:#fff; font-size:22px; line-height:1; cursor:pointer; transition:background .15s; }
+      .lb-close:hover { background:rgba(255,255,255,0.3); }
+      .lb-content { max-width:92vw; max-height:86vh; }
+      .lb-content img { max-width:92vw; max-height:86vh; border-radius:6px; display:block; }
       .modal { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:100%; max-width:560px; max-height:80vh; overflow-y:auto; box-shadow:0 24px 60px rgba(31,27,22,0.18); }
       .modal-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
       .modal-title { font-weight:600; font-family:'DM Mono',monospace; color:var(--text); }
@@ -646,6 +652,12 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
       </div>
     </div>
 
+    <!-- Image/sheet preview lightbox (in-page popup, not a new tab) -->
+    <div class="lb-overlay" id="preview-lightbox" onclick="closePreview()">
+      <button class="lb-close" onclick="closePreview()" aria-label="Close preview">×</button>
+      <div class="lb-content" id="preview-lightbox-content" onclick="event.stopPropagation()"></div>
+    </div>
+
     <script>
       const VIEWER_ROLE = ${JSON.stringify(role)};
       const IS_OPERATOR = VIEWER_ROLE === 'operator';
@@ -673,16 +685,41 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
       }
       function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
-      // Composite "set" preview — the one photo tiled across the sheet (4/8-up),
-      // so the operator sees how the printed sheet comes out.
-      function compositeThumb(item) {
-        var c = item.composite;
-        if (!c || !item.previewUrl) return '';
+      // Composite "set" preview — the one photo tiled across the sheet (4/8-up).
+      // widthPx controls the size (small thumb in the row, large in the lightbox).
+      function compositeSheetHtml(url, c, widthPx) {
         var cells = c.cells.map(function(cell) {
-          return '<div style="position:absolute;left:' + (cell.x / c.sheetWidth * 100) + '%;top:' + (cell.y / c.sheetHeight * 100) + '%;width:' + (cell.width / c.sheetWidth * 100) + '%;height:' + (cell.height / c.sheetHeight * 100) + '%;overflow:hidden;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.3);"><img src="' + item.previewUrl + '" alt="" style="width:100%;height:100%;object-fit:cover;" /></div>';
+          return '<div style="position:absolute;left:' + (cell.x / c.sheetWidth * 100) + '%;top:' + (cell.y / c.sheetHeight * 100) + '%;width:' + (cell.width / c.sheetWidth * 100) + '%;height:' + (cell.height / c.sheetHeight * 100) + '%;overflow:hidden;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.3);"><img src="' + url + '" alt="" style="width:100%;height:100%;object-fit:cover;" /></div>';
         }).join('');
-        return '<a href="' + item.previewUrl + '" target="_blank" rel="noopener" title="How the sheet prints"><div style="position:relative;width:54px;aspect-ratio:' + c.sheetWidth + '/' + c.sheetHeight + ';background:#fff;border-radius:4px;border:1px solid var(--border);overflow:hidden;flex-shrink:0;">' + cells + '</div></a>';
+        var size = widthPx ? 'width:' + widthPx + 'px;' : 'height:84vh;';
+        return '<div style="position:relative;' + size + 'aspect-ratio:' + c.sheetWidth + '/' + c.sheetHeight + ';background:#fff;border-radius:4px;border:1px solid var(--border);overflow:hidden;flex-shrink:0;">' + cells + '</div>';
       }
+      function compositeThumb(item) {
+        if (!item.composite || !item.previewUrl) return '';
+        return compositeSheetHtml(item.previewUrl, item.composite, 54);
+      }
+
+      // In-page preview popup (lightbox) — used instead of opening a new tab.
+      var __omPreviews = [];
+      var __omSlips = [];
+      function openPreview(i) {
+        var p = __omPreviews[i];
+        if (!p || !p.url) return;
+        document.getElementById('preview-lightbox-content').innerHTML =
+          p.composite ? compositeSheetHtml(p.url, p.composite, 0) : '<img src="' + p.url + '" alt="" />';
+        document.getElementById('preview-lightbox').classList.add('open');
+      }
+      function openSlip(i) {
+        var url = __omSlips[i];
+        if (!url) return;
+        document.getElementById('preview-lightbox-content').innerHTML = '<img src="' + url + '" alt="" />';
+        document.getElementById('preview-lightbox').classList.add('open');
+      }
+      function closePreview() {
+        document.getElementById('preview-lightbox').classList.remove('open');
+        document.getElementById('preview-lightbox-content').innerHTML = '';
+      }
+      document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePreview(); });
 
       async function showOrder(orderId) {
         document.getElementById('modal-overlay').classList.add('open');
@@ -692,19 +729,26 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
         if (!data) { document.getElementById('modal-body').innerHTML = '<div class="empty">Order not found.</div>'; return; }
         const { order, customer, items, jobs, slips } = data;
         document.getElementById('modal-title').textContent = order.orderNumber;
+        // Preview registries for the in-page lightbox (referenced by index).
+        __omPreviews = items.map(it => ({ url: it.previewUrl, composite: it.composite }));
+        __omSlips = (slips || []).map(s => s.previewUrl);
         const slipLabels = { end_separator:'Separator', order_info:'Order info', promo:'Promo card' };
-        const slipsHtml = (slips || []).map(s => \`
+        const slipsHtml = (slips || []).map((s, si) => \`
           <div class="item-row">
             <span style="display:flex;align-items:center;gap:10px;">
-              \${s.previewUrl ? \`<a href="\${s.previewUrl}" target="_blank" rel="noopener"><img src="\${s.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\` : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🪪</span>'}
+              \${s.previewUrl ? \`<span onclick="openSlip(\${si})" style="cursor:zoom-in;display:inline-flex;"><img src="\${s.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></span>\` : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🪪</span>'}
               <span>\${slipLabels[s.slipType] || s.slipType}</span>
             </span>
             <span class="badge badge-\${s.status}">\${s.status}</span>
           </div>\`).join('');
-        const itemsHtml = items.map(item => \`
+        const itemsHtml = items.map((item, i) => \`
           <div class="item-row">
             <span style="display:flex;align-items:center;gap:10px;">
-              \${item.composite ? compositeThumb(item) : (item.previewUrl ? \`<a href="\${item.previewUrl}" target="_blank" rel="noopener"><img src="\${item.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></a>\` : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🖼</span>')}
+              \${item.composite && item.previewUrl
+                ? \`<span onclick="openPreview(\${i})" style="cursor:zoom-in;display:inline-flex;" title="How the sheet prints">\${compositeThumb(item)}</span>\`
+                : item.previewUrl
+                  ? \`<span onclick="openPreview(\${i})" style="cursor:zoom-in;display:inline-flex;"><img src="\${item.previewUrl}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:4px;background:var(--surface);" /></span>\`
+                  : '<span style="width:44px;height:44px;border-radius:4px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:18px;opacity:0.4;">🖼</span>'}
               <span>\${item.quantity} × \${item.sizeCode} (\${item.productType.replace('_', ' ')})\${item.composite ? ' · <span style="color:var(--accent)">' + item.composite.cells.length + ' on one sheet</span>' : ''}</span>
             </span>
             \${IS_OPERATOR ? '' : \`<span>$\${parseFloat(item.lineTotalUsd).toFixed(2)}</span>\`}

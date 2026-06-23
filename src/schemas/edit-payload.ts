@@ -36,7 +36,10 @@ export const editPayloadSchema = z
   .object({
     schemaVersion: z.literal(EDIT_SCHEMA_VERSION),
     sourceImageId: z.string().uuid(),
-    sizeCode: z.string().regex(/^\d+x\d+$/),
+    // Standard sizes look like "4x6"; composite "set" products (wallet/mini)
+    // are named codes like "wallet_4up". The route re-checks the code against
+    // the catalog, so accept any short slug here.
+    sizeCode: z.string().min(1).max(40),
     crop: cropSchema,
     rotate: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
     flipH: z.boolean().default(false),

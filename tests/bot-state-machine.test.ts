@@ -334,21 +334,13 @@ describe('in-flight composite handlers (legacy, mid-conversation only)', () => {
     expect(item.compositeCells!.every((c) => c.imageRef === 'wallet-img')).toBe(true);
   });
 
-  it('mini pair: two photos land in distinct cells', () => {
-    const ctx = {
-      ...emptyContext(),
-      pendingProductType: 'composite' as const,
-      pendingSize: 'mini_pair',
-      pendingCompositePhotos: [],
-    };
-    let r = run('choosing_mini_photo_1', ctx, photo('mini-a'));
-    expect(r.nextStep).toBe('choosing_mini_photo_2');
-    expect(r.nextContext.pendingCompositePhotos).toEqual(['mini-a']);
-
-    r = run(r.nextStep, r.nextContext, photo('mini-b'));
-    expect(r.nextStep).toBe('adding_more_or_checkout');
-    const refs = new Set(r.nextContext.cart[0].compositeCells!.map((c) => c.imageRef));
-    expect(refs).toEqual(new Set(['mini-a', 'mini-b']));
+  it('mini: one photo duplicates across all 8 cells (set of 8)', () => {
+    // Mini is now a single-image product (set of 8), like wallet — one photo
+    // tiled across every cell, not a two-photo pair.
+    const mini = getProduct('mini_pair')!;
+    expect(mini.layout!.cells).toHaveLength(8);
+    expect(mini.layout!.photosRequired).toBe(1);
+    expect(mini.layout!.cells.every((c) => c.photoIndex === 0)).toBe(true);
   });
 
   it('a compressed photo is refused for composites (no USE ANYWAY)', () => {

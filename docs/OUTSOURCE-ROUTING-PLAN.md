@@ -108,15 +108,15 @@ No new `order_items` cost column needed — dispatch cost lives on `outsource_di
 - **No behaviour change** to any existing flow — purely additive (new table, new admin page, new nav tab).
 - **Deploy note:** migration 0038 must be applied on prod (`npm run db:migrate`) before the partners page works.
 
-### Phase 3 — Print-ready package
-- `services/outsource-package.ts`:
-  - For web items: reuse `processedImages` render. For WhatsApp items: render-on-demand to target size via `edit-applier`/source image.
-  - **Embed sRGB ICC** (`.withMetadata({ icc: 'srgb' })`) — verify output in a viewer.
-  - Filename: `{orderRef}_{lineItemId}_{size}_{finish}_x{qty}.jpg`.
-  - Spec **PDF** (reuse `pdf-lib` + SVG→PNG path from `receipt-pdf.ts`/`slip-renderer.ts`): order ref, size, finish, qty, paper, special instructions, delivery/pickup arrangement. **No customer name/phone/price.**
-  - Spec **JSON** (machine-readable counterpart).
-  - ZIP builder bundling images + PDF + JSON.
-- Unit-testable without a partner.
+### Phase 3 — Print-ready package — ✅ DONE (branch `feat/outsource-phase3-print-package`)
+- New `services/outsource-package.ts`:
+  - **Print-ready render with embedded sRGB:** web items re-emit their existing `processedImages` bytes through `sharp().withIccProfile('srgb')` (q95, 4:4:4); raw/WhatsApp items are cover-fit to the size's recommended resolution oriented to the source aspect, then sRGB-embedded. Verified `.withIccProfile('srgb')` actually embeds the profile (sharp metadata: no ICC before → present after, space `srgb`).
+  - **Filename:** `{orderRef}_{lineItem}_{size}_{finish}_x{qty}.jpg` (`printReadyFilename`, slug-safe for email/WhatsApp).
+  - **Spec PDF** (`buildSpecSvg` → sharp PNG → pdf-lib, mirroring `receipt-pdf.ts`) + **spec JSON** (`buildSpec`, schema `fusionprints.outsource.v1`): order ref, per-item size/finish/qty/border + plain-language instructions. **No customer name/phone/price** — the spec type structurally has no such field (test-enforced).
+  - **ZIP** via `jszip` (added dep) — `zipFiles()` bundles images + PDF + JSON.
+  - `buildOutsourcePackage(orderId)` assembles it all (attaches the active default partner for the dispatcher; returns null if the order has no outsourced items).
+- New `tests/outsource-package.test.ts` (7 cases): filename convention, spec shape + PII-safety, spec SVG, zip round-trip. DB/render functions need a database → covered by the Phase-3 QA guide, not unit tests.
+- Dispatch (email send) is **Phase 4** — this phase only builds the package.
 
 ### Phase 4 — Auto-dispatch + dispatch record *(needs partner email + wholesale prices)*
 - Migration 0040. `services/outsource-dispatch.ts`.

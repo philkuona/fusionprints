@@ -122,6 +122,10 @@ export const targetPrinterTypeEnum = pgEnum('target_printer_type', [
 // the 4×6 family (and vice versa). Operator-toggled from the admin dashboard.
 export const dnpMediaModeEnum = pgEnum('dnp_media_mode', ['6x8', '5x7']);
 
+// Outsource partner dispatch channels. Email is the launch channel; WhatsApp /
+// portal are modelled for later. See docs/OUTSOURCE-ROUTING-PLAN.md.
+export const partnerChannelEnum = pgEnum('partner_channel', ['email', 'whatsapp', 'portal']);
+
 // New for Phase D — slip jobs are operational/branded prints, separate from customer prints.
 export const slipTypeEnum = pgEnum('slip_type', [
   'order_info',      // 4×6 dye-sub card with order details (top of stack)
@@ -857,3 +861,44 @@ export const collectionPoints = pgTable(
 
 export type CollectionPoint = typeof collectionPoints.$inferSelect;
 export type NewCollectionPoint = typeof collectionPoints.$inferInsert;
+
+/**
+ * Outsource partners — print shops that produce the sizes the DNP can't (8×10 +
+ * all wall art). Admin-managed; entirely customer-invisible. v1 routes everything
+ * to a single active default partner (Outsource Routing — Phase 2). Contact
+ * channels are discrete columns (email is the launch dispatch channel); supported
+ * sizes + per-size wholesale prices are stored as JSONB. A partner is deactivated
+ * (active=false), never deleted, so historical dispatches stay coherent.
+ */
+export const outsourcePartners = pgTable(
+  'outsource_partners',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    shortCode: text('short_code').notNull().unique(),
+    active: boolean('active').notNull().default(true),
+    /** At most one partner is the default at a time (enforced in the service). */
+    isDefault: boolean('is_default').notNull().default(false),
+    // Contact channels — email is the v1 dispatch channel; others modelled ahead.
+    contactEmail: text('contact_email'),
+    whatsappNumber: text('whatsapp_number'),
+    portalUrl: text('portal_url'),
+    preferredChannel: partnerChannelEnum('preferred_channel').notNull().default('email'),
+    /** Outsourced size codes this partner can produce, e.g. ['8x10','11x14']. */
+    supportedSizes: jsonb('supported_sizes').$type<string[]>().notNull().default([]),
+    /** What we pay them per size, e.g. { '8x10': 3.00 } — for cost accounting. */
+    wholesalePrices: jsonb('wholesale_prices').$type<Record<string, number>>().notNull().default({}),
+    /** Stated turnaround (internal scheduling only — never shown to customers). */
+    turnaround: text('turnaround'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    activeIdx: index('outsource_partners_active_idx').on(table.active),
+    defaultIdx: index('outsource_partners_default_idx').on(table.isDefault),
+  }),
+);
+
+export type OutsourcePartner = typeof outsourcePartners.$inferSelect;
+export type NewOutsourcePartner = typeof outsourcePartners.$inferInsert;

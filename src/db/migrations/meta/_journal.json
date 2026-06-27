@@ -267,6 +267,13 @@
       "when": 1782184011829,
       "tag": "0037_majestic_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1782589454875,
+      "tag": "0038_outsource_partners",
+      "breakpoints": true
     }
   ]
 }

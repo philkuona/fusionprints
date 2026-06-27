@@ -126,6 +126,20 @@ export const dnpMediaModeEnum = pgEnum('dnp_media_mode', ['6x8', '5x7']);
 // portal are modelled for later. See docs/OUTSOURCE-ROUTING-PLAN.md.
 export const partnerChannelEnum = pgEnum('partner_channel', ['email', 'whatsapp', 'portal']);
 
+// Lifecycle of an outsource dispatch. 'sent' = we delivered the package; the
+// partner_* / received_back states are advanced manually by ops (no partner
+// webhooks in v1); 'manually_fulfilled' = ops handled it outside the system.
+export const outsourceDispatchStatusEnum = pgEnum('outsource_dispatch_status', [
+  'pending',
+  'sent',
+  'failed',
+  'partner_confirmed',
+  'partner_ready',
+  'received_back',
+  'manually_fulfilled',
+  'cancelled',
+]);
+
 // New for Phase D — slip jobs are operational/branded prints, separate from customer prints.
 export const slipTypeEnum = pgEnum('slip_type', [
   'order_info',      // 4×6 dye-sub card with order details (top of stack)
@@ -902,3 +916,39 @@ export const outsourcePartners = pgTable(
 
 export type OutsourcePartner = typeof outsourcePartners.$inferSelect;
 export type NewOutsourcePartner = typeof outsourcePartners.$inferInsert;
+
+/**
+ * Outsource dispatches — the record of an order's outsourced items being sent to
+ * a partner (Outsource Routing — Phase 4). One row per dispatch attempt that
+ * produced a record; the wholesale cost is snapshotted HERE (at dispatch), not at
+ * order time, so we record what we actually agreed to pay. partner_id is nullable
+ * so a 'failed' (no active default) or 'manually_fulfilled' row stays coherent.
+ */
+export const outsourceDispatches = pgTable(
+  'outsource_dispatches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orderId: uuid('order_id').notNull().references(() => orders.id),
+    partnerId: uuid('partner_id').references(() => outsourcePartners.id),
+    channel: partnerChannelEnum('channel').notNull().default('email'),
+    status: outsourceDispatchStatusEnum('status').notNull().default('pending'),
+    /** order_items ids included in this dispatch. */
+    lineItemIds: jsonb('line_item_ids').$type<string[]>().notNull().default([]),
+    /** Reference/message id from the dispatch channel (e.g. Resend id), if any. */
+    externalRef: text('external_ref'),
+    /** What we pay the partner for this dispatch — snapshot at send time. */
+    wholesaleCostUsd: numeric('wholesale_cost_usd', { precision: 10, scale: 2 }),
+    errorMessage: text('error_message'),
+    attempts: integer('attempts').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    orderIdx: index('outsource_dispatches_order_idx').on(table.orderId),
+    statusIdx: index('outsource_dispatches_status_idx').on(table.status),
+  }),
+);
+
+export type OutsourceDispatch = typeof outsourceDispatches.$inferSelect;
+export type NewOutsourceDispatch = typeof outsourceDispatches.$inferInsert;

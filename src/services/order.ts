@@ -22,6 +22,7 @@ import { getOrderMinimums, getDnpMediaMode } from '@/services/store-settings.js'
 import { getOrderCollectionPoint, pointHours, toMapsUrl } from '@/services/collection-points.js';
 import { getProduct, getTargetPrinterType } from '@/config/catalog.js';
 import { getProductCost } from '@/services/cost-overrides.js';
+import { autoDispatchOnPaid } from '@/services/outsource-dispatch.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import { sendOrderReadyEmail, sendOrderFulfilledEmail } from '@/services/web-order-email.js';
 import { MSG } from '@/bot/messages.js';
@@ -582,6 +583,14 @@ export async function markOrderPaid(
     // callers render right after this returns — are fetched from QBO. Idempotent.
     await recordQboSaleForOrder(placedOrder.id).catch((err) =>
       logger.error({ orderNumber, err }, 'QBO sale posting failed — manual entry may be needed'),
+    );
+
+    // Auto-dispatch any outsourced items (8×10 + wall art) to the default partner.
+    // Fire-and-forget (package render + email is slow) and fully self-guarded —
+    // a dispatch problem must never block or roll back a paid order. No-ops when
+    // the order has no outsourced items.
+    void autoDispatchOnPaid(placedOrder.id).catch((err) =>
+      logger.error({ orderNumber, err }, 'Outsource auto-dispatch failed (order unaffected)'),
     );
   }
 }

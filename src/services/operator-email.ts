@@ -151,6 +151,46 @@ export async function sendApprovalNeededAlert(orderNumber: string): Promise<void
 }
 
 /**
+ * Alert ops that an outsource dispatch failed (no active default partner, bad
+ * channel, or the email bounced), so the order's wall prints don't silently stall
+ * with the partner never notified. The in-house portion is unaffected. Best-effort.
+ */
+export async function sendOutsourceDispatchFailedAlert(orderNumber: string, reason: string): Promise<void> {
+  if (!env.RESEND_API_KEY) {
+    logger.warn({ orderNumber }, 'Dispatch-failed alert: RESEND_API_KEY unset, skipping operator email');
+    return;
+  }
+  const adminUrl = `${env.PUBLIC_URL}/admin?order=${orderNumber}`;
+  const html = `
+  <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;background:#fbf7f0;padding:32px 24px;color:#1f1b16;">
+    <h1 style="font-size:20px;margin:0 0 4px;">🔶 Outsource dispatch failed</h1>
+    <p style="color:#4a3f32;margin:0 0 20px;">A paid order has large/wall prints that need to go to a partner, but the automatic dispatch didn't go through. The in-house items are unaffected — handle the outsourced items from the order page (re-send, pick another partner, or mark manually fulfilled).</p>
+    <div style="background:#ffffff;border:1px solid #e7ded0;border-radius:14px;padding:20px;">
+      <p style="margin:0 0 8px;font-family:monospace;color:#8a7b66;">Order ${orderNumber}</p>
+      <p style="margin:0;color:#c0392b;">${reason}</p>
+    </div>
+    <a href="${adminUrl}" style="display:inline-block;margin-top:20px;background:#05d668;color:#1f1b16;text-decoration:none;font-weight:bold;padding:12px 24px;border-radius:999px;">Open order</a>
+    <p style="color:#8a7b66;font-size:12px;margin-top:28px;">FusionPrints operations.</p>
+  </div>`;
+  try {
+    const resend = new Resend(env.RESEND_API_KEY);
+    const { error } = await resend.emails.send({
+      from: 'FusionPrints <noreply@fusionprints.co.zw>',
+      to: env.OPERATOR_ALERT_EMAIL,
+      subject: `🔶 Outsource dispatch failed — Order ${orderNumber}`,
+      html,
+    });
+    if (error) {
+      logger.error({ orderNumber, error }, 'Resend rejected dispatch-failed alert');
+      return;
+    }
+    logger.info({ orderNumber }, 'Sent outsource dispatch-failed alert');
+  } catch (err) {
+    logger.error({ orderNumber, err }, 'Failed to send dispatch-failed alert');
+  }
+}
+
+/**
  * Alert ops that dye-sub jobs are stuck waiting because the DNP is loaded with
  * the wrong media (e.g. left on 5×7 while 4×6 orders pile up). Fired by a sweep
  * when such jobs have waited past a threshold. Best-effort. (R2-9)

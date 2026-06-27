@@ -210,7 +210,7 @@ export function adminLogoSvg(): string {
       </svg>`;
 }
 
-export type AdminNavKey = 'orders' | 'metrics' | 'printers' | 'jobs' | 'promos' | 'pricing' | 'locations' | 'qbo';
+export type AdminNavKey = 'orders' | 'metrics' | 'printers' | 'jobs' | 'promos' | 'pricing' | 'locations' | 'partners' | 'qbo';
 
 /** Header + nav markup. Operators see only Order Management + Printers. */
 function adminHeader(active: AdminNavKey, role: AdminRole): string {
@@ -229,6 +229,7 @@ function adminHeader(active: AdminNavKey, role: AdminRole): string {
       ${isOperator ? '' : tab('/admin/promos', 'promos', 'Promos')}
       ${isOperator ? '' : tab('/admin/pricing', 'pricing', 'Pricing')}
       ${isOperator ? '' : tab('/admin/locations', 'locations', 'Locations')}
+      ${isOperator ? '' : tab('/admin/partners', 'partners', 'Partners')}
       ${isOperator ? '' : tab('/admin/qbo', 'qbo', 'QuickBooks')}
       <a href="/admin/logout" class="nav-tab nav-logout">Logout</a>
     </nav>
@@ -241,6 +242,7 @@ function adminHeader(active: AdminNavKey, role: AdminRole): string {
     ${isOperator ? '' : `<a href="/admin/promos" class="${active === 'promos' ? 'active' : ''}">Promos</a>`}
     ${isOperator ? '' : `<a href="/admin/pricing" class="${active === 'pricing' ? 'active' : ''}">Pricing</a>`}
     ${isOperator ? '' : `<a href="/admin/locations" class="${active === 'locations' ? 'active' : ''}">Locations</a>`}
+    ${isOperator ? '' : `<a href="/admin/partners" class="${active === 'partners' ? 'active' : ''}">Partners</a>`}
     ${isOperator ? '' : '<a href="/admin/qbo">QuickBooks</a>'}
     <a href="/admin/logout">Logout</a>
   </div>

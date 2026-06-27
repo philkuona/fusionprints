@@ -99,10 +99,14 @@ No new `order_items` cost column needed — dispatch cost lives on `outsource_di
 - Public catalog API (`routes/web/catalog.ts`) already whitelists fields, so the new field is not leaked — no change needed.
 - **Net effect: zero behaviour change.** Pure centralization of routing into one catalog field. Full suite green (127 tests).
 
-### Phase 2 — Partner model + admin directory
-- Migration 0039. New `services/outsource-partners.ts` (CRUD + `getDefaultPartner`).
-- Admin page `/admin/partners` using `admin-theme.ts` shell + nav tab: add/edit/deactivate, set default, view dispatch history per partner.
-- Full-admin only (not operator).
+### Phase 2 — Partner model + admin directory — ✅ DONE (branch `feat/outsource-phase2-partner-directory`)
+- Migration **0038** (`outsource_partners`) — table + `partner_channel` enum. (Numbering: actual tip was 0037, so this is 0038, not 0039 as the draft guessed.)
+- New `services/outsource-partners.ts`: CRUD + `getDefaultPartner()` (returns the **active** default only) + single-default invariant enforced in the service + pure `normalizePartnerInput()` form parser + `outsourcedSizeCodes()`.
+- Admin page `/admin/partners` on the `admin-theme.ts` shell + new "Partners" nav tab (full-admin only): add / edit / **make default** / **deactivate** (never delete — keeps historical dispatches coherent), per-size supported checkboxes + wholesale price inputs.
+- New `tests/outsource-partners.test.ts` (6 cases) pins the pure parser.
+- **Deviations from draft (deliberate):** contact channels are **discrete columns** (`contact_email`/`whatsapp_number`/`portal_url` + `preferred_channel` enum) rather than a JSONB array — clearer to render/edit and email is the only v1 channel; `supported_sizes` + `wholesale_prices` are JSONB (consistent with existing `layoutPayload`/`inkLevels`); turnaround is a single internal free-text field (per-size turnaround deferred — not needed for v1). **Dispatch-history-per-partner** view is deferred to Phase 4/5 (the `outsource_dispatches` table doesn't exist yet).
+- **No behaviour change** to any existing flow — purely additive (new table, new admin page, new nav tab).
+- **Deploy note:** migration 0038 must be applied on prod (`npm run db:migrate`) before the partners page works.
 
 ### Phase 3 — Print-ready package
 - `services/outsource-package.ts`:

@@ -13,7 +13,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { eq, and, desc, sql, lt, notInArray } from 'drizzle-orm';
+import { eq, and, desc, sql, lt } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { orders, orderItems, printJobs, printers, images, customers, conversationState, slipJobs, processedImages, type InkLevel } from '@/db/schema.js';
 import { env } from '@/config/env.js';
@@ -21,6 +21,7 @@ import { logger } from '@/utils/logger.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { getProduct, type PrintLayout } from '@/config/catalog.js';
 import { getDnpMediaMode, mediaForPrinterType } from '@/services/store-settings.js';
+import { checkAndAdvanceToPrinted } from '@/services/order.js';
 
 // Max times a transient (printer offline / unreachable) failure requeues a job
 // before we give up and mark it failed. High enough to ride out a printer being
@@ -513,43 +514,12 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      // Check if all jobs (print + slip) for this order are done
+      // Advance to 'printed' only when BOTH streams are complete: all in-house
+      // print + slip jobs terminal AND the outsource stream settled. The gate +
+      // guards live in checkAndAdvanceToPrinted (shared with the ops "outsource
+      // received" action) so the two callers can't drift.
       if (orderId) {
-        // A job is still "pending" unless it's terminal (done/failed). Counting
-        // only 'queued' wrongly let 'awaiting_approval' (posters) and in-flight
-        // 'printing' jobs slip through, advancing the order to 'printed' early.
-        const [pendingPrints] = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(printJobs)
-          .innerJoin(orderItems, eq(printJobs.orderItemId, orderItems.id))
-          .where(
-            and(
-              eq(orderItems.orderId, orderId),
-              notInArray(printJobs.status, ['done', 'failed']),
-            ),
-          );
-
-        const [pendingSlips] = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(slipJobs)
-          .where(
-            and(
-              eq(slipJobs.orderId, orderId),
-              notInArray(slipJobs.status, ['done', 'failed']),
-            ),
-          );
-
-        const totalPending = (pendingPrints?.count ?? 0) + (pendingSlips?.count ?? 0);
-
-        if (totalPending === 0) {
-          // All jobs done — advance to 'printed' (operator must release for pickup)
-          await db
-            .update(orders)
-            .set({ status: 'printed' })
-            .where(eq(orders.id, orderId));
-
-          logger.info({ orderId }, 'All jobs done — order status: printed (awaiting operator release)');
-        }
+        await checkAndAdvanceToPrinted(orderId);
       }
 
       logger.info({ jobId: id }, 'Job marked done');

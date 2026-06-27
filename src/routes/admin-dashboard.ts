@@ -20,7 +20,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { logger } from '@/utils/logger.js';
 import { authenticate, authenticatePage, requireFullAdmin, type AdminRole } from '@/utils/auth.js';
 import { db } from '@/db/client.js';
-import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs } from '@/db/schema.js';
+import { orders, orderItems, customers, printJobs, printers, webUsers, images, processedImages, slipJobs, outsourceDispatches, outsourcePartners } from '@/db/schema.js';
 import { getSignedImageUrl } from '@/services/image-storage.js';
 import { getProduct } from '@/config/catalog.js';
 import { releaseOrderForPickup, recordQboSaleForOrder, notifyOrderFulfilled } from '@/services/order.js';
@@ -263,7 +263,44 @@ async function getOrderDetails(orderId: string) {
     }),
   );
 
-  return { order, customer, items, jobs, slips };
+  // Outsource fulfillment stream (Phase 5) — dispatch history + the active
+  // partners ops can re-route to. Only meaningful when the order has outsourced
+  // items (8×10 + wall art); otherwise the UI hides the section entirely.
+  const hasOutsourceItems = rawItems.some((it) => getProduct(it.sizeCode)?.fulfillment === 'outsource');
+  const dispatches = hasOutsourceItems
+    ? await db
+        .select({
+          id: outsourceDispatches.id,
+          status: outsourceDispatches.status,
+          channel: outsourceDispatches.channel,
+          partnerName: outsourcePartners.name,
+          partnerShortCode: outsourcePartners.shortCode,
+          wholesaleCostUsd: outsourceDispatches.wholesaleCostUsd,
+          externalRef: outsourceDispatches.externalRef,
+          errorMessage: outsourceDispatches.errorMessage,
+          createdAt: outsourceDispatches.createdAt,
+          sentAt: outsourceDispatches.sentAt,
+        })
+        .from(outsourceDispatches)
+        .leftJoin(outsourcePartners, eq(outsourceDispatches.partnerId, outsourcePartners.id))
+        .where(eq(outsourceDispatches.orderId, orderId))
+        .orderBy(desc(outsourceDispatches.createdAt))
+    : [];
+  const activePartners = hasOutsourceItems
+    ? await db
+        .select({ id: outsourcePartners.id, name: outsourcePartners.name, shortCode: outsourcePartners.shortCode })
+        .from(outsourcePartners)
+        .where(eq(outsourcePartners.active, true))
+        .orderBy(outsourcePartners.name)
+    : [];
+  const outsource = {
+    hasItems: hasOutsourceItems,
+    status: order.outsourceStatus,
+    dispatches,
+    partners: activePartners,
+  };
+
+  return { order, customer, items, jobs, slips, outsource };
 }
 
 

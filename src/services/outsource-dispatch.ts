@@ -74,6 +74,14 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Roll the order-level outsource stream status (drives the printed-gate). */
+async function setOrderOutsourceStatus(
+  orderId: string,
+  status: 'pending' | 'dispatched' | 'received' | 'failed',
+): Promise<void> {
+  await db.update(orders).set({ outsourceStatus: status }).where(eq(orders.id, orderId));
+}
+
 /** Send the package zip to the partner over email. Best-effort; returns result. */
 async function emailPackage(
   partner: OutsourcePartner,
@@ -152,6 +160,7 @@ export async function dispatchOrder(orderId: string, opts: DispatchOptions = {})
           attempts: 0,
         })
         .returning();
+      await setOrderOutsourceStatus(orderId, 'failed');
       logger.warn({ orderId, orderNumber, reason }, 'Outsource dispatch could not be sent');
       void sendOutsourceDispatchFailedAlert(orderNumber, reason).catch(() => {});
       return row ?? null;
@@ -176,6 +185,7 @@ export async function dispatchOrder(orderId: string, opts: DispatchOptions = {})
             sentAt: new Date(),
           })
           .returning();
+        await setOrderOutsourceStatus(orderId, 'dispatched');
         logger.info({ orderId, orderNumber, partner: partner.shortCode, attempt }, 'Outsource package dispatched');
         return row ?? null;
       }
@@ -196,6 +206,7 @@ export async function dispatchOrder(orderId: string, opts: DispatchOptions = {})
         attempts: MAX_SEND_ATTEMPTS,
       })
       .returning();
+    await setOrderOutsourceStatus(orderId, 'failed');
     logger.error({ orderId, orderNumber, lastError }, 'Outsource dispatch failed after retries');
     void sendOutsourceDispatchFailedAlert(orderNumber, `Email to partner failed: ${lastError}`).catch(() => {});
     return row ?? null;
@@ -229,7 +240,12 @@ export async function dispatchToPartner(orderId: string, partnerId: string): Pro
   return dispatchOrder(orderId, { force: true, partnerId });
 }
 
-/** Record that ops handled the outsourced items outside the system. */
+/**
+ * Record that ops handled the outsourced items outside the system. Settles the
+ * order's outsource stream to 'received'. The caller runs the printed-gate
+ * (checkAndAdvanceToPrinted) afterwards — kept out of here to avoid an import
+ * cycle with order.ts.
+ */
 export async function markDispatchManuallyFulfilled(orderId: string): Promise<void> {
   const [order] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order) return;
@@ -241,6 +257,28 @@ export async function markDispatchManuallyFulfilled(orderId: string): Promise<vo
     lineItemIds: [],
     sentAt: new Date(),
   });
+  await setOrderOutsourceStatus(orderId, 'received');
+}
+
+/**
+ * Ops confirms the partner's prints are back/ready to consolidate — settles the
+ * outsource stream to 'received'. Caller runs the printed-gate afterwards. Also
+ * advances the latest 'sent' dispatch row to 'received_back' for the audit log.
+ */
+export async function markOutsourceReceived(orderId: string): Promise<void> {
+  const [latest] = await db
+    .select({ id: outsourceDispatches.id })
+    .from(outsourceDispatches)
+    .where(eq(outsourceDispatches.orderId, orderId))
+    .orderBy(desc(outsourceDispatches.createdAt))
+    .limit(1);
+  if (latest) {
+    await db
+      .update(outsourceDispatches)
+      .set({ status: 'received_back', updatedAt: new Date() })
+      .where(eq(outsourceDispatches.id, latest.id));
+  }
+  await setOrderOutsourceStatus(orderId, 'received');
 }
 
 /** All dispatch rows for an order, newest first (for the admin order view). */

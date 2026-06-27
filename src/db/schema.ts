@@ -126,6 +126,18 @@ export const dnpMediaModeEnum = pgEnum('dnp_media_mode', ['6x8', '5x7']);
 // portal are modelled for later. See docs/OUTSOURCE-ROUTING-PLAN.md.
 export const partnerChannelEnum = pgEnum('partner_channel', ['email', 'whatsapp', 'portal']);
 
+// Order-level rollup of the outsource fulfillment stream (admin-only; the
+// customer-facing status stays a single simplified progression). 'received' =
+// ops has the partner's prints back/ready to consolidate; the order can only
+// reach 'printed' (→ Ready) when this is 'not_applicable' or 'received'.
+export const orderOutsourceStatusEnum = pgEnum('order_outsource_status', [
+  'not_applicable',
+  'pending',
+  'dispatched',
+  'received',
+  'failed',
+]);
+
 // Lifecycle of an outsource dispatch. 'sent' = we delivered the package; the
 // partner_* / received_back states are advanced manually by ops (no partner
 // webhooks in v1); 'manually_fulfilled' = ops handled it outside the system.
@@ -291,6 +303,10 @@ export const orders = pgTable(
     shippedAt: timestamp('shipped_at', { withTimezone: true }),
     fulfilledAt: timestamp('fulfilled_at', { withTimezone: true }),
     receiptSentAt: timestamp('receipt_sent_at', { withTimezone: true }),
+    // Outsource fulfillment-stream rollup (admin-only). Drives the gate that an
+    // order only reaches 'printed' when both in-house jobs AND the outsource
+    // stream are complete. See services/outsource-dispatch.ts (Phase 5).
+    outsourceStatus: orderOutsourceStatusEnum('outsource_status').notNull().default('not_applicable'),
     // ── Cancellation + refund (PR-12) ──
     // Customer asks to cancel a paid order; refund is issued only after an admin
     // approves (never automatic). See services/refund.ts.

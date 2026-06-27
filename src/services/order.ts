@@ -9,7 +9,7 @@
  * Resets sequence each year.
  */
 
-import { eq, and, like, desc, inArray, lt } from 'drizzle-orm';
+import { eq, and, like, desc, inArray, lt, notInArray, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { orders, orderItems, printJobs, printers, slipJobs, customers, webUsers, promoCampaigns, payments, holidays } from '@/db/schema.js';
 import { logger } from '@/utils/logger.js';
@@ -400,32 +400,43 @@ export async function enqueuePrintJobsForOrder(orderId: string): Promise<void> {
 
   const allPrinters = await db.select().from(printers);
   const dnpPrinter = allPrinters.find((p) => p.printerType === 'dye_sub');
-  const epsonPrinter = allPrinters.find((p) => p.printerType === 'inkjet');
 
-  for (const item of items) {
+  // Only IN-HOUSE items get a print job. Outsourced sizes (8×10 + wall art) are
+  // produced by a partner — the auto-dispatch + outsource stream handle them
+  // (services/outsource-dispatch.ts), so creating an in-house job for them would
+  // wrongly hold the order open against a job no printer ever claims.
+  const inHouseItems = items.filter((i) => getProduct(i.sizeCode)?.fulfillment !== 'outsource');
+  const hasOutsource = inHouseItems.length < items.length;
+
+  let jobs = 0;
+  for (const item of inHouseItems) {
     const product = getProduct(item.sizeCode);
-    // Routing keys off the catalog's `fulfillment` field, the single source of
-    // truth (no hard-coded size lists). Outsourced sizes still map to the inkjet
-    // printer row today; the auto-dispatch + dual-stream tracking that replaces
-    // their print job lands in a later phase (docs/OUTSOURCE-ROUTING-PLAN.md).
-    const isOutsourced = product?.fulfillment === 'outsource';
-    const assignedPrinter = isOutsourced ? epsonPrinter : dnpPrinter;
     const targetPrinterType = product ? getTargetPrinterType(product) : null;
     const jobStatus = item.requiresManualReview ? 'awaiting_approval' : 'queued';
 
     await db.insert(printJobs).values({
       orderItemId: item.id,
-      printerId: assignedPrinter?.id ?? null,
+      printerId: dnpPrinter?.id ?? null,
       targetPrinterType,
       status: jobStatus,
     });
+    jobs++;
   }
 
-  // If any item needs a human quality-check (posters), surface the whole order as
-  // 'awaiting_approval' so the operator gets the Approve button. Non-review items
-  // still print in parallel (the agent claims by job status, not order status);
-  // the order only completes once the approved poster prints too.
-  const needsApproval = items.some((i) => i.requiresManualReview);
+  // Mark the outsource stream as pending the first time (don't clobber a later
+  // 'dispatched'/'received'/'failed' on a webhook retry — only lift it off the
+  // default). Orders with no outsourced items keep the 'not_applicable' default.
+  if (hasOutsource) {
+    await db
+      .update(orders)
+      .set({ outsourceStatus: 'pending' })
+      .where(and(eq(orders.id, orderId), eq(orders.outsourceStatus, 'not_applicable')));
+  }
+
+  // If any IN-HOUSE item needs a human quality-check, surface the whole order as
+  // 'awaiting_approval' so the operator gets the Approve button. (Outsourced items
+  // are never approval-gated — they auto-dispatch on payment.)
+  const needsApproval = inHouseItems.some((i) => i.requiresManualReview);
   if (needsApproval) {
     const [o] = await db
       .update(orders)
@@ -440,7 +451,55 @@ export async function enqueuePrintJobsForOrder(orderId: string): Promise<void> {
     }
   }
 
-  logger.info({ orderId, jobs: items.length, needsApproval }, 'Enqueued print jobs after payment');
+  logger.info({ orderId, jobs, hasOutsource, needsApproval }, 'Enqueued print jobs after payment');
+}
+
+/**
+ * Pure gate decision (unit-tested): an order may advance to 'printed' only from
+ * an actively-producing state, with the outsource stream settled, and no in-house
+ * print/slip job still pending. Both streams complete ⇒ true.
+ */
+export function canAdvanceToPrinted(
+  currentStatus: string,
+  outsourceStatus: string,
+  pendingJobCount: number,
+): boolean {
+  if (!['paid', 'awaiting_approval', 'queued_for_print', 'printing'].includes(currentStatus)) return false;
+  if (!['not_applicable', 'received'].includes(outsourceStatus)) return false;
+  return pendingJobCount === 0;
+}
+
+/**
+ * Advance an order to 'printed' only when BOTH fulfillment streams are complete:
+ * every in-house print + slip job is terminal (done/failed) AND the outsource
+ * stream is done ('not_applicable' or 'received'). Guarded so it never clobbers a
+ * later/terminal status. Called when a job finishes (agent) and when ops marks the
+ * outsource stream received. Returns true if it advanced the order.
+ */
+export async function checkAndAdvanceToPrinted(orderId: string): Promise<boolean> {
+  const [o] = await db
+    .select({ status: orders.status, outsourceStatus: orders.outsourceStatus })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  if (!o) return false;
+
+  const [pendingPrints] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(printJobs)
+    .innerJoin(orderItems, eq(printJobs.orderItemId, orderItems.id))
+    .where(and(eq(orderItems.orderId, orderId), notInArray(printJobs.status, ['done', 'failed'])));
+  const [pendingSlips] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(slipJobs)
+    .where(and(eq(slipJobs.orderId, orderId), notInArray(slipJobs.status, ['done', 'failed'])));
+  const pending = (pendingPrints?.count ?? 0) + (pendingSlips?.count ?? 0);
+
+  if (!canAdvanceToPrinted(o.status, o.outsourceStatus, pending)) return false;
+
+  await db.update(orders).set({ status: 'printed' }).where(eq(orders.id, orderId));
+  logger.info({ orderId }, 'Both streams complete — order status: printed (awaiting operator release)');
+  return true;
 }
 
 /**
@@ -751,8 +810,11 @@ async function queueOrderSlips(orderNumber: string, paymentMethod: string): Prom
   // poster. If the order ALSO has non-poster prints, those + the slips run now
   // and only the poster waits. slip_jobs reuses print_job_status, so
   // 'awaiting_approval' is a valid slip status. Released by the approve endpoint.
-  const needsApproval = items.some((i) => i.requiresManualReview);
-  const hasOtherPrints = items.some((i) => !i.requiresManualReview);
+  // Approval gating is about IN-HOUSE manual-review items only; outsourced items
+  // never hold the slips (they're dispatched to a partner, not printed here).
+  const inHouseItems = items.filter((i) => getProduct(i.sizeCode)?.fulfillment !== 'outsource');
+  const needsApproval = inHouseItems.some((i) => i.requiresManualReview);
+  const hasOtherPrints = inHouseItems.some((i) => !i.requiresManualReview);
   const slipStatus = needsApproval && !hasOtherPrints ? ('awaiting_approval' as const) : ('queued' as const);
 
   // Resolve the recipient from either the WhatsApp customer or the web user.

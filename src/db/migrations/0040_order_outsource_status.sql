@@ -1,0 +1,2 @@
+CREATE TYPE "public"."order_outsource_status" AS ENUM('not_applicable', 'pending', 'dispatched', 'received', 'failed');--> statement-breakpoint
+ALTER TABLE "orders" ADD COLUMN "outsource_status" "order_outsource_status" DEFAULT 'not_applicable' NOT NULL;

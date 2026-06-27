@@ -128,11 +128,16 @@ No new `order_items` cost column needed — dispatch cost lives on `outsource_di
 - New `tests/outsource-dispatch.test.ts` (10 cases): cost snapshot, target/channel resolution, idempotency guard.
 - **Deploy:** apply migration **0039**. v1 sends over email only (non-email channels record `failed` with a clear reason).
 
-### Phase 5 — Dual-stream status + admin order view
-- Migration 0041. Set `in_house_status`/`outsource_status` at `markOrderPaid` and as jobs/dispatches progress.
-- **Rollup gate:** order may only advance to `printed`/Ready when **both** streams complete (extends `agent-api.ts:548` "all jobs done" logic to also require outsource stream done).
-- Admin order modal (`admin-dashboard.ts` `getOrderDetails` + `admin-ops.ts`): new "Outsource" section — partner, channel, dispatch timestamp, status badge, re-send / send-other / mark-fulfilled buttons.
-- **Customer-facing: no change** (already collapses to Received→Printing→Ready→Out for delivery→Delivered).
+### Phase 5 — Dual-stream status + admin order view — ✅ DONE (branch `feat/outsource-phase5-dual-stream-status`)
+- Migration **0040** (`orders.outsource_status` + `order_outsource_status` enum: not_applicable/pending/dispatched/received/failed).
+- **Finally applied the Phase-1-deferred change:** `enqueuePrintJobsForOrder` now **skips in-house jobs for outsourced items** (they're dispatched, not printed here) and the approval gate + slip gate (`queueOrderSlips`) key off **in-house items only** (outsourced posters no longer wrongly hold an order in approval). `markOrderPaid`→enqueue sets `outsource_status='pending'` (conditional, won't clobber a later state on webhook retry).
+- **Rollup gate:** new pure `canAdvanceToPrinted(status, outsourceStatus, pendingJobs)` + `checkAndAdvanceToPrinted(orderId)` in `order.ts` — an order reaches `printed` only when all in-house print+slip jobs are terminal AND the outsource stream is `not_applicable`/`received`. The agent `done` endpoint now calls this (shared logic, no drift).
+- Dispatch transitions: `dispatchOrder` sets `dispatched`/`failed`; new `markOutsourceReceived` + `markDispatchManuallyFulfilled` set `received` (and advance the latest dispatch row to `received_back`). The import cycle with `order.ts` is avoided — dispatch only writes the status column; the admin-ops endpoints run the rollup.
+- **Admin order modal:** `getOrderDetails` returns an `outsource` block (status, dispatch history with partner/channel/timestamp/cost/error, active partners list); the modal shows an "Outsource — wall prints" section with **Re-send / Mark received / Mark manually fulfilled / Send-to-selected-partner** actions (new `/admin/api/ops/orders/:id/outsource-*` endpoints, both roles).
+- **Customer-facing: no change** — `outsource_status` is admin-only; the web/bot status mapping is untouched.
+- **Deviation:** stored only `orders.outsource_status` (not a separate `in_house_status` column) — in-house completion is derived from the existing jobs, so there's nothing to drift.
+- New `tests/order-printed-gate.test.ts` (5 cases) pins the gate. Pure no-op for non-outsource orders.
+- **Deploy:** apply migration **0040** (now the 3rd pending: 0038, 0039, 0040).
 
 ### Phase 6 — Low-res warning at order time *(needs per-size quality thresholds)*
 - Surface existing `minResolution` in the web editor/checkout: warn when source < threshold for the chosen size. **Warn, never block.**

@@ -118,12 +118,15 @@ No new `order_items` cost column needed — dispatch cost lives on `outsource_di
 - New `tests/outsource-package.test.ts` (7 cases): filename convention, spec shape + PII-safety, spec SVG, zip round-trip. DB/render functions need a database → covered by the Phase-3 QA guide, not unit tests.
 - Dispatch (email send) is **Phase 4** — this phase only builds the package.
 
-### Phase 4 — Auto-dispatch + dispatch record *(needs partner email + wholesale prices)*
-- Migration 0040. `services/outsource-dispatch.ts`.
-- Hook into `markOrderPaid` after job/slip enqueue: if order has outsource items + active default partner supporting them + not already dispatched → build package (phase 3) → email via Resend → write `outsource_dispatches` row with **cost snapshot**.
-- Retries: 1–2 with backoff, then `failed` + admin dashboard alert (reuse operator-email pattern).
-- Guards: never dispatch if refunded/cancelled; idempotent on order id.
-- Manual actions (admin): re-send, send-to-different-partner, mark-manually-fulfilled.
+### Phase 4 — Auto-dispatch + dispatch record — ✅ DONE (branch `feat/outsource-phase4-auto-dispatch`)
+- Migration **0039** (`outsource_dispatches`) + `outsource_dispatch_status` enum. (Numbering: 0039, following 0038 — not 0040 as the draft guessed.)
+- `services/outsource-dispatch.ts`: `dispatchOrder()` builds the Phase-3 package → resolves the active default partner + channel → emails the ZIP via Resend (q95 sRGB files + spec PDF/JSON) → writes an `outsource_dispatches` row with the **wholesale-cost snapshot at send time**. Retries (initial + 1) with backoff; hard failure → `failed` row + ops alert (`sendOutsourceDispatchFailedAlert` in operator-email).
+- Hooked into `markOrderPaid` as **fire-and-forget** (`autoDispatchOnPaid`) after the QBO step — package render + email is slow and must never block/roll back a paid order. No-ops when the order has no outsourced items.
+- Guards: idempotent on order id (`alreadyDispatched` — a live dispatch blocks re-send unless forced); a missing/inactive/non-email/no-email partner records a `failed` row + alerts (never silently drops).
+- Manual-override **service functions** present: `resendDispatch`, `dispatchToPartner`, `markDispatchManuallyFulfilled`, `getDispatchesForOrder`. **Admin UI that calls them is wired in Phase 5** with the dual-stream order view (kept here as backend only to avoid orphan endpoints).
+- **Email address is admin-entered** (partner `contact_email` from Phase 2) — no env var, nothing hardcoded. Dispatch goes live the moment a default partner with an email exists; until then it records `failed` + alerts.
+- New `tests/outsource-dispatch.test.ts` (10 cases): cost snapshot, target/channel resolution, idempotency guard.
+- **Deploy:** apply migration **0039**. v1 sends over email only (non-email channels record `failed` with a clear reason).
 
 ### Phase 5 — Dual-stream status + admin order view
 - Migration 0041. Set `in_house_status`/`outsource_status` at `markOrderPaid` and as jobs/dispatches progress.

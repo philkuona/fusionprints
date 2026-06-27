@@ -20,7 +20,7 @@ import { normalizePhone } from '@/utils/phone.js';
 import { calculateQuote } from '@/services/pricing.js';
 import { getOrderMinimums, getDnpMediaMode } from '@/services/store-settings.js';
 import { getOrderCollectionPoint, pointHours, toMapsUrl } from '@/services/collection-points.js';
-import { getProduct } from '@/config/catalog.js';
+import { getProduct, getTargetPrinterType } from '@/config/catalog.js';
 import { getProductCost } from '@/services/cost-overrides.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate } from '@/services/whatsapp.js';
 import { sendOrderReadyEmail, sendOrderFulfilledEmail } from '@/services/web-order-email.js';
@@ -403,13 +403,13 @@ export async function enqueuePrintJobsForOrder(orderId: string): Promise<void> {
 
   for (const item of items) {
     const product = getProduct(item.sizeCode);
-    const isLargeFormat = ['8x10', '11x14', '12x18', '16x20'].includes(item.sizeCode);
-    const assignedPrinter = isLargeFormat ? epsonPrinter : dnpPrinter;
-    const targetPrinterType = product
-      ? (product.printer === 'dnp_ds620a_4x6' ? 'dye_sub_4x6' as const
-        : product.printer === 'dnp_ds620a_5x7' ? 'dye_sub_5x7' as const
-        : 'inkjet' as const)
-      : null;
+    // Routing keys off the catalog's `fulfillment` field, the single source of
+    // truth (no hard-coded size lists). Outsourced sizes still map to the inkjet
+    // printer row today; the auto-dispatch + dual-stream tracking that replaces
+    // their print job lands in a later phase (docs/OUTSOURCE-ROUTING-PLAN.md).
+    const isOutsourced = product?.fulfillment === 'outsource';
+    const assignedPrinter = isOutsourced ? epsonPrinter : dnpPrinter;
+    const targetPrinterType = product ? getTargetPrinterType(product) : null;
     const jobStatus = item.requiresManualReview ? 'awaiting_approval' : 'queued';
 
     await db.insert(printJobs).values({

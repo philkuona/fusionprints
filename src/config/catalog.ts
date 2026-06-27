@@ -112,14 +112,24 @@ export interface Product {
   costUsd?: number;
   /** Which printer handles this product */
   printer: 'dnp_ds620a_4x6' | 'dnp_ds620a_5x7' | 'epson_p900';
+  /**
+   * Fulfillment routing — the single source of truth for whether a size is
+   * produced in-house (DNP DS620A) or sent to an outsource partner. Adding a new
+   * size only requires setting this field; nothing branches on the size code.
+   *   - 'in_house'  → printed on the DNP, enters the print-agent queue
+   *   - 'outsource' → produced by a partner print shop (8×10 and all wall art)
+   * Customer-invisible: this is never exposed by the public catalog API.
+   */
+  fulfillment: 'in_house' | 'outsource';
   /** Print finish — locked per size at launch (Phase 2 may allow customer choice) */
   finish: 'glossy' | 'lustre';
   /** Whether this product needs human approval before printing */
   requiresManualReview: boolean;
   /**
-   * Legacy field — kept for backward compatibility. Always false at launch
-   * since outsourcing was removed (decided 2026-05-02).
-   * Will be removed in a future migration.
+   * Customer-facing turnaround-copy flag (dormant — all false at launch). Distinct
+   * from `fulfillment`, which owns routing. Kept separate so flipping routing to
+   * 'outsource' does NOT auto-publish an unconfirmed turnaround SLA; the customer
+   * turnaround wording is finalized later (see docs/OUTSOURCE-ROUTING-PLAN.md §6).
    */
   isOutsourced: boolean;
   /** Minimum image resolution in pixels for acceptable quality */
@@ -159,6 +169,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '4×6 in (10×15 cm)',
     unitPriceUsd: 0.80,
     printer: 'dnp_ds620a_4x6',
+    fulfillment: 'in_house',
     finish: 'glossy',
     requiresManualReview: false,
     isOutsourced: false,
@@ -173,6 +184,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '5×7 in (13×18 cm)',
     unitPriceUsd: 2.00,
     printer: 'dnp_ds620a_5x7',
+    fulfillment: 'in_house',
     finish: 'lustre',
     requiresManualReview: false,
     isOutsourced: false,
@@ -187,6 +199,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '6×6 in (15×15 cm)',
     unitPriceUsd: 2.00,
     printer: 'dnp_ds620a_4x6',
+    fulfillment: 'in_house',
     finish: 'lustre',
     requiresManualReview: false,
     isOutsourced: false,
@@ -201,6 +214,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '6×8 in (15×20 cm)',
     unitPriceUsd: 2.50,
     printer: 'dnp_ds620a_4x6',
+    fulfillment: 'in_house',
     finish: 'lustre',
     requiresManualReview: false,
     isOutsourced: false,
@@ -215,6 +229,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '8×10 in (20×25 cm)',
     unitPriceUsd: 5.00,
     printer: 'epson_p900',
+    fulfillment: 'outsource',
     finish: 'lustre',
     requiresManualReview: false,
     isOutsourced: false,
@@ -231,6 +246,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '11×14 in (28×36 cm)',
     unitPriceUsd: 10.00,
     printer: 'epson_p900',
+    fulfillment: 'outsource',
     finish: 'lustre',
     requiresManualReview: true,
     isOutsourced: false,
@@ -245,6 +261,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '12×18 in (30×45 cm)',
     unitPriceUsd: 14.00,
     printer: 'epson_p900',
+    fulfillment: 'outsource',
     finish: 'lustre',
     requiresManualReview: true,
     isOutsourced: false,
@@ -259,6 +276,7 @@ export const PRODUCTS: Product[] = [
     displayLabel: '16×20 in (40×50 cm)',
     unitPriceUsd: 22.00,
     printer: 'epson_p900',
+    fulfillment: 'outsource',
     finish: 'lustre',
     requiresManualReview: true,
     isOutsourced: false,
@@ -280,6 +298,7 @@ export const PRODUCTS: Product[] = [
     description: 'Four classic 2×3 wallet-sized prints on a single 4×6 sheet, all from one photo. Cut along the guides for four keepsakes.',
     unitPriceUsd: 2.50,
     printer: 'dnp_ds620a_4x6',
+    fulfillment: 'in_house',
     finish: 'glossy',
     requiresManualReview: false,
     isOutsourced: false,
@@ -315,6 +334,7 @@ export const PRODUCTS: Product[] = [
     description: 'Six 2×2 inch passport-style photos on a single 4×6 sheet. Standard ID size, same photo.',
     unitPriceUsd: 3.00,
     printer: 'dnp_ds620a_4x6',
+    fulfillment: 'in_house',
     finish: 'glossy',
     requiresManualReview: false,
     isOutsourced: false,
@@ -351,6 +371,7 @@ export const PRODUCTS: Product[] = [
     description: 'Eight little 2×1.5 mini prints on a single 4×6 sheet, all from one photo. Cut along the guides for a set to keep, share, or stick anywhere.',
     unitPriceUsd: 2.00,
     printer: 'dnp_ds620a_4x6',
+    fulfillment: 'in_house',
     finish: 'glossy',
     requiresManualReview: false,
     isOutsourced: false,
@@ -402,8 +423,16 @@ export function isComposite(product: Product): boolean {
   return product.productType === 'composite' && !!product.layout;
 }
 
-/** In-house products only (not outsourced) */
-export const IN_HOUSE_PRODUCTS = PRODUCTS.filter((p) => !p.isOutsourced);
+/** In-house products only (printed on the DNP, not sent to an outsource partner). */
+export const IN_HOUSE_PRODUCTS = PRODUCTS.filter((p) => p.fulfillment === 'in_house');
+
+/** Outsourced products (produced by a partner print shop — 8×10 and all wall art). */
+export const OUTSOURCED_PRODUCTS = PRODUCTS.filter((p) => p.fulfillment === 'outsource');
+
+/** Routing predicate: is this size fulfilled by an outsource partner? */
+export function isOutsourcedProduct(product: Product): boolean {
+  return product.fulfillment === 'outsource';
+}
 
 /**
  * Map a product's printer field to the database's target_printer_type enum value.

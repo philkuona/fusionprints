@@ -38,6 +38,13 @@ import {
   getCancelledOrdersList,
   type Tally,
 } from '@/services/admin-ops.js';
+import {
+  resendDispatch,
+  dispatchToPartner,
+  markOutsourceReceived,
+  markDispatchManuallyFulfilled,
+} from '@/services/outsource-dispatch.js';
+import { checkAndAdvanceToPrinted } from '@/services/order.js';
 
 // Reuse the auth helper from admin-dashboard.ts
 /**
@@ -727,7 +734,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
         const res = await fetch(\`/admin/api/orders/\${orderId}\`);
         const data = await res.json();
         if (!data) { document.getElementById('modal-body').innerHTML = '<div class="empty">Order not found.</div>'; return; }
-        const { order, customer, items, jobs, slips } = data;
+        const { order, customer, items, jobs, slips, outsource } = data;
         document.getElementById('modal-title').textContent = order.orderNumber;
         // Preview registries for the in-page lightbox (referenced by index).
         __omPreviews = items.map(it => ({ url: it.previewUrl, composite: it.composite }));
@@ -741,6 +748,33 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
             </span>
             <span class="badge badge-\${s.status}">\${s.status}</span>
           </div>\`).join('');
+        // Outsource fulfillment stream (Phase 5) — dispatch history + ops actions.
+        // Only shown for orders that actually have outsourced (wall print) items.
+        const osLabels = { not_applicable:'—', pending:'Pending dispatch', dispatched:'Dispatched', received:'Received', failed:'Failed' };
+        const osColor = { pending:'#8A7B66', dispatched:'#2563EB', received:'#04A551', failed:'#C0392B', not_applicable:'#8A7B66' };
+        let outsourceHtml = '';
+        if (outsource && outsource.hasItems) {
+          const dlist = (outsource.dispatches || []).map(d => \`
+            <div class="item-row">
+              <span style="font-size:13px;">\${esc(d.partnerName || 'No partner')}\${d.partnerShortCode ? ' ('+esc(d.partnerShortCode)+')' : ''} · \${esc(d.channel)}\${d.sentAt ? ' · '+new Date(d.sentAt).toLocaleString() : ''}\${d.errorMessage ? ' · <span style="color:#C0392B">'+esc(d.errorMessage)+'</span>' : ''}</span>
+              <span class="badge" style="background:#F1ECE3;color:#4a3f32;">\${esc(d.status)}</span>
+            </div>\`).join('');
+          const partnerOpts = (outsource.partners || []).map(p => \`<option value="\${p.id}">\${esc(p.name)} (\${esc(p.shortCode)})</option>\`).join('');
+          const sendRow = partnerOpts
+            ? \`<div style="display:flex;gap:8px;margin-top:8px;"><select id="os-partner-\${order.id}" style="flex:1">\${partnerOpts}</select><button class="action-btn" onclick="outsourceSend('\${order.id}')">Send to selected</button></div>\`
+            : '<div class="sub" style="margin-top:8px">No active partners — add one under Partners.</div>';
+          outsourceHtml = \`
+            <div class="items-list" style="margin-top:16px">
+              <div class="items-title">Outsource — wall prints · <span style="color:\${osColor[outsource.status] || '#8A7B66'}">\${osLabels[outsource.status] || outsource.status}</span></div>
+              \${dlist || '<div class="sub">Not dispatched yet.</div>'}
+              <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="action-btn approve" onclick="outsourceAction('\${order.id}','outsource-resend')">📤 \${outsource.status === 'failed' ? 'Retry send' : 'Re-send'}</button>
+                \${outsource.status !== 'received' ? \`<button class="action-btn ready" onclick="outsourceAction('\${order.id}','outsource-received')">✓ Mark received</button>\` : ''}
+                \${outsource.status !== 'received' ? \`<button class="action-btn" onclick="outsourceAction('\${order.id}','outsource-manual')">Mark manually fulfilled</button>\` : ''}
+              </div>
+              \${sendRow}
+            </div>\`;
+        }
         const itemsHtml = items.map((item, i) => \`
           <div class="item-row">
             <span style="display:flex;align-items:center;gap:10px;">
@@ -768,6 +802,7 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
           <div class="items-list"><div class="items-title">Items (\${items.length})</div>\${itemsHtml}</div>
           \${jobs.length > 0 ? \`<div class="items-list" style="margin-top:16px"><div class="items-title">Print jobs</div>\${jobs.map(j => \`<div class="item-row"><span>\${j.printerName || 'Unassigned'}</span><span style="display:flex;gap:8px;align-items:center;"><span class="badge badge-\${j.status}">\${j.status}</span>\${j.status === 'failed' ? \`<button class="action-btn approve" style="padding:3px 8px;font-size:11px" onclick="reprintJob('\${j.id}')">↻ Reprint</button>\` : ''}</span></div>\`).join('')}</div>\` : ''}
           \${(slips && slips.length > 0) ? \`<div class="items-list" style="margin-top:16px"><div class="items-title">Slip cards (\${slips.length})</div>\${slipsHtml}</div>\` : ''}
+          \${outsourceHtml}
           <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
             \${(!IS_OPERATOR && order.cancellationStatus === 'requested') ? \`<button class="action-btn approve" onclick="doApproveCancellation('\${order.id}')">✓ Approve &amp; refund</button><button class="action-btn cancel" onclick="doDeclineCancellation('\${order.id}')">Decline request</button>\` : ''}
             \${(!IS_OPERATOR && order.refundStatus === 'failed') ? \`<button class="action-btn approve" onclick="doApproveCancellation('\${order.id}')">↻ Retry refund</button>\` : ''}
@@ -820,6 +855,26 @@ async function orderManagementPageHtml(tab: 'active' | 'completed' | 'cancelled'
       async function reprintOrder(orderId) {
         if (!confirm('Requeue all failed jobs in this order?')) return;
         try { const r = await fetch('/admin/api/ops/orders/' + orderId + '/reprint', { method: 'POST' }); const data = await r.json(); if (!r.ok) throw new Error(); alert('Requeued ' + data.count + ' job(s). The agent will pick them up.'); closeModal(); omRefresh(); } catch (e) { alert('Reprint failed'); }
+      }
+      async function outsourceAction(orderId, action) {
+        if (action === 'outsource-manual' && !confirm('Mark the outsourced prints as handled outside the system?')) return;
+        try {
+          const r = await fetch('/admin/api/ops/orders/' + orderId + '/' + action, { method: 'POST' });
+          const d = await r.json().catch(function(){ return {}; });
+          if (!r.ok || d.ok === false) { alert(d && d.error ? ('Failed: ' + d.error) : 'Action failed'); }
+          showOrder(orderId); omRefresh();
+        } catch (e) { alert('Action failed'); }
+      }
+      async function outsourceSend(orderId) {
+        var sel = document.getElementById('os-partner-' + orderId);
+        var partnerId = sel && sel.value;
+        if (!partnerId) { alert('Pick a partner first'); return; }
+        try {
+          const r = await fetch('/admin/api/ops/orders/' + orderId + '/outsource-send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ partnerId: partnerId }) });
+          const d = await r.json().catch(function(){ return {}; });
+          if (!r.ok || d.ok === false) { alert(d && d.error ? ('Failed: ' + d.error) : 'Send failed'); }
+          showOrder(orderId); omRefresh();
+        } catch (e) { alert('Send failed'); }
       }
       async function resendReceipt(orderId) {
         if (!confirm('Resend the branded receipt to the customer (email + WhatsApp, whichever the order has)?')) return;
@@ -888,6 +943,65 @@ export async function registerAdminOps(app: FastifyInstance): Promise<void> {
       return { ok: true };
     } catch (err) {
       logger.error({ err }, 'Failed to mark order shipped');
+      return reply.status(500).send({ error: 'Failed to update' });
+    }
+  });
+
+  // ===== Outsource fulfillment-stream actions (Phase 5) =====
+
+  // Re-send the package to the active default partner (first attempt failed/lost).
+  app.post('/admin/api/ops/orders/:id/outsource-resend', async (request, reply) => {
+    if (!checkAuth(request, reply)) return;
+    try {
+      const { id } = request.params as { id: string };
+      const d = await resendDispatch(id);
+      return { ok: !!d && d.status === 'sent', status: d?.status ?? null, error: d?.errorMessage ?? null };
+    } catch (err) {
+      logger.error({ err }, 'Failed to re-send outsource dispatch');
+      return reply.status(500).send({ error: 'Failed to re-send' });
+    }
+  });
+
+  // Send to a specific partner (default unavailable/busy).
+  app.post('/admin/api/ops/orders/:id/outsource-send', async (request, reply) => {
+    if (!checkAuth(request, reply)) return;
+    try {
+      const { id } = request.params as { id: string };
+      const { partnerId } = (request.body ?? {}) as { partnerId?: string };
+      if (!partnerId) return reply.status(400).send({ error: 'partnerId required' });
+      const d = await dispatchToPartner(id, partnerId);
+      return { ok: !!d && d.status === 'sent', status: d?.status ?? null, error: d?.errorMessage ?? null };
+    } catch (err) {
+      logger.error({ err }, 'Failed to send outsource dispatch to partner');
+      return reply.status(500).send({ error: 'Failed to send' });
+    }
+  });
+
+  // Ops confirms the partner's prints are back/ready — settles the outsource
+  // stream and advances the order to 'printed' if the in-house side is also done.
+  app.post('/admin/api/ops/orders/:id/outsource-received', async (request, reply) => {
+    if (!checkAuth(request, reply)) return;
+    try {
+      const { id } = request.params as { id: string };
+      await markOutsourceReceived(id);
+      await checkAndAdvanceToPrinted(id);
+      return { ok: true };
+    } catch (err) {
+      logger.error({ err }, 'Failed to mark outsource received');
+      return reply.status(500).send({ error: 'Failed to update' });
+    }
+  });
+
+  // Ops handled the outsourced items entirely outside the system.
+  app.post('/admin/api/ops/orders/:id/outsource-manual', async (request, reply) => {
+    if (!checkAuth(request, reply)) return;
+    try {
+      const { id } = request.params as { id: string };
+      await markDispatchManuallyFulfilled(id);
+      await checkAndAdvanceToPrinted(id);
+      return { ok: true };
+    } catch (err) {
+      logger.error({ err }, 'Failed to mark outsource manually fulfilled');
       return reply.status(500).send({ error: 'Failed to update' });
     }
   });

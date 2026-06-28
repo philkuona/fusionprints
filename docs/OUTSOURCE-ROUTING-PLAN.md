@@ -139,12 +139,17 @@ No new `order_items` cost column needed — dispatch cost lives on `outsource_di
 - New `tests/order-printed-gate.test.ts` (5 cases) pins the gate. Pure no-op for non-outsource orders.
 - **Deploy:** apply migration **0040** (now the 3rd pending: 0038, 0039, 0040).
 
-### Phase 6 — Low-res warning at order time *(needs per-size quality thresholds)*
-- Surface existing `minResolution` in the web editor/checkout: warn when source < threshold for the chosen size. **Warn, never block.**
+### Phase 6 — Low-res warning at order time — ✅ ALREADY IMPLEMENTED (no change needed)
+- The web app already has this: `lib/editor/resolution.ts` grades pixel area against each product's `minResolution`/`recommendedResolution` (ok/warn/bad). The **size picker** flags sizes that can't print sharp against the full photo; the **crop modal** grades the actual cropped area and, on `bad`, asks for confirmation ("Print anyway" / "Keep editing") rather than blocking — exactly the brief's "warn at order time, never block (customer's choice)." Driven by the catalog thresholds, so it already covers the outsourced sizes (8×10 + wall art). **Nothing to build.** (Tuning the exact per-size thresholds is a content tweak in the catalog if/when Philip provides them — no code change.)
 
-### Phase 7 — Retire Epson from active paths
-- Remove `inkjet` from active routing/seed/printers page; keep git history (archive, don't delete).
-- Schema enum: leave `inkjet` value in the pgEnum to avoid a destructive migration, but stop using it; document as retired. Remove Epson seed row + printers-page display.
+### Phase 7 — Retire Epson from active paths — ✅ DONE (branch `feat/outsource-phase7-retire-epson`)
+- **catalog.ts:** dropped `'epson_p900'` from the `printer` union and made `printer` **optional** (outsourced sizes have no in-house printer); removed the `printer` field from the 4 outsourced products; `getTargetPrinterType` now only maps the two DNP values and **throws** if called on a printer-less (outsourced) product (it's only ever called on in-house items).
+- **seed.ts:** removed the Epson printer row (only the DNP DS620A is seeded now).
+- **Migration 0041** (hand-authored data migration, snapshot chain extended): `DELETE FROM printers WHERE printer_type = 'inkjet'` — removes the seeded Epson row from existing DBs so it stops showing on the admin Printers page.
+- **agent-api test endpoint:** dropped the `inkjet` branch (dev-only; only dye-sub prints in-house now).
+- **pg enums kept** (`printer_type` / `target_printer_type` still carry `'inkjet'`) to avoid a destructive migration — documented as retired; nothing routes to it. The admin `inkHtml` inkjet branch is now dead (no inkjet row exists) but gracefully renders dye-sub, so it's left as benign defensive code.
+- Updated `tests/fulfillment-routing.test.ts`: outsourced products have no `printer` and `getTargetPrinterType` throws on them.
+- **Deploy:** apply migration **0041** (4th pending: 0038, 0039, 0040, 0041).
 
 **Dependency order:** 1 → 2 → 3 → (4 needs partner data) → 5 → 6 (needs thresholds) → 7. Phases 1, 2, 3, 7 need no commercial input and can land immediately.
 

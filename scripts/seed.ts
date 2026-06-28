@@ -5,7 +5,8 @@
  *
  * Idempotent — won't duplicate if run multiple times.
  * Currently seeds:
- *   - Two printers (DNP DS620A and Epson P5300)
+ *   - The DNP DS620A printer (the only in-house photo printer; large/wall sizes
+ *     are outsourced — the Epson SC-P5300 was retired)
  *   - The store_settings singleton (DNP media mode)
  *   - Zimbabwe public holidays (non-working days for fulfilment date math)
  */
@@ -24,13 +25,6 @@ async function seed(): Promise<void> {
       printerType: 'dye_sub' as const,
       osPrinterName: 'FPDS620A', // Windows print-queue name on the agent mini-PC
       currentMedia: '6x8 ribbon',
-      status: 'offline' as const,
-    },
-    {
-      name: 'Epson SureColor P5300',
-      printerType: 'inkjet' as const,
-      osPrinterName: 'FP5300', // Windows print-queue name on the agent mini-PC
-      currentMedia: '17in luster roll',
       status: 'offline' as const,
     },
   ];

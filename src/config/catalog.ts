@@ -110,8 +110,13 @@ export interface Product {
   unitPriceUsd: number;
   /** Consumable cost per single unit in USD (admin-set; 0 until configured). */
   costUsd?: number;
-  /** Which printer handles this product */
-  printer: 'dnp_ds620a_4x6' | 'dnp_ds620a_5x7' | 'epson_p900';
+  /**
+   * Which in-house printer handles this product. Only set for in-house sizes
+   * (`fulfillment: 'in_house'`). Outsourced sizes are produced by a partner and
+   * have no in-house printer — `printer` is undefined for them. (The Epson
+   * SC-P5300 / wide-format inkjet was retired; large/wall sizes are outsourced.)
+   */
+  printer?: 'dnp_ds620a_4x6' | 'dnp_ds620a_5x7';
   /**
    * Fulfillment routing — the single source of truth for whether a size is
    * produced in-house (DNP DS620A) or sent to an outsource partner. Adding a new
@@ -228,7 +233,6 @@ export const PRODUCTS: Product[] = [
     labelCm: '20×25 cm',
     displayLabel: '8×10 in (20×25 cm)',
     unitPriceUsd: 5.00,
-    printer: 'epson_p900',
     fulfillment: 'outsource',
     finish: 'lustre',
     requiresManualReview: false,
@@ -245,7 +249,6 @@ export const PRODUCTS: Product[] = [
     labelCm: '28×36 cm',
     displayLabel: '11×14 in (28×36 cm)',
     unitPriceUsd: 10.00,
-    printer: 'epson_p900',
     fulfillment: 'outsource',
     finish: 'lustre',
     requiresManualReview: true,
@@ -260,7 +263,6 @@ export const PRODUCTS: Product[] = [
     labelCm: '30×45 cm',
     displayLabel: '12×18 in (30×45 cm)',
     unitPriceUsd: 14.00,
-    printer: 'epson_p900',
     fulfillment: 'outsource',
     finish: 'lustre',
     requiresManualReview: true,
@@ -275,7 +277,6 @@ export const PRODUCTS: Product[] = [
     labelCm: '40×50 cm',
     displayLabel: '16×20 in (40×50 cm)',
     unitPriceUsd: 22.00,
-    printer: 'epson_p900',
     fulfillment: 'outsource',
     finish: 'lustre',
     requiresManualReview: true,
@@ -435,31 +436,25 @@ export function isOutsourcedProduct(product: Product): boolean {
 }
 
 /**
- * Map a product's printer field to the database's target_printer_type enum value.
- * Used by Phase D multi-printer routing to tag print_jobs with their destination.
+ * Map an IN-HOUSE product's printer field to the database's target_printer_type
+ * enum value, to tag print_jobs with their destination. Only called for in-house
+ * sizes (outsourced sizes don't create in-house print jobs — see
+ * enqueuePrintJobsForOrder); calling it on a product with no `printer` throws.
  *
- * Catalog uses printer values: 'dnp_ds620a_4x6' | 'dnp_ds620a_5x7' | 'epson_p900'
- * Database uses target_printer_type: 'dye_sub_4x6' | 'dye_sub_5x7' | 'inkjet' | 'thermal_label'
- *
- * The mapping is straightforward — printer field describes the physical printer,
- * target_printer_type describes the routing category (multiple printers can share a type).
+ * Catalog uses printer values: 'dnp_ds620a_4x6' | 'dnp_ds620a_5x7'
+ * Database target_printer_type also carries 'inkjet' (retired Epson) + 'thermal_label';
+ * the enum value is kept for history, but nothing routes to 'inkjet' any more.
  */
 export type TargetPrinterType = 'dye_sub_4x6' | 'dye_sub_5x7' | 'inkjet' | 'thermal_label';
 
-export function getTargetPrinterType(product: Product): TargetPrinterType {
+export function getTargetPrinterType(product: Product): 'dye_sub_4x6' | 'dye_sub_5x7' {
   switch (product.printer) {
     case 'dnp_ds620a_4x6':
       return 'dye_sub_4x6';
     case 'dnp_ds620a_5x7':
       return 'dye_sub_5x7';
-    case 'epson_p900':
-      return 'inkjet';
-    default: {
-      // exhaustive check — TypeScript will error if a new printer value is added
-      // without a corresponding case here
-      const _exhaustive: never = product.printer;
-      throw new Error(`Unknown printer type: ${_exhaustive}`);
-    }
+    default:
+      throw new Error(`getTargetPrinterType called on a product with no in-house printer: ${product.sizeCode}`);
   }
 }
 

@@ -288,6 +288,13 @@
       "when": 1782602713105,
       "tag": "0040_order_outsource_status",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1782689113105,
+      "tag": "0041_retire_inkjet_printer",
+      "breakpoints": true
     }
   ]
 }

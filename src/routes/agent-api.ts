@@ -678,9 +678,9 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
         .limit(1);
       const latestImage = latestImages[0] ?? null;
 
-      // Determine printer type from the catalog's fulfillment field (single
-      // source of truth — no hard-coded size list).
-      const printerType = getProduct(sizeCode)?.fulfillment === 'outsource' ? 'inkjet' : 'dye_sub';
+      // This dev-only endpoint exercises the in-house DNP path; the only physical
+      // printer type is now dye-sub (outsourced sizes don't print in-house).
+      const printerType = 'dye_sub';
 
       // Find the matching printer
       const matchingPrinters = await db

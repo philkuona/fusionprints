@@ -41,10 +41,14 @@ describe('fulfillment classification', () => {
 });
 
 describe('printer routing agrees with fulfillment', () => {
-  it('outsourced sizes never route to a dye-sub queue', () => {
+  it('outsourced sizes have no in-house printer and never enter a print queue', () => {
     for (const p of OUTSOURCED_PRODUCTS) {
       expect(isOutsourcedProduct(p)).toBe(true);
-      expect(getTargetPrinterType(p)).toBe('inkjet');
+      // No in-house printer — the Epson was retired; these go to a partner.
+      expect(p.printer).toBeUndefined();
+      // getTargetPrinterType is only ever called on in-house items; on an
+      // outsourced product it refuses rather than inventing a queue.
+      expect(() => getTargetPrinterType(p)).toThrow();
     }
   });
 
